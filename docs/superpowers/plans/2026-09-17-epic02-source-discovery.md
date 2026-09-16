@@ -1831,6 +1831,17 @@ git push && gh run watch                     # CI 6/6 绿
 - Task 10：端点改 `Annotated[..., Depends(...)]`（ruff B008）；集成测试需同时 override `get_db`（否则 TestClient 写开发库，已清理误写行）
 - Task 11：`list_due` 去 now 入参（用 `func.now()` DB 时钟防多机漂移）；任务测试 monkeypatch `worker_tasks.get_session_factory` 指向 radar_test
 - 模型无 relationship：集成测试经 `creator_id` 显式查 Creator（Plan #1 未建关系，符合现状）
+
+### /qa（2026-09-17，链路第 6 步）
+
+真栈实测（postgres/redis/minio compose + 真实 yt-dlp + 真 YouTube 数据，API 跑 :8001——
+:8000/:5173 被外部项目 "AI Content Studio" 占用）。发现 2 个 High 并已修复 + 回归测试：
+- ISSUE-001：`celery_app` 缺 `include=["app.worker.tasks"]`，worker 注册表为空，beat 派发被拒收
+  （单测直调 task.run() 绕过注册表，故未拦住）→ 0c7d39a + 注册表断言 f25f36a
+- ISSUE-002：裸频道 URL 的 flat-playlist 顶层是 `_type='playlist'` 页签子播放列表，
+  被当内容条目入库（id=频道 id，title="xxx - Shorts"）→ 23f1cc7 过滤 + 回归 db2bad0
+- ISSUE-003（Medium，挂 EPIC-03 注记③）：manual 建号落裸 channel_url，页签过滤后 discover 恒 0 条
+- 收尾状态：93 tests / lint+mypy 绿 / 全链路 dispatch→discover→prepare 投递实测走通
 ## Review record
 
 <!-- autoplan:ceo (SELECTIVE EXPANSION, 2026-09-17) — native in-host; Codex outside voice unavailable (model_unusable); Claude subagent skipped per user standing order (no subagents in this repo) -->

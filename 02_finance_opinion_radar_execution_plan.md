@@ -426,7 +426,11 @@ discover_source_account(account_id)
 > `prepare_source_item(item_id)`。本 EPIC 首个任务必须满足两条硬约束：
 > ① **prepare_source_item 任务幂等**——同 item 重复投递安全（并发 discover 双判"新建"会双投）；
 > ② **存量补扫**——首个任务落地时补扫 `status='discovered'` 的存量条目
-> （G1：discover commit 后 send_task 若失败不会重投，条目会滞留 discovered）。
+> （G1：discover commit 后 send_task 若失败不会重投，条目会滞留 discovered）；
+> ③ **裸频道 URL 发现为空**——/qa ISSUE-003：manual 建号落库的 url 是 channel_url 裸地址
+> （如 `youtube.com/channel/UC…`），flat-playlist 顶层只有页签子播放列表，被 ISSUE-002 过滤后
+> discover 恒为 0 条，新视频永远不会被定时发现。需产品决策：注册时规范化为可列表 URL
+> （如 YouTube `/videos` 页签）或 discover 内做页签展开（平台相关，勿拍脑袋）。
 
 ## RAD-030 Storage Service
 
