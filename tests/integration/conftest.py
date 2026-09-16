@@ -67,6 +67,7 @@ def db_session(migrated_db: str) -> Iterator[Session]:
     yield session
     session.rollback()
     session.close()
-    with engine.connect() as conn:
+    # begin()：显式事务块，退出即提交（connect() 上下文在本栈上不保证提交）
+    with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {ALL_TABLES} RESTART IDENTITY CASCADE"))
     engine.dispose()

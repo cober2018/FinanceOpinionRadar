@@ -15,14 +15,25 @@ from app.domain.enums import (
 
 def test_stance_matches_prd() -> None:
     assert {s.value for s in Stance} == {
-        "strong_bullish", "bullish", "neutral", "bearish", "strong_bearish", "unclear",
+        "strong_bullish",
+        "bullish",
+        "neutral",
+        "bearish",
+        "strong_bearish",
+        "unclear",
     }
 
 
 def test_change_type_matches_prd() -> None:
     assert {c.value for c in ChangeType} == {
-        "new_thesis", "strengthening", "weakening", "stance_flip",
-        "horizon_change", "repeated", "expired", "unclear",
+        "new_thesis",
+        "strengthening",
+        "weakening",
+        "stance_flip",
+        "horizon_change",
+        "repeated",
+        "expired",
+        "unclear",
     }
 
 
@@ -32,8 +43,16 @@ def test_horizon_matches_prd() -> None:
 
 def test_source_item_status_value_set() -> None:
     assert {s.value for s in SourceItemStatus} == {
-        "discovered", "resolved", "media_ready", "transcribing", "transcribed",
-        "extracting", "reviewing", "ready", "failed", "ignored",
+        "discovered",
+        "resolved",
+        "media_ready",
+        "transcribing",
+        "transcribed",
+        "extracting",
+        "reviewing",
+        "ready",
+        "failed",
+        "ignored",
     }
 
 
@@ -47,19 +66,36 @@ def test_discovery_mode_values() -> None:
 
 def test_job_types_match_prd_p09() -> None:
     assert {j.value for j in JobType} == {
-        "DISCOVER", "RESOLVE_MEDIA", "DOWNLOAD_MEDIA", "FETCH_SUBTITLE", "TRANSCRIBE",
-        "ALIGN", "CHUNK", "EXTRACT_VIEWPOINT", "NORMALIZE_ENTITY", "REVIEW_VIEWPOINT",
-        "BUILD_SNAPSHOT", "BUILD_CONSENSUS",
+        "DISCOVER",
+        "RESOLVE_MEDIA",
+        "DOWNLOAD_MEDIA",
+        "FETCH_SUBTITLE",
+        "TRANSCRIBE",
+        "ALIGN",
+        "CHUNK",
+        "EXTRACT_VIEWPOINT",
+        "NORMALIZE_ENTITY",
+        "REVIEW_VIEWPOINT",
+        "BUILD_SNAPSHOT",
+        "BUILD_CONSENSUS",
     }
 
 
 def test_job_status_values() -> None:
     assert {j.value for j in JobStatus} == {
-        "queued", "running", "succeeded", "failed", "cancelled",
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
     }
 
 
 def test_verification_status_values() -> None:
     assert {v.value for v in VerificationStatus} == {
-        "candidate", "auto_verified", "review_required", "reviewed", "rejected",
+        "candidate",
+        "auto_verified",
+        "review_required",
+        "reviewed",
+        "rejected",
     }
