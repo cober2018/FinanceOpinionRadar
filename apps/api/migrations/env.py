@@ -16,8 +16,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# URL 运行时注入：优先级 测试显式覆盖 > Settings（.env/环境变量）
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# URL 注入：显式传入（测试/CI set_main_option）优先；否则从 Settings（.env/环境变量）取
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
