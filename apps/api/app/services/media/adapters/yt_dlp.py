@@ -5,8 +5,11 @@ import subprocess
 from datetime import UTC, datetime
 
 from app.services.media.contracts import (
+    AccountRef,
+    AdapterError,
     AdapterProcessError,
     AdapterTimeoutError,
+    DiscoveredItem,
     ResolvedMedia,
     SubtitleTrack,
 )
@@ -15,6 +18,7 @@ from app.services.media.url_guard import ensure_allowed_url
 _STDERR_TAIL_CHARS = 500
 # 存进 metadata 快照的 yt-dlp 键白名单（仅审计用途，schema 见 models/source.py docstring）
 _METADATA_KEYS = ("view_count", "like_count", "language", "description")
+_ENTRY_METADATA_KEYS = ("live_status", "view_count")
 
 
 class YtDlpProcess:
@@ -75,6 +79,23 @@ class GenericYtDlpAdapter:
         )
         return _parse_resolved(data)
 
+    def discover(self, account: AccountRef) -> list[DiscoveredItem]:
+        if not account.url:
+            raise AdapterError(f"账号 {account.external_id!r} 无 URL，无法 discover")
+        ensure_allowed_url(account.url, self._allowlist)
+        data = self._proc.run_json(
+            [
+                "--dump-single-json",
+                "--flat-playlist",
+                "--no-warnings",
+                "--playlist-items",
+                f"1:{self._playlist_max_items}",
+                account.url,
+            ]
+        )
+        entries = data.get("entries") or []
+        return [_parse_entry(e) for e in entries if e.get("id")]
+
     # --- EPIC-03 接口占位（契约完整性优先，实现随 ASR 落地） ---
 
     def fetch_subtitle(self, item, language: str | None = None):  # type: ignore[no-untyped-def]
@@ -124,3 +145,15 @@ def _parse_subtitles(data: dict) -> tuple[SubtitleTrack, ...]:
         if fmts:
             tracks.append(SubtitleTrack(language=lang, is_auto=True))
     return tuple(tracks)
+
+
+def _parse_entry(entry: dict) -> DiscoveredItem:
+    duration = entry.get("duration")
+    return DiscoveredItem(
+        external_item_id=str(entry["id"]),
+        title=entry.get("title"),
+        url=entry.get("url") or entry.get("webpage_url") or "",
+        published_at=None,  # flat-playlist 条目无日期；prepare_source_item（EPIC-03）resolve 时回填
+        duration_ms=int(duration * 1000) if duration is not None else None,
+        metadata={k: entry[k] for k in _ENTRY_METADATA_KEYS if k in entry},
+    )
