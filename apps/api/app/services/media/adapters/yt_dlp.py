@@ -2,13 +2,19 @@
 
 import json
 import subprocess
+from datetime import UTC, datetime
 
 from app.services.media.contracts import (
     AdapterProcessError,
     AdapterTimeoutError,
+    ResolvedMedia,
+    SubtitleTrack,
 )
+from app.services.media.url_guard import ensure_allowed_url
 
 _STDERR_TAIL_CHARS = 500
+# 存进 metadata 快照的 yt-dlp 键白名单（仅审计用途，schema 见 models/source.py docstring）
+_METADATA_KEYS = ("view_count", "like_count", "language", "description")
 
 
 class YtDlpProcess:
@@ -43,3 +49,78 @@ class YtDlpProcess:
             raise AdapterProcessError(
                 f"yt-dlp stdout 无法解析为 JSON: {proc.stdout[:_STDERR_TAIL_CHARS]!r}"
             ) from exc
+
+
+class GenericYtDlpAdapter:
+    """通用 yt-dlp 适配器：一个实现覆盖 YouTube/B 站/抖音等 yt-dlp 支持的平台。"""
+
+    def __init__(
+        self,
+        *,
+        binary: str = "yt-dlp",
+        timeout_sec: int = 60,
+        allowlist: tuple[str, ...] = ("youtube.com", "youtu.be", "bilibili.com", "douyin.com"),
+        playlist_max_items: int = 50,
+    ) -> None:
+        self._proc = YtDlpProcess(binary=binary, timeout_sec=timeout_sec)
+        self._allowlist = allowlist
+        self._playlist_max_items = playlist_max_items
+
+    # --- EPIC-02 实现 ---
+
+    def resolve(self, url: str) -> ResolvedMedia:
+        ensure_allowed_url(url, self._allowlist)
+        data = self._proc.run_json(
+            ["--dump-single-json", "--no-playlist", "--no-warnings", "--skip-download", url]
+        )
+        return _parse_resolved(data)
+
+    # --- EPIC-03 接口占位（契约完整性优先，实现随 ASR 落地） ---
+
+    def fetch_subtitle(self, item, language: str | None = None):  # type: ignore[no-untyped-def]
+        raise NotImplementedError("EPIC-03 RAD-030")
+
+    def download_media(self, item):  # type: ignore[no-untyped-def]
+        raise NotImplementedError("EPIC-03 RAD-031")
+
+
+def _parse_resolved(data: dict) -> ResolvedMedia:
+    platform = str(data.get("extractor_key", "generic")).lower()
+    duration = data.get("duration")
+    return ResolvedMedia(
+        platform=platform,
+        external_item_id=str(data.get("id", "")),
+        title=data.get("title"),
+        canonical_url=data.get("webpage_url") or "",
+        thumbnail_url=data.get("thumbnail"),
+        duration_ms=int(duration * 1000) if duration is not None else None,
+        item_type="live" if data.get("is_live") else "vod",
+        published_at=_parse_published_at(data),
+        channel_external_id=data.get("channel_id") or data.get("uploader_id"),
+        channel_name=data.get("channel") or data.get("uploader"),
+        subtitles=_parse_subtitles(data),
+        metadata={k: data[k] for k in _METADATA_KEYS if k in data},
+        channel_url=data.get("channel_url"),  # E3
+    )
+
+
+def _parse_published_at(data: dict) -> datetime | None:
+    ts = data.get("timestamp") or data.get("release_timestamp")
+    if ts:
+        return datetime.fromtimestamp(int(ts), tz=UTC)
+    raw = data.get("upload_date")  # yt-dlp: "YYYYMMDD"
+    if raw and len(str(raw)) == 8 and str(raw).isdigit():
+        d = str(raw)
+        return datetime(int(d[:4]), int(d[4:6]), int(d[6:8]), tzinfo=UTC)
+    return None
+
+
+def _parse_subtitles(data: dict) -> tuple[SubtitleTrack, ...]:
+    tracks: list[SubtitleTrack] = []
+    for lang, fmts in (data.get("subtitles") or {}).items():
+        if fmts:
+            tracks.append(SubtitleTrack(language=lang, is_auto=False))
+    for lang, fmts in (data.get("automatic_captions") or {}).items():
+        if fmts:
+            tracks.append(SubtitleTrack(language=lang, is_auto=True))
+    return tuple(tracks)
