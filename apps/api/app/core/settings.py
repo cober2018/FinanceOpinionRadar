@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Any
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LOCAL_DEV_DATABASE_URL = "postgresql+psycopg://radar:radar@localhost:5432/radar"
@@ -26,6 +26,25 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     db_pool_size: int = 5
     db_max_overflow: int = 10
+    # --- EPIC-02 媒体发现 ---
+    ytdlp_binary: str = "yt-dlp"
+    ytdlp_timeout_sec: int = 60
+    media_host_allowlist: tuple[str, ...] = (
+        "youtube.com",
+        "youtu.be",
+        "bilibili.com",
+        "douyin.com",
+    )
+    discover_playlist_max_items: int = 50
+    discover_dispatch_interval_sec: int = 300
+
+    @field_validator("media_host_allowlist", mode="before")
+    @classmethod
+    def _parse_allowlist(cls, v: object) -> object:
+        # 环境变量是 CSV（MEDIA_HOST_ALLOWLIST=youtube.com,bilibili.com），归一为小写 tuple
+        if isinstance(v, str):
+            return tuple(h.strip().lower() for h in v.split(",") if h.strip())
+        return v
 
     @model_validator(mode="before")
     @classmethod
