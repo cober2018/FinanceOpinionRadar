@@ -66,7 +66,7 @@ infra/docker/Dockerfile.api                     # 镜像装 yt-dlp
 - Create: `apps/api/migrations/util.py` + Modify `apps/api/migrations/env.py:21`
 - Test: `tests/unit/test_migrations_util.py`、`tests/unit/test_db_session.py`
 
-- [ ] **Step 1.1 seed 动态计数**：`scripts/seed_dev.py` 末行 `print("seed done: creators=3 ...")` 硬编码数字。改为 commit 后实际计数：
+- [x] **Step 1.1 seed 动态计数**：`scripts/seed_dev.py` 末行 `print("seed done: creators=3 ...")` 硬编码数字。改为 commit 后实际计数：
 
 ```python
         session.commit()
@@ -82,7 +82,7 @@ infra/docker/Dockerfile.api                     # 镜像装 yt-dlp
 
 （import 处补 `from app.db.models import Creator, Entity, SourceAccount, Topic`）
 
-- [ ] **Step 1.2 写失败测试：alembic % 转义**
+- [x] **Step 1.2 写失败测试：alembic % 转义**
 
 ```python
 # tests/unit/test_migrations_util.py
@@ -101,7 +101,7 @@ def test_no_percent_unchanged() -> None:
 运行：`.venv/bin/python -m pytest tests/unit/test_migrations_util.py -v` → FAIL（ModuleNotFoundError: migrations.util）
 （migrations 目录非包、也无 `__init__.py` —— 需先 `touch apps/api/migrations/__init__.py` 使 `migrations.util` 可导入。确认 alembic.ini 的 `script_location` 不受影响。）
 
-- [ ] **Step 1.3 实现**
+- [x] **Step 1.3 实现**
 
 ```python
 # apps/api/migrations/util.py
@@ -121,7 +121,7 @@ def alembic_escape(url: str) -> str:
 
 （env.py 顶部加 `from migrations.util import alembic_escape`）。跑 1.2 → PASS。
 
-- [ ] **Step 1.4 写失败测试：get_db 错误转译**
+- [x] **Step 1.4 写失败测试：get_db 错误转译**
 
 ```python
 # tests/unit/test_db_session.py
@@ -154,7 +154,7 @@ def test_get_db_closes_session(monkeypatch: pytest.MonkeyPatch) -> None:
 
 运行 → PASS（纯行为回归，实现已存在；若失败说明转译逻辑有缺陷则修 session.py）。
 
-- [ ] **Step 1.5 验证 + 提交**
+- [x] **Step 1.5 验证 + 提交**
 
 ```bash
 .venv/bin/python -m pytest tests/unit -v && make lint
@@ -170,7 +170,7 @@ git add -A && git commit -m "chore: 清偿 Plan #1 审查遗留（seed 动态计
 - Create: `apps/api/app/services/media/contracts.py`
 - Test: `tests/unit/test_media_contracts.py`
 
-- [ ] **Step 2.1 写失败测试**
+- [x] **Step 2.1 写失败测试**
 
 ```python
 # tests/unit/test_media_contracts.py
@@ -229,9 +229,9 @@ def test_adapter_error_hierarchy() -> None:
     assert issubclass(AdapterTimeoutError, AdapterError)
 ```
 
-- [ ] **Step 2.2 跑测试确认失败**（ModuleNotFoundError）
+- [x] **Step 2.2 跑测试确认失败**（ModuleNotFoundError）
 
-- [ ] **Step 2.3 实现**
+- [x] **Step 2.3 实现**
 
 ```python
 # apps/api/app/services/media/contracts.py
@@ -335,9 +335,9 @@ class MediaSourceAdapter(Protocol):
     def download_media(self, item: ItemRef) -> DownloadResult: ...
 ```
 
-- [ ] **Step 2.4 跑测试通过；mypy：`.venv/bin/python -m mypy --config-file apps/api/pyproject.toml apps/api/app`**
+- [x] **Step 2.4 跑测试通过；mypy：`.venv/bin/python -m mypy --config-file apps/api/pyproject.toml apps/api/app`**
 
-- [ ] **Step 2.5 提交** `git commit -m "feat: 定义媒体来源 Adapter 契约（RAD-020）"`
+- [x] **Step 2.5 提交** `git commit -m "feat: 定义媒体来源 Adapter 契约（RAD-020）"`
 
 ---
 
@@ -347,7 +347,7 @@ class MediaSourceAdapter(Protocol):
 - Create: `apps/api/app/services/media/url_guard.py`
 - Test: `tests/unit/test_media_url_guard.py`
 
-- [ ] **Step 3.1 写失败测试**
+- [x] **Step 3.1 写失败测试**
 
 ```python
 # tests/unit/test_media_url_guard.py
@@ -389,7 +389,7 @@ def test_error_message_names_url_and_allowlist() -> None:
         ensure_allowed_url("https://evil.com/x", ALLOW)
 ```
 
-- [ ] **Step 3.2 确认失败 → 实现**
+- [x] **Step 3.2 确认失败 → 实现**
 
 ```python
 # apps/api/app/services/media/url_guard.py
@@ -423,7 +423,7 @@ def ensure_allowed_url(raw_url: str, allowlist: tuple[str, ...]) -> None:
         )
 ```
 
-- [ ] **Step 3.3 测试通过 → 提交** `git commit -m "feat: 媒体 URL scheme/主机白名单校验"`
+- [x] **Step 3.3 测试通过 → 提交** `git commit -m "feat: 媒体 URL scheme/主机白名单校验"`
 
 ---
 
@@ -433,7 +433,7 @@ def ensure_allowed_url(raw_url: str, allowlist: tuple[str, ...]) -> None:
 - Modify: `apps/api/app/core/settings.py`
 - Test: `tests/unit/test_settings_media.py`
 
-- [ ] **Step 4.1 写失败测试**
+- [x] **Step 4.1 写失败测试**
 
 ```python
 # tests/unit/test_settings_media.py
@@ -465,7 +465,7 @@ def test_empty_allowlist_entry_dropped() -> None:
     assert s.media_host_allowlist == ("youtube.com",)
 ```
 
-- [ ] **Step 4.2 确认失败 → 实现**（settings.py 增加字段 + validator）
+- [x] **Step 4.2 确认失败 → 实现**（settings.py 增加字段 + validator）
 
 ```python
     # --- EPIC-02 媒体发现 ---
@@ -493,7 +493,7 @@ def test_empty_allowlist_entry_dropped() -> None:
 
 env 名自动映射 `MEDIA_HOST_ALLOWLIST`。）
 
-- [ ] **Step 4.3 测试通过 → 提交** `git commit -m "feat: 媒体发现配置项（ytdlp 二进制/超时/白名单/调度）"`
+- [x] **Step 4.3 测试通过 → 提交** `git commit -m "feat: 媒体发现配置项（ytdlp 二进制/超时/白名单/调度）"`
 
 `.env.example` 追加（Task 11 一并做，此处只动 settings+tests）。
 
@@ -507,7 +507,7 @@ env 名自动映射 `MEDIA_HOST_ALLOWLIST`。）
 - Create: `apps/api/app/services/media/adapters/yt_dlp.py`（本任务只做 `_run_ytdlp` 进程封装）
 - Test: `tests/unit/test_ytdlp_process.py`
 
-- [ ] **Step 5.1 假二进制**（env 驱动行为，覆盖 RAD-021 全部 fixture 场景）
+- [x] **Step 5.1 假二进制**（env 驱动行为，覆盖 RAD-021 全部 fixture 场景）
 
 ```python
 #!/usr/bin/env python3
@@ -543,7 +543,7 @@ print(json.dumps(payload, ensure_ascii=False))
 
 `chmod +x tests/fixtures/media/fake_ytdlp.py`（git 保留执行位）。
 
-- [ ] **Step 5.2 写失败测试**（子进程封装层：超时/stderr/无 shell）
+- [x] **Step 5.2 写失败测试**（子进程封装层：超时/stderr/无 shell）
 
 ```python
 # tests/unit/test_ytdlp_process.py
@@ -601,7 +601,7 @@ def test_missing_binary_raises_with_hint(monkeypatch: pytest.MonkeyPatch) -> Non
 
 （E1：helper 已统一 monkeypatch；方法名统一 `run_json`。）
 
-- [ ] **Step 5.3 实现**
+- [x] **Step 5.3 实现**
 
 ```python
 # apps/api/app/services/media/adapters/yt_dlp.py
@@ -653,7 +653,7 @@ class YtDlpProcess:
 
 （测试里的方法名同步为 `run_json`。）
 
-- [ ] **Step 5.4 测试通过 → 提交** `git commit -m "feat: 受控 yt-dlp 子进程封装（超时/stderr/JSON 校验）"`
+- [x] **Step 5.4 测试通过 → 提交** `git commit -m "feat: 受控 yt-dlp 子进程封装（超时/stderr/JSON 校验）"`
 
 ---
 
@@ -663,7 +663,7 @@ class YtDlpProcess:
 - Modify: `apps/api/app/services/media/adapters/yt_dlp.py`（追加 adapter 类 + 解析函数）
 - Test: `tests/unit/test_ytdlp_adapter_resolve.py`
 
-- [ ] **Step 6.1 写失败测试**（RAD-021 五类 fixture 全覆盖）
+- [x] **Step 6.1 写失败测试**（RAD-021 五类 fixture 全覆盖）
 
 ```python
 # tests/unit/test_ytdlp_adapter_resolve.py
@@ -761,7 +761,7 @@ def test_resolve_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
         adapter.resolve(URL)
 ```
 
-- [ ] **Step 6.2 确认失败 → 实现**（yt_dlp.py 追加）
+- [x] **Step 6.2 确认失败 → 实现**（yt_dlp.py 追加）
 
 ```python
 from datetime import UTC, datetime
@@ -872,7 +872,7 @@ def _parse_subtitles(data: dict) -> tuple[SubtitleTrack, ...]:
 
 注意：`ensure_allowed_url` 从 `url_guard` import 而非定义在 contracts —— Task 3 的 url_guard 已提供。`_parse_entry` 在 Task 7 一并补（本任务 discover 会先缺，mypy 报错 → 本任务先给最小 `_parse_entry` 占位并 raise NotImplementedError? **不**：把 discover 整体留到 Task 7，本任务只加 resolve + _parse_* —— 类方法 discover 同步追加，避免中间态编译错误。）
 
-- [ ] **Step 6.2b 补充边界测试（Eng GAP-2）**：`_parse_published_at` 的 timestamp 分支（upload_date 分支已被 SUCCESS_PAYLOAD 覆盖）：
+- [x] **Step 6.2b 补充边界测试（Eng GAP-2）**：`_parse_published_at` 的 timestamp 分支（upload_date 分支已被 SUCCESS_PAYLOAD 覆盖）：
 
 ```python
 def test_resolve_published_at_from_unix_timestamp(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -881,7 +881,7 @@ def test_resolve_published_at_from_unix_timestamp(monkeypatch: pytest.MonkeyPatc
     assert media.published_at == datetime.fromtimestamp(1773792000, tz=UTC)
 ```
 
-- [ ] **Step 6.3 测试通过 → 提交** `git commit -m "feat: GenericYtDlpAdapter.resolve 统一元数据解析（RAD-021）"`
+- [x] **Step 6.3 测试通过 → 提交** `git commit -m "feat: GenericYtDlpAdapter.resolve 统一元数据解析（RAD-021）"`
 
 ---
 
@@ -891,7 +891,7 @@ def test_resolve_published_at_from_unix_timestamp(monkeypatch: pytest.MonkeyPatc
 - Modify: `apps/api/app/services/media/adapters/yt_dlp.py`（补 discover + _parse_entry）
 - Test: `tests/unit/test_ytdlp_adapter_discover.py`
 
-- [ ] **Step 7.1 写失败测试**
+- [x] **Step 7.1 写失败测试**
 
 ```python
 # tests/unit/test_ytdlp_adapter_discover.py
@@ -954,7 +954,7 @@ def test_discover_rejects_bad_account_url(monkeypatch: pytest.MonkeyPatch) -> No
         make(monkeypatch, "success", PLAYLIST).discover(bad)
 ```
 
-- [ ] **Step 7.2 确认失败 → 实现**
+- [x] **Step 7.2 确认失败 → 实现**
 
 ```python
 def _parse_entry(entry: dict) -> DiscoveredItem:
@@ -969,7 +969,7 @@ def _parse_entry(entry: dict) -> DiscoveredItem:
     )
 ```
 
-- [ ] **Step 7.3 测试通过 → 提交** `git commit -m "feat: GenericYtDlpAdapter.discover 频道条目发现（RAD-021）"`
+- [x] **Step 7.3 测试通过 → 提交** `git commit -m "feat: GenericYtDlpAdapter.discover 频道条目发现（RAD-021）"`
 
 ---
 
@@ -980,7 +980,7 @@ def _parse_entry(entry: dict) -> DiscoveredItem:
 - Modify: `apps/api/app/repositories/__init__.py`（如有导出列表）
 - Test: `tests/integration/test_source_item_repo.py`
 
-- [ ] **Step 8.1 写失败测试**
+- [x] **Step 8.1 写失败测试**
 
 ```python
 # tests/integration/test_source_item_repo.py
@@ -1039,7 +1039,7 @@ def test_upsert_returns_created_flag(db_session: Session) -> None:
 
 （第二测试的调用形状由实现定稿——若选择返回 `(item, created)` 二元组，统一两处调用。）
 
-- [ ] **Step 8.2 确认失败 → 实现**
+- [x] **Step 8.2 确认失败 → 实现**
 
 ```python
 # apps/api/app/repositories/source_items.py
@@ -1098,9 +1098,9 @@ class SourceItemRepository(BaseRepository[SourceItem]):
 
 （定稿实现采用最直白方案：`INSERT ... ON CONFLICT DO UPDATE` 后 `SELECT` 回查行；新建判定用 `xmax = 0` 系统列或先 SELECT 后 INSERT 的 PG 原子写法。**最简正确**：先 SELECT，命中即更新返回 `(row, False)`；未命中走 ON CONFLICT DO UPDATE（兜并发）后回查返回 `(row, True)`。并发窗口极小且有唯一键兜底，语义清晰。）
 
-- [ ] **Step 8.3 跑集成测试（需 compose 栈）：`.venv/bin/python -m pytest tests/integration/test_source_item_repo.py -v`**
+- [x] **Step 8.3 跑集成测试（需 compose 栈）：`.venv/bin/python -m pytest tests/integration/test_source_item_repo.py -v`**
 
-- [ ] **Step 8.4 提交** `git commit -m "feat: SourceItemRepository 幂等 upsert（含新建标志）"`
+- [x] **Step 8.4 提交** `git commit -m "feat: SourceItemRepository 幂等 upsert（含新建标志）"`
 
 ---
 
@@ -1110,7 +1110,7 @@ class SourceItemRepository(BaseRepository[SourceItem]):
 - Create: `apps/api/app/services/discovery.py`
 - Test: `tests/integration/test_discovery_service.py`
 
-- [ ] **Step 9.1 写失败测试**（用 Stub Adapter，不打网络）
+- [x] **Step 9.1 写失败测试**（用 Stub Adapter，不打网络）
 
 ```python
 # tests/integration/test_discovery_service.py
@@ -1243,7 +1243,7 @@ def test_discover_account_failure_increments_counter(db_session: Session) -> Non
 
 （`send` 参数注入投递函数，任务层传 `celery_app.send_task`，测试传收集 lambda——C7 的可测缝隙。）
 
-- [ ] **Step 9.2 确认失败 → 实现**
+- [x] **Step 9.2 确认失败 → 实现**
 
 ```python
 # apps/api/app/services/discovery.py
@@ -1370,7 +1370,7 @@ Celery 自动重试明确不用（会双计 failure_count）：
         raise
 ```
 
-- [ ] **Step 9.3 集成测试通过 → 提交** `git commit -m "feat: 来源发现编排服务（预览/手工创建/账号发现）"`
+- [x] **Step 9.3 集成测试通过 → 提交** `git commit -m "feat: 来源发现编排服务（预览/手工创建/账号发现）"`
 
 ---
 
@@ -1381,7 +1381,7 @@ Celery 自动重试明确不用（会双计 failure_count）：
 - Modify: `apps/api/app/main.py`（`app.include_router(api_router)`）
 - Test: `tests/unit/test_api_source_items.py`
 
-- [ ] **Step 10.1 写失败测试**
+- [x] **Step 10.1 写失败测试**
 
 ```python
 # tests/unit/test_api_source_items.py
@@ -1471,7 +1471,7 @@ def test_resolve_url_timeout_504(client, monkeypatch):  # GAP-3
 
 （`POST /source-items`（写库）的端到端在集成侧补一个薄用例 `tests/integration/test_api_create_source_item.py`：StubAdapter + 真库 → 201 → 幂等再调 200。）
 
-- [ ] **Step 10.2 确认失败 → 实现**
+- [x] **Step 10.2 确认失败 → 实现**
 
 ```python
 # apps/api/app/services/media/factory.py  （F1：独立于 api/worker，二者共用）
@@ -1605,9 +1605,9 @@ from app.api.v1 import api_router
 app.include_router(api_router)
 ```
 
-- [ ] **Step 10.3 单测 + 集成用例通过；`make dev` 手测 OpenAPI（/docs 出现两个新操作）**
+- [x] **Step 10.3 单测 + 集成用例通过；`make dev` 手测 OpenAPI（/docs 出现两个新操作）**
 
-- [ ] **Step 10.4 提交** `git commit -m "feat: 手工 URL 解析与创建 API（RAD-022）"`
+- [x] **Step 10.4 提交** `git commit -m "feat: 手工 URL 解析与创建 API（RAD-022）"`
 
 ---
 
@@ -1618,7 +1618,7 @@ app.include_router(api_router)
 - Modify: `apps/api/app/worker/celery_app.py`（beat_schedule）、`infra/docker/Dockerfile.api`（装 yt-dlp）、`Makefile`（worker-beat 目标）
 - Test: `tests/integration/test_discover_tasks.py`
 
-- [ ] **Step 11.1 写失败测试**（任务函数直调 `.run()`，不依赖 broker）
+- [x] **Step 11.1 写失败测试**（任务函数直调 `.run()`，不依赖 broker）
 
 ```python
 # tests/integration/test_discover_tasks.py
@@ -1638,7 +1638,7 @@ def test_failure_marks_task_failed(db_session, monkeypatch):
     ...  # StubAdapter 抛 → pytest.raises(AdapterError)（任务直调透传）+ failure_count==1
 ```
 
-- [ ] **Step 11.2 确认失败 → 实现**
+- [x] **Step 11.2 确认失败 → 实现**
 
 ```python
 # apps/api/app/worker/tasks.py
@@ -1722,9 +1722,9 @@ worker-beat: ## 启动 Celery worker + beat（来源发现调度）
 	$(PYTHON) -m celery -A app.worker.celery_app worker --beat --loglevel=info
 ```
 
-- [ ] **Step 11.3 集成测试通过；`docker build -f infra/docker/Dockerfile.api .` 本地过**
+- [x] **Step 11.3 集成测试通过；`docker build -f infra/docker/Dockerfile.api .` 本地过**
 
-- [ ] **Step 11.3b beat 配置断言（Eng GAP-4）**：`tests/integration/test_discover_tasks.py` 追加——
+- [x] **Step 11.3b beat 配置断言（Eng GAP-4）**：`tests/integration/test_discover_tasks.py` 追加——
 
 ```python
 def test_beat_schedule_wired():
@@ -1734,11 +1734,11 @@ def test_beat_schedule_wired():
     assert sched["schedule"] > 0
 ```
 
-- [ ] **Step 11.4 EPIC-03 契约注记（F4）**：本计划向下游投递的 `prepare_source_item(item_id)` 必须满足——
+- [x] **Step 11.4 EPIC-03 契约注记（F4）**：本计划向下游投递的 `prepare_source_item(item_id)` 必须满足——
   ① 任务幂等（同 item 重复投递安全：并发 discover 双判"新建"会双投）；② EPIC-03 首个任务需补扫存量
   `status='discovered'` 条目（G1：commit 后 send_task 失败不重投）。写入执行计划 EPIC-03 章节顶部注记。
 
-- [ ] **Step 11.5 提交** `git commit -m "feat: 账号发现 Celery 任务与到期派发调度（RAD-023）"`
+- [x] **Step 11.5 提交** `git commit -m "feat: 账号发现 Celery 任务与到期派发调度（RAD-023）"`
 
 ---
 
@@ -1748,9 +1748,9 @@ def test_beat_schedule_wired():
 - Create: `docs/adr/0007-ytdlp-subprocess-and-sync-adapter.md`
 - Modify: `.env.example`、`README.md`（已完成/TODO/目录结构/排障）、本计划文档勾选
 
-- [ ] **Step 12.1 ADR-0007**（Context/Decision/Consequences 三段：C1 同步契约偏离执行计划 async 伪码、C2 子进程而非库、超时与白名单安全边界、真异步切换挂 ADR-0005 阈值）
+- [x] **Step 12.1 ADR-0007**（Context/Decision/Consequences 三段：C1 同步契约偏离执行计划 async 伪码、C2 子进程而非库、超时与白名单安全边界、真异步切换挂 ADR-0005 阈值）
 
-- [ ] **Step 12.2 `.env.example` 追加**（含注释说明默认值即开箱可用）：
+- [x] **Step 12.2 `.env.example` 追加**（含注释说明默认值即开箱可用）：
 
 ```bash
 # --- Media Discovery (EPIC-02) ---
@@ -1761,7 +1761,7 @@ def test_beat_schedule_wired():
 # DISCOVER_DISPATCH_INTERVAL_SEC=300
 ```
 
-- [ ] **Step 12.3 README**：已完成加 RAD-020~023 行；TODO 删"ingestion 管道"改 EPIC-03+；目录结构补 services/api 层；排障加两行（yt-dlp 未安装→`YTDLP_BINARY` 指路/镜像内置；resolve-url 400 白名单→MEDIA_HOST_ALLOWLIST）；快速开始后加"手工解析一个视频"用法段（DX1）：
+- [x] **Step 12.3 README**：已完成加 RAD-020~023 行；TODO 删"ingestion 管道"改 EPIC-03+；目录结构补 services/api 层；排障加两行（yt-dlp 未安装→`YTDLP_BINARY` 指路/镜像内置；resolve-url 400 白名单→MEDIA_HOST_ALLOWLIST）；快速开始后加"手工解析一个视频"用法段（DX1）：
 
 ```bash
 curl -fsS -X POST localhost:8000/api/v1/source-items/resolve-url   -H 'content-type: application/json'   -d '{"url":"https://www.youtube.com/watch?v=<视频id>"}'
@@ -1772,7 +1772,7 @@ curl -fsS -X POST localhost:8000/api/v1/source-items/resolve-url   -H 'content-t
 
 （示例含真实响应样例；确认无误后 POST /api/v1/source-items 同 body 落库。定时发现：`make worker-beat` 后 tail 日志观察 `discover_ok` / `discover_failed`。）
 
-- [ ] **Step 12.4 全量验证矩阵**：
+- [x] **Step 12.4 全量验证矩阵**：
 
 ```bash
 make lint                                    # ruff + mypy 全绿
@@ -1782,7 +1782,7 @@ curl -fsS localhost:8000/api/v1/health       # 回归 D19 契约
 git push && gh run watch                     # CI 6/6 绿
 ```
 
-- [ ] **Step 12.5 提交** `git commit -m "docs: ADR-0007 与 EPIC-02 文档收尾"`
+- [x] **Step 12.5 提交** `git commit -m "docs: ADR-0007 与 EPIC-02 文档收尾"`
 
 ---
 
@@ -1824,6 +1824,13 @@ git push && gh run watch                     # CI 6/6 绿
 - GAP-3: `test_resolve_url_timeout_504` 入 test_api_source_items
 - GAP-4: `test_beat_schedule_wired` 入 test_discover_tasks
 <!-- /autoplan-accepted:eng -->
+
+## 实施记录（2026-09-17）
+
+12 任务全部完成，12 个提交（6658f08…8c2810b）。90 tests / lint+mypy 绿 / docker 镜像含 yt-dlp 构建成功 / health 契约回归 OK / CI 35159744311 6/6 绿。过程中修正（偏离计划的实现细节，均为外科式）：
+- Task 10：端点改 `Annotated[..., Depends(...)]`（ruff B008）；集成测试需同时 override `get_db`（否则 TestClient 写开发库，已清理误写行）
+- Task 11：`list_due` 去 now 入参（用 `func.now()` DB 时钟防多机漂移）；任务测试 monkeypatch `worker_tasks.get_session_factory` 指向 radar_test
+- 模型无 relationship：集成测试经 `creator_id` 显式查 Creator（Plan #1 未建关系，符合现状）
 ## Review record
 
 <!-- autoplan:ceo (SELECTIVE EXPANSION, 2026-09-17) — native in-host; Codex outside voice unavailable (model_unusable); Claude subagent skipped per user standing order (no subagents in this repo) -->
