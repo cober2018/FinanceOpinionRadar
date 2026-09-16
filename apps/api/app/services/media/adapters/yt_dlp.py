@@ -94,7 +94,8 @@ class GenericYtDlpAdapter:
             ]
         )
         entries = data.get("entries") or []
-        return [_parse_entry(e) for e in entries if e.get("id")]
+        # _type='playlist' 是频道页签（Videos/Shorts/Live）等子播放列表，真条目是 'url'
+        return [_parse_entry(e) for e in entries if e.get("id") and e.get("_type") != "playlist"]
 
     # --- EPIC-03 接口占位（契约完整性优先，实现随 ASR 落地） ---
 
