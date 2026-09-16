@@ -39,5 +39,6 @@ python_version = "3.12"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "redis.*", "pydantic_settings"]
+# "x.*" 不匹配顶层模块本身，需同时列出（celery 装有包但无 py.typed，报 import-untyped）
+module = ["celery", "celery.*", "redis", "redis.*", "pydantic_settings"]
 ignore_missing_imports = true

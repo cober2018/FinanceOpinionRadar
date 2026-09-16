@@ -52,7 +52,7 @@ doctor: ## 检查本地开发环境 (docker 项在 Task 5 前仅 WARN)
 
 lint: ## 运行 ruff + mypy 静态检查
 	$(PYTHON) -m ruff check apps/api tests scripts
-	$(PYTHON) -m mypy apps/api/app
+	$(PYTHON) -m mypy --config-file apps/api/pyproject.toml apps/api/app
 
 format: ## 用 ruff 格式化后端代码
 	$(PYTHON) -m ruff format apps/api tests scripts
