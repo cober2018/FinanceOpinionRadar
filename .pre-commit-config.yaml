@@ -1,0 +1,18 @@
+# RAD-001d: 提交前质量门禁 — ruff (格式化 + 静态检查) 与基础文本卫生。
+# ruff hooks 只作用于后端代码目录 (apps/api | tests | scripts), 不碰 apps/web;
+# 文本卫生 hooks 作用于仓库全部 git 跟踪文件 (node_modules/dist 已被 gitignore 排除)。
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.7  # 与 .venv 内 ruff 版本一致 (ruff 0.16.7)
+    hooks:
+      - id: ruff-format
+        files: ^(apps/api|tests|scripts)/.*\.py$
+      - id: ruff-check
+        args: [--fix]
+        files: ^(apps/api|tests|scripts)/.*\.py$
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
