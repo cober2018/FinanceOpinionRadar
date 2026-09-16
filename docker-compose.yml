@@ -13,7 +13,7 @@ services:
       POSTGRES_USER: radar
       POSTGRES_PASSWORD: radar
       POSTGRES_DB: radar
-    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U radar -d radar"]
@@ -23,7 +23,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["${REDIS_PORT:-6379}:6379"]
+    ports: ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -37,8 +37,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-radar}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-radar-secret}
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes: ["miniodata:/data"]
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
