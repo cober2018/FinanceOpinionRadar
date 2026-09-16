@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.models import SourceAccount
@@ -50,3 +50,24 @@ class SourceAccountRepository(BaseRepository[SourceAccount]):
                 SourceAccount.external_id == external_id,
             )
         ).one()
+
+    def list_due(self, *, limit: int = 100) -> list[SourceAccount]:
+        """到期可轮询账号：enabled 且 last_success_at + poll_interval_sec < 数据库时钟（E5）。
+
+        用 func.now()（DB 时钟）而非应用时钟，避免多机时钟漂移；空 last_success_at 视为到期。
+        """
+        stmt = (
+            select(SourceAccount)
+            .where(
+                SourceAccount.enabled.is_(True),
+                or_(
+                    SourceAccount.last_success_at.is_(None),
+                    func.now()
+                    > SourceAccount.last_success_at
+                    + SourceAccount.poll_interval_sec * text("interval '1 second'"),
+                ),
+            )
+            .order_by(SourceAccount.id)
+            .limit(limit)
+        )
+        return list(self.session.scalars(stmt).all())

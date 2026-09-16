@@ -9,7 +9,7 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 # 层1：依赖（代码改动不失效）
 COPY apps/api/pyproject.toml ./
 RUN mkdir -p app && touch app/__init__.py \
-    && pip install --no-cache-dir . \
+    && pip install --no-cache-dir . "yt-dlp>=2026.3.17" \
     && rm -rf app
 
 # 层2：应用代码

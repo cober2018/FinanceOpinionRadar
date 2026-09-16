@@ -69,6 +69,9 @@ migrate: ## 执行数据库迁移至最新版本
 worker: ## 启动 Celery worker
 	$(PYTHON) -m celery -A app.worker.celery_app worker --loglevel=info
 
+worker-beat: ## 启动 Celery worker + beat（来源发现调度）
+	$(PYTHON) -m celery -A app.worker.celery_app worker --beat --loglevel=info
+
 seed: ## 写入开发用种子数据
 	$(PYTHON) scripts/seed_dev.py
 
