@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 from app.core.settings import get_settings
 from app.db import models  # noqa: F401  导入以将全部模型注册进 metadata（Task 8 落地）
 from app.db.base import Base
+from migrations.util import alembic_escape
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -16,9 +17,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# URL 注入：显式传入（测试/CI set_main_option）优先；否则从 Settings（.env/环境变量）取
+# URL 注入：显式传入（测试/CI set_main_option）优先；否则从 Settings（.env/环境变量）取。
+# 口令含 % 时 set_main_option 的 %-插值会炸，alembic_escape 翻倍转义（Plan #1 审查遗留）。
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_main_option("sqlalchemy.url", get_settings().database_url)
+    config.set_main_option("sqlalchemy.url", alembic_escape(get_settings().database_url))
 
 # add your model's MetaData object here
 # for 'autogenerate' support

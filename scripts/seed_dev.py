@@ -1,6 +1,6 @@
 """开发种子数据：3 creators / 5 topics / 10 entities / 2 source accounts。幂等。"""
 
-from app.db.models import Entity, Topic
+from app.db.models import Creator, Entity, SourceAccount, Topic
 from app.repositories import CreatorRepository, SourceAccountRepository
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -79,7 +79,14 @@ def run_seed(factory: sessionmaker) -> None:
             )
 
         session.commit()
-        print("seed done: creators=3 topics=5 entities=10 source_accounts=2")
+        # 动态计数：数据源常量变更时 print 不会撒谎（Plan #1 审查遗留）
+        print(
+            "seed done: "
+            f"creators={session.query(Creator).count()} "
+            f"topics={session.query(Topic).count()} "
+            f"entities={session.query(Entity).count()} "
+            f"source_accounts={session.query(SourceAccount).count()}"
+        )
 
 
 if __name__ == "__main__":
