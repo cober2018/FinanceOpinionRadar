@@ -422,6 +422,12 @@ discover_source_account(account_id)
 
 # 6. EPIC-03：媒体、字幕与 ASR
 
+> **上游契约注记（EPIC-02 /autoplan F4+G1，2026-09-17）**：EPIC-02 已按名投递
+> `prepare_source_item(item_id)`。本 EPIC 首个任务必须满足两条硬约束：
+> ① **prepare_source_item 任务幂等**——同 item 重复投递安全（并发 discover 双判"新建"会双投）；
+> ② **存量补扫**——首个任务落地时补扫 `status='discovered'` 的存量条目
+> （G1：discover commit 后 send_task 若失败不会重投，条目会滞留 discovered）。
+
 ## RAD-030 Storage Service
 
 文件：
