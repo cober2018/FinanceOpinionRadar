@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.models import SourceItem
@@ -6,6 +6,8 @@ from app.repositories.base import BaseRepository
 
 # 冲突时刷新的字段（标题/时长/封面等平台可变元数据）；status/创建信息不回写
 _REFRESH_FIELDS = ("title", "duration_ms", "thumbnail_url", "canonical_url", "published_at")
+# 可空enrichment字段：上游缺席（None）时保留现值，不得把已解析数据冲成 NULL
+_NULLABLE_REFRESH = ("title", "thumbnail_url", "published_at")
 
 
 class SourceItemRepository(BaseRepository[SourceItem]):
@@ -32,12 +34,16 @@ class SourceItemRepository(BaseRepository[SourceItem]):
         """
         existing = self._select(account_id=source_account_id, external=external_item_id)
         if existing is not None:
-            existing.title = title
-            existing.duration_ms = duration_ms
-            existing.thumbnail_url = thumbnail_url
-            existing.canonical_url = canonical_url
-            if published_at is not None:
-                existing.published_at = published_at
+            incoming = {
+                "title": title,
+                "duration_ms": duration_ms,
+                "thumbnail_url": thumbnail_url,
+                "canonical_url": canonical_url,
+                "published_at": published_at,
+            }
+            for f, value in incoming.items():
+                if value is not None or f not in _NULLABLE_REFRESH:
+                    setattr(existing, f, value)
             self.session.flush()
             return existing, False
 
@@ -56,7 +62,14 @@ class SourceItemRepository(BaseRepository[SourceItem]):
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=["source_account_id", "external_item_id"],
-            set_={f: getattr(stmt.excluded, f) for f in _REFRESH_FIELDS},
+            set_={
+                f: (
+                    func.coalesce(getattr(stmt.excluded, f), getattr(SourceItem, f))
+                    if f in _NULLABLE_REFRESH
+                    else getattr(stmt.excluded, f)
+                )
+                for f in _REFRESH_FIELDS
+            },
         )
         self.session.execute(stmt)
         row = self._select(account_id=source_account_id, external=external_item_id)

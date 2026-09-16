@@ -36,8 +36,9 @@ class SourceAccountRepository(BaseRepository[SourceAccount]):
         stmt = stmt.on_conflict_do_update(
             index_elements=["platform", "external_id"],
             set_={
-                "handle": stmt.excluded.handle,
-                "url": stmt.excluded.url,
+                # url/handle 是可空 enrichment：本次解析缺席（None）时保留现值，不冲掉旧值
+                "handle": func.coalesce(stmt.excluded.handle, SourceAccount.handle),
+                "url": func.coalesce(stmt.excluded.url, SourceAccount.url),
                 "discovery_mode": stmt.excluded.discovery_mode,
                 "enabled": stmt.excluded.enabled,
             },
