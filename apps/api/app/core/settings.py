@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     env: str = "dev"
-    # 留空默认值用于区分“显式提供”与“未提供”：非 dev 环境未提供即拒绝启动
+    # 留空默认值用于区分“显式提供”与“未提供或留空”：非 dev 环境未提供即拒绝启动
     database_url: str = ""
     redis_url: str = "redis://localhost:6379/0"
     s3_endpoint_url: str = "http://localhost:9000"
@@ -32,9 +32,19 @@ class Settings(BaseSettings):
     def _resolve_database_url(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
-        if data.get("database_url"):
-            return data
-        if data.get("env", "dev") == "dev":
+        # strip：防止空格串绕过“未提供或留空”判定
+        env = data.get("env", "dev")
+        if isinstance(env, str):
+            env = env.strip()
+        url = data.get("database_url")
+        if isinstance(url, str):
+            url = url.strip()
+        if url:
+            normalized = {**data, "database_url": url}
+            if "env" in normalized and isinstance(normalized["env"], str):
+                normalized["env"] = env
+            return normalized
+        if env == "dev":
             return {**data, "database_url": LOCAL_DEV_DATABASE_URL}
         raise ValueError(
             "DATABASE_URL is required when env is not 'dev'; "
