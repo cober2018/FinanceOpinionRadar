@@ -14,3 +14,4 @@ htmlcov/
 *.tsbuildinfo
 *.egg-info/
 .DS_Store
+celerybeat-schedule*
