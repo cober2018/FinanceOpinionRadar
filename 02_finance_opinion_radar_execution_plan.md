@@ -430,7 +430,10 @@ discover_source_account(account_id)
 > ③ **裸频道 URL 发现为空**——/qa ISSUE-003：manual 建号落库的 url 是 channel_url 裸地址
 > （如 `youtube.com/channel/UC…`），flat-playlist 顶层只有页签子播放列表，被 ISSUE-002 过滤后
 > discover 恒为 0 条，新视频永远不会被定时发现。需产品决策：注册时规范化为可列表 URL
-> （如 YouTube `/videos` 页签）或 discover 内做页签展开（平台相关，勿拍脑袋）。
+> （如 YouTube `/videos` 页签）或 discover 内做页签展开（平台相关，勿拍脑袋）；
+> ④ **resolve 拒绝非单条内容 URL**——代码审查 Minor：裸频道/纯播放列表 URL 走 resolve 会
+> 60s 超时→504（实测无数据污染）。EPIC-03 动 adapter 时顺带在 `_parse_resolved` 拒收
+> `_type='playlist'` 载荷，提前失败。
 
 ## RAD-030 Storage Service
 

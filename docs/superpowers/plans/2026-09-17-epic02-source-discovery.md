@@ -1842,6 +1842,24 @@ git push && gh run watch                     # CI 6/6 绿
   被当内容条目入库（id=频道 id，title="xxx - Shorts"）→ 23f1cc7 过滤 + 回归 db2bad0
 - ISSUE-003（Medium，挂 EPIC-03 注记③）：manual 建号落裸 channel_url，页签过滤后 discover 恒 0 条
 - 收尾状态：93 tests / lint+mypy 绿 / 全链路 dispatch→discover→prepare 投递实测走通
+
+### 代码审查（2026-09-17，链路第 7 步）
+
+范围 6658f08^..HEAD（EPIC-02 全部实现 + /qa 修复），主会话逐文件审查（用户既定不派 subagent），
+模板 superpowers:requesting-code-review/code-reviewer.md，安全重点：subprocess 参数注入 / URL 白名单 / SQL 拼接 / 秘钥。
+
+- **Critical: 0**。**Important: 1 → 已修复**：upsert 冲突分支 NULL 回写（source_item.published_at/
+  title/thumbnail_url、source_account.url/handle 可被缺席值冲掉）→ 统一"enrichment 字段 None 不回写"
+  （86e8283 + 回归 67d2329，96 tests）。
+- **Minor 挂账**：① resolve() 对非单条内容 URL（裸频道/纯播放列表）退化为 60s 超时→504，无数据污染
+  （实测），加固挂 EPIC-03 注记④；② source_account.enabled 被手工重建覆盖为 True（禁用复活），挂
+  EPIC-06 有管理 UI 时定语义；③ resolve_url_preview 与端点平行（端点直调 adapter），保留不动；
+  ④ Celery 未设 ignore_result，结果对象写 Redis（默认 24h 过期），V1 无碍。
+- 已接受既有债务复核：T3 creator 同名合并（EPIC-04）、G1 prepare 幂等/补扫（EPIC-03）、
+  无鉴权（EPIC-07/10）——维持原挂账不变。
+- 安全复核结论：argv 列表直传无 shell + url_guard（scheme/userinfo/白名单/尾点）拦在子进程前；
+  stderr 尾部截 500 进异常不泄密；ORM/参数化无拼接；配置全部走 settings，无硬编码。
+- **结论：Ready**（Important 已修，Minor 全部有归属）。
 ## Review record
 
 <!-- autoplan:ceo (SELECTIVE EXPANSION, 2026-09-17) — native in-host; Codex outside voice unavailable (model_unusable); Claude subagent skipped per user standing order (no subagents in this repo) -->
