@@ -9,5 +9,8 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+htmlcov/
+*.tsbuildinfo
 *.egg-info/
 .DS_Store
