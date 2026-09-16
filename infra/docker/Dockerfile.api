@@ -1,0 +1,20 @@
+# 两段拷贝（D32/D52）：层1 仅依赖清单命中缓存，层2 代码变动只重装包体
+FROM python:3.12-slim
+WORKDIR /srv
+
+# 本地镜像网络受限时可透传：--build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG PIP_INDEX_URL=""
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+
+# 层1：依赖（代码改动不失效）
+COPY apps/api/pyproject.toml ./
+RUN mkdir -p app && touch app/__init__.py \
+    && pip install --no-cache-dir . \
+    && rm -rf app
+
+# 层2：应用代码
+COPY apps/api/app ./app
+RUN pip install --no-cache-dir --no-deps .
+
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
