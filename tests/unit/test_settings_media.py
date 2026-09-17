@@ -26,3 +26,10 @@ def test_empty_allowlist_entry_dropped() -> None:
         media_host_allowlist="youtube.com,,",
     )
     assert s.media_host_allowlist == ("youtube.com",)
+
+
+def test_asr_defaults() -> None:
+    # voice-pro 共用模型缓存只有 base/medium/medium.en/large-v3，无 small → 默认 medium
+    s = Settings(env="dev", database_url="postgresql+psycopg://u:p@h/db")
+    assert s.asr_model_name == "medium"
+    assert s.asr_max_segment_end_ratio == 1.05  # voice-pro 实战：段末超音频时长×1.05 判幻觉

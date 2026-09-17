@@ -28,10 +28,15 @@ def build_transcription_provider(
     compute_type: str,
     enable_diarization: bool,
     beam_size: int = 5,
+    max_segment_end_ratio: float = 1.05,
 ) -> TranscriptionProvider:
     """纯工厂：显式入参，便于单测覆盖 flag 组合。"""
     fw = FasterWhisperProvider(
-        model_name=model_name, device=device, compute_type=compute_type, beam_size=beam_size
+        model_name=model_name,
+        device=device,
+        compute_type=compute_type,
+        beam_size=beam_size,
+        max_segment_end_ratio=max_segment_end_ratio,
     )
     if not enable_whisperx:
         return fw
@@ -58,4 +63,5 @@ def get_transcription_provider() -> TranscriptionProvider:
         compute_type=s.asr_compute_type,
         enable_diarization=s.enable_diarization,
         beam_size=s.asr_beam_size,
+        max_segment_end_ratio=s.asr_max_segment_end_ratio,
     )

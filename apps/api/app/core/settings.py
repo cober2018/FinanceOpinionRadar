@@ -41,10 +41,13 @@ class Settings(BaseSettings):
     discover_playlist_max_items: int = 50
     discover_dispatch_interval_sec: int = 300
     # --- EPIC-03 ASR（RAD-033/035） ---
-    asr_model_name: str = "small"
+    # medium：与 voice-pro 共用本地模型缓存（无 small），中文财经内容效果更好
+    asr_model_name: str = "medium"
     asr_device: str = "cpu"
     asr_compute_type: str = "int8"
     asr_beam_size: int = 5
+    # 段末超 音频时长×该系数 判为幻觉丢弃（voice-pro 实战补丁，防长静音段漂移死循环）
+    asr_max_segment_end_ratio: float = 1.05
     enable_whisperx: bool = False  # RAD-035：默认关，V1 不依赖
     enable_diarization: bool = False
     subtitle_lang_preference: tuple[str, ...] = ("zh-Hans", "zh", "en")  # 依次前缀匹配

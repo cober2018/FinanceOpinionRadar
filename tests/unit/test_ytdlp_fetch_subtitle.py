@@ -60,6 +60,8 @@ def test_fetch_subtitle_auto_flag_selects_switch(
     assert "--write-subs" not in argv
     langs_at = argv.index("--sub-langs")
     assert argv[langs_at + 1] == "zh-Hans"
+    # SABR 反 403 参数同样要出现在字幕抓取调用里
+    assert argv[argv.index("--extractor-args") + 1] == "youtube:player_client=android"
 
 
 def test_fetch_subtitle_rejects_disallowed_url(monkeypatch: pytest.MonkeyPatch) -> None:

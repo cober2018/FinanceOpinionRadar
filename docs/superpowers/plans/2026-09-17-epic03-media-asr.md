@@ -1869,3 +1869,30 @@ Sequential implementation, no parallelization opportunity（用户既定约定�
 - **VERDICT:** CEO + ENG + DX CLEARED — ready to implement（待用户 Phase 4 批准）。
 
 NO UNRESOLVED DECISIONS
+
+---
+
+## Amendment（Task 10 后追加）：Task 10.5 吸收 voice-pro 实战经验
+
+**来源**：用户指定参考 `/Users/mshengran/Project/voice-pro/abus-aikorea-voice-pro`（同为 yt-dlp + faster-whisper 栈的成熟项目）。
+
+**采纳 3 项**（均已 TDD 落地）：
+1. **yt-dlp 反 SABR 403**（来源 `abus_downloader.py:73-87`）：YouTube 对多数客户端启用 SABR-only 流，
+   默认客户端无 JS runtime 时退化到废弃路径吃 HTTP 403。所有 yt-dlp 调用统一追加
+   `--extractor-args youtube:player_client=android`（对非 YouTube 平台是无害 no-op）。
+   JS runtime（deno/node）由 worker 环境自备，README 注记。
+2. **ASR 幻觉段防护**（来源 `abus_asr_faster_whisper.py:200-217` + `abus_asr_parameters.py`）：
+   - 段末时间戳 > 音频时长 × `asr_max_segment_end_ratio`(默认 1.05) → 丢弃并截断，
+     防长静音段幻觉漂移导致迭代器永不结束；新增 settings 键并穿参 provider/工厂。
+   - `condition_on_previous_text=False`：切断上一段文本条件影响，抑制幻觉连锁。
+3. **模型缓存共用**：voice-pro `model/faster-whisper/`（Systran CTranslate2 布局）symlink 进
+   `~/.cache/huggingface/hub/`（base/medium/medium.en/large-v3 四个），
+   Radar 零代码；`asr_model_name` 默认 small→**medium**（共用缓存无 small；中文财经内容效果更好）。
+
+**核实不采纳**：
+- voice-pro 字幕提取仅覆盖本地文件转写，Radar 的 URL 字幕抓取（json3/vtt）已覆盖且更强。
+- mlx-community whisper（Apple Silicon 专用）不适用于 Docker/linux 部署面。
+- silero VAD 在 faster-whisper 1.2.1 为内置资产（`get_assets_path()`），无需下载/共用。
+
+**测试**：unit +6（settings 默认档 / resolve·fetch·download argv 携带 SABR 参数 / 幻觉段丢弃 / 反幻觉 kwargs）；
+fake_ytdlp fixture 的 argv dump 提升为全行为可用（原先仅 writeout 分支）。

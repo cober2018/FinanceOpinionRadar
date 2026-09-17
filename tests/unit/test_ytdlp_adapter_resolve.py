@@ -76,6 +76,17 @@ def test_resolve_published_at_from_unix_timestamp(monkeypatch: pytest.MonkeyPatc
     assert media.published_at == datetime.fromtimestamp(1773792000, tz=UTC)
 
 
+def test_resolve_args_carry_sabr_client(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # voice-pro 实战：SABR 反 403 参数必须出现在所有 yt-dlp 调用（resolve 是入口路径）
+    args_file = tmp_path / "args.json"
+    monkeypatch.setenv("FAKE_YTDLP_ARGS_FILE", str(args_file))
+    make_adapter(monkeypatch, "success", SUCCESS_PAYLOAD).resolve(URL)
+    argv = json.loads(args_file.read_text())
+    assert argv[argv.index("--extractor-args") + 1] == "youtube:player_client=android"
+
+
 def test_resolve_rejects_url_before_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FAKE_YTDLP_BEHAVIOR", "success")
     adapter = make_adapter(monkeypatch, "success", SUCCESS_PAYLOAD)

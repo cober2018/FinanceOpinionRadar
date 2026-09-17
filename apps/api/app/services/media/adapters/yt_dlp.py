@@ -23,6 +23,9 @@ from app.services.media.contracts import (
 from app.services.media.url_guard import ensure_allowed_url
 
 _STDERR_TAIL_CHARS = 500
+# voice-pro 实战：YouTube 对多数客户端启用 SABR-only 流，默认客户端无 JS runtime 时
+# 会退化到废弃路径吃 HTTP 403；android 客户端可绕开（对非 YouTube 平台是无害 no-op）
+_SABR_ARGS = ("--extractor-args", "youtube:player_client=android")
 # 存进 metadata 快照的 yt-dlp 键白名单（仅审计用途，schema 见 models/source.py docstring）
 _METADATA_KEYS = ("view_count", "like_count", "language", "description")
 _ENTRY_METADATA_KEYS = ("live_status", "view_count")
@@ -85,7 +88,14 @@ class GenericYtDlpAdapter:
     def resolve(self, url: str) -> ResolvedMedia:
         ensure_allowed_url(url, self._allowlist)
         data = self._proc.run_json(
-            ["--dump-single-json", "--no-playlist", "--no-warnings", "--skip-download", url]
+            [
+                "--dump-single-json",
+                "--no-playlist",
+                "--no-warnings",
+                "--skip-download",
+                *_SABR_ARGS,
+                url,
+            ]
         )
         return _parse_resolved(data)
 
@@ -100,6 +110,7 @@ class GenericYtDlpAdapter:
                 "--no-warnings",
                 "--playlist-items",
                 f"1:{self._playlist_max_items}",
+                *_SABR_ARGS,
                 account.url,
             ]
         )
@@ -125,6 +136,7 @@ class GenericYtDlpAdapter:
                 "json3/vtt",
                 "-o",
                 str(Path(tmp) / "%(id)s.%(ext)s"),
+                *_SABR_ARGS,
                 item.canonical_url,
             ]
             self._proc.run_json(args)
@@ -150,6 +162,7 @@ class GenericYtDlpAdapter:
                 "--no-warnings",
                 "-o",
                 str(Path(workdir) / "%(id)s.%(ext)s"),
+                *_SABR_ARGS,
                 item.canonical_url,
             ],
             timeout_sec=self._download_timeout,
