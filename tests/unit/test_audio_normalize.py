@@ -30,10 +30,11 @@ def make_ffmpeg(tmp_path: Path):
     def _make() -> str:
         wav = tmp_path / "fixture.wav"
         _make_wav(wav, seconds=1)
+        # POSIX sh 取最后一个位置参数（dash 无 bash 的 ${@: -1}）——/qa 教训：CI 是 dash
         return _script(
             tmp_path,
             "fake_ffmpeg",
-            f'out="${{@: -1}}"\ncp "{wav}" "$out"',
+            f'for out; do :; done\ncp "{wav}" "$out"',
         )
 
     return _make
