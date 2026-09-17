@@ -159,6 +159,27 @@ def test_rerun_same_dir_is_idempotent(flow, db_session):
     )
 
 
+def test_registry_persists_under_worker_session_options(flow):
+    """worker 的 get_session_factory 是 expire_on_commit=False：内层 commit 后重赋
+    同一 dict 对象不标脏，注册表从未落库（Task 6-Step3 真栈抓到的 Task 5 缺陷）。
+    模拟 beat 两轮：每轮用工厂开全新 session，注册表必须真正持久化。"""
+    root, provider = flow.tmp_path, _provider_of(flow)
+    _write_seg(root, "新闻联播", "2026-09-17", "x20260917x", 0)
+
+    with flow.factory() as first_round:
+        live_ingest.ingest_live_segments(first_round, provider=provider)
+    with flow.factory() as verify:
+        item = verify.query(SourceItem).filter(SourceItem.item_type == "live").one()
+        assert item.metadata_json["live"]["processed"].keys() == {"0"}
+        assert item.metadata_json["live"]["segment_count"] == 1
+
+    # 第二轮：同分片幂等跳出，不重复转写
+    with flow.factory() as second_round:
+        result = live_ingest.ingest_live_segments(second_round, provider=provider)
+        assert result["segments_pending"] == 0
+    assert _provider_of(flow).transcribe.call_count == 1
+
+
 def test_cross_midnight_creates_new_dir_but_extends_open_session(flow, db_session):
     """F2（Task 1 核对项①）：跨零点拆目录，会话身份以未收尾优先归并。"""
     root = flow.tmp_path

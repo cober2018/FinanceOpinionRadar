@@ -14,6 +14,7 @@ from pathlib import Path
 
 import structlog
 from sqlalchemy import text
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.settings import get_settings
 from app.db.models import Creator, SourceAccount, SourceItem
@@ -142,13 +143,13 @@ def ingest_live_segments(session, provider=None) -> dict:
             # （expire_on_commit=True 的会话里，回读会触发刷新并放大竞态窗口）
             base_meta = dict(item.metadata_json or {})
             live_meta = _normalize_live_meta(base_meta)
-            item.metadata_json = base_meta
+            _persist_live_meta(item, base_meta)
             session.commit()  # 会话行先落库：分片级 rollback 不得回滚会话本身
             for seg in sd.segments:
                 outcome = _process_segment(session, item, base_meta, live_meta, seg, s, provider)
                 if outcome == "failed":
                     counters["segments_failed"] += 1
-            item.metadata_json = base_meta
+            _persist_live_meta(item, base_meta)
             session.commit()
             counters["segments_pending"] += _count_pending(live_meta)
         session.commit()
@@ -177,11 +178,11 @@ def prepare_live_segment(item_id: int, segment_index: int, path: str) -> dict:
             )
             base_meta = dict(item.metadata_json or {})
             live_meta = _normalize_live_meta(base_meta)
-            item.metadata_json = base_meta
+            _persist_live_meta(item, base_meta)
             outcome = _process_segment(
                 session, item, base_meta, live_meta, seg, s, get_transcription_provider()
             )
-            item.metadata_json = base_meta
+            _persist_live_meta(item, base_meta)
             session.commit()
             return {"item_id": item_id, "segment": segment_index, "outcome": outcome}
         finally:
@@ -374,12 +375,20 @@ def _process_segment(
         entry["attempts"] = entry.get("attempts", 0) + 1
         entry["last_error"] = str(exc)[:300]
         # 回滚会 expire 实例（甚至回滚掉未提交的会话行 INSERT）；本地真源重新赋值
-        item.metadata_json = base_meta
+        _persist_live_meta(item, base_meta)
         session.flush()
         session.commit()
         logger.warning("live_segment_failed", item_id=item.id, index=seg.index,
                        attempts=entry["attempts"], error=str(exc)[:200])
         return "failed"
+
+
+def _persist_live_meta(item, base_meta: dict) -> None:
+    """注册表落库：worker 会话工厂 expire_on_commit=False，内层 commit 后重赋同一
+    dict 对象不产生变更历史，JSON 列就地变更必须显式 flag_modified（Task 5 缺陷，
+    Task 6-Step3 真栈抓到：转写落库而 processed 注册表恒空 → 下轮重复转写）。"""
+    item.metadata_json = base_meta
+    flag_modified(item, "metadata_json")
 
 
 def _normalize_live_meta(base_meta: dict) -> dict:
@@ -454,7 +463,7 @@ def _close_stale_sessions(session, grace_sec: int) -> int:
             base_meta = dict(item.metadata_json or {})
             live_meta = _normalize_live_meta(base_meta)
             live_meta["closed"] = True
-            item.metadata_json = base_meta
+            _persist_live_meta(item, base_meta)
             closed += 1
             logger.info("live_session_closed", item_id=item.id)
     return closed
