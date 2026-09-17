@@ -72,6 +72,9 @@ worker: ## 启动 Celery worker
 worker-beat: ## 启动 Celery worker + beat（来源发现调度）
 	$(PYTHON) -m celery -A app.worker.celery_app worker --beat --loglevel=info
 
+live-status: ## 直播值守看板（每个值守直播间一行：在播/同步/会话/转录）
+	$(PYTHON) scripts/live_dashboard.py
+
 seed: ## 写入开发用种子数据
 	$(PYTHON) scripts/seed_dev.py
 
