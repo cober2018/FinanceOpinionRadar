@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     )
     discover_playlist_max_items: int = 50
     discover_dispatch_interval_sec: int = 300
+    # --- EPIC-03 ASR（RAD-033/035） ---
+    asr_model_name: str = "small"
+    asr_device: str = "cpu"
+    asr_compute_type: str = "int8"
+    asr_beam_size: int = 5
+    enable_whisperx: bool = False  # RAD-035：默认关，V1 不依赖
+    enable_diarization: bool = False
 
     @field_validator("media_host_allowlist", mode="before")
     @classmethod
