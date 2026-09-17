@@ -32,6 +32,16 @@ if behavior in ("private", "badurl"):
 if behavior == "badjson":
     print("this is not json")
     sys.exit(0)
+if behavior == "progress":
+    # 模拟真实下载：stdout 是进度日志（非 JSON），产物照常落盘，退出码 0
+    print("[BiliBili] Extracting URL: https://example.com/video")
+    print("[BiliBili] Format(s) 1080P 高码率 are missing; you have to become a premium member")
+    print("[download] 100% of 12.34MiB in 00:01")
+    outdir = os.path.dirname(sys.argv[sys.argv.index("-o") + 1])
+    name = os.environ.get("FAKE_YTDLP_WRITE_NAME", "abc123.m4a")
+    with open(os.path.join(outdir, name), "w") as fh:
+        fh.write(os.environ.get("FAKE_YTDLP_CONTENT", ""))
+    sys.exit(0)
 if behavior == "writeout":
     outdir = os.path.dirname(sys.argv[sys.argv.index("-o") + 1])
     name = os.environ.get("FAKE_YTDLP_WRITE_NAME", "abc123.zh-Hans.json3")

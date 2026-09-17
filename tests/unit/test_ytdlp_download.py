@@ -73,6 +73,14 @@ def test_download_rejects_disallowed_url(monkeypatch: pytest.MonkeyPatch) -> Non
         make(monkeypatch).download_media(bad, Path("/tmp/whatever"))
 
 
+def test_download_tolerates_progress_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # /qa 发现：yt-dlp 下载时 stdout 是进度日志而非 JSON，收尾不得解析 stdout
+    result = make(monkeypatch, behavior="progress").download_media(ITEM, tmp_path)
+    assert Path(result.local_path).exists()
+
+
 def test_download_carries_cookies_when_configured(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

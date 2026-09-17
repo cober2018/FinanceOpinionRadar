@@ -39,6 +39,21 @@ class YtDlpProcess:
         self._timeout_sec = timeout_sec
 
     def run_json(self, args: list[str], *, timeout_sec: int | None = None) -> dict:
+        proc = self._run(args, timeout_sec=timeout_sec)
+        try:
+            return json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            raise AdapterProcessError(
+                f"yt-dlp stdout 无法解析为 JSON: {proc.stdout[:_STDERR_TAIL_CHARS]!r}"
+            ) from exc
+
+    def run(self, args: list[str], *, timeout_sec: int | None = None) -> None:
+        """非 JSON 调用（下载）：stdout 是进度日志，只校验退出码。"""
+        self._run(args, timeout_sec=timeout_sec)
+
+    def _run(
+        self, args: list[str], *, timeout_sec: int | None = None
+    ) -> subprocess.CompletedProcess[str]:
         effective = timeout_sec if timeout_sec is not None else self._timeout_sec
         argv = [self._binary, *args]
         try:
@@ -58,12 +73,7 @@ class YtDlpProcess:
         if proc.returncode != 0:
             tail = proc.stderr.strip()[-_STDERR_TAIL_CHARS:]
             raise AdapterProcessError(f"yt-dlp 退出码 {proc.returncode}: {tail or '(无 stderr)'}")
-        try:
-            return json.loads(proc.stdout)
-        except json.JSONDecodeError as exc:
-            raise AdapterProcessError(
-                f"yt-dlp stdout 无法解析为 JSON: {proc.stdout[:_STDERR_TAIL_CHARS]!r}"
-            ) from exc
+        return proc
 
 
 class GenericYtDlpAdapter:
@@ -159,7 +169,7 @@ class GenericYtDlpAdapter:
     def download_media(self, item: ItemRef, workdir: str | Path) -> DownloadResult:
         # workdir 归编排层所有（TemporaryDirectory 生命周期），adapter 只往里写
         ensure_allowed_url(item.canonical_url, self._allowlist)
-        self._proc.run_json(
+        self._proc.run(
             [
                 "-f",
                 "bestaudio/best",
