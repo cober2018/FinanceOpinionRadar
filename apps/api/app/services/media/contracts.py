@@ -89,6 +89,10 @@ class UrlNotAllowedError(AdapterError):
     """URL 未通过 scheme/主机白名单（RAD-021 安全要求）。"""
 
 
+class NotSingleItemError(AdapterError):
+    """resolve 目标不是单条内容（频道/播放列表页）——注记④，提前失败防 60s 超时。"""
+
+
 class AdapterProcessError(AdapterError):
     """外部进程失败（非零退出/输出不可解析），message 携带 stderr 尾部。"""
 

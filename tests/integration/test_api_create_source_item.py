@@ -42,3 +42,20 @@ def test_create_source_item_201_and_idempotent(client, db_session):
     assert db_session.query(SourceItem).filter(
         SourceItem.external_item_id == "abc123"
     ).count() == 1
+
+
+def test_manual_registration_normalizes_channel_url(client, db_session):
+    # ENG-2A：注册侧 normalize 接线生效——裸频道地址入库前补 /videos（注记③）
+    from app.db.models import SourceAccount
+    from app.services import discovery
+
+    bare = "https://www.youtube.com/@macro-diary"
+    adapter = StubAdapter(_resolved(channel_url=bare))
+    item = discovery.create_item_from_url(URL, db_session, adapter)
+    assert item.id is not None
+    account = (
+        db_session.query(SourceAccount)
+        .filter(SourceAccount.external_id == "ch_42")
+        .one()
+    )
+    assert account.url == f"{bare}/videos"

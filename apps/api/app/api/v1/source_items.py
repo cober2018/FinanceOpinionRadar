@@ -11,6 +11,7 @@ from app.services.media.contracts import (
     AdapterError,
     AdapterTimeoutError,
     MediaSourceAdapter,
+    NotSingleItemError,
     UrlNotAllowedError,
 )
 from app.services.media.factory import get_media_adapter
@@ -55,7 +56,7 @@ class SourceItemResponse(BaseModel):
 
 def _map_adapter_errors(exc: AdapterError) -> HTTPException:
     """F7：两端点共用的错误映射（400 白名单 / 502 上游失败 / 504 超时）。"""
-    if isinstance(exc, UrlNotAllowedError):
+    if isinstance(exc, (UrlNotAllowedError, NotSingleItemError)):
         return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, AdapterTimeoutError):
         return HTTPException(status_code=504, detail=str(exc))

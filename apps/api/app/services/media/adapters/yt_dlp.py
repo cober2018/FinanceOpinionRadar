@@ -1,6 +1,7 @@
 """yt-dlp CLI 子进程封装与通用适配器（RAD-021，C2/ADR-0007）。"""
 
 import json
+import re
 import subprocess
 from datetime import UTC, datetime
 
@@ -10,6 +11,7 @@ from app.services.media.contracts import (
     AdapterProcessError,
     AdapterTimeoutError,
     DiscoveredItem,
+    NotSingleItemError,
     ResolvedMedia,
     SubtitleTrack,
 )
@@ -107,6 +109,8 @@ class GenericYtDlpAdapter:
 
 
 def _parse_resolved(data: dict) -> ResolvedMedia:
+    if data.get("_type") == "playlist" or data.get("entries") is not None:
+        raise NotSingleItemError("非单条内容 URL（频道/播放列表），请提供具体视频地址")
     platform = str(data.get("extractor_key", "generic")).lower()
     duration = data.get("duration")
     return ResolvedMedia(
@@ -158,3 +162,19 @@ def _parse_entry(entry: dict) -> DiscoveredItem:
         duration_ms=int(duration * 1000) if duration is not None else None,
         metadata={k: entry[k] for k in _ENTRY_METADATA_KEYS if k in entry},
     )
+
+
+# 注记③：注册时把 YouTube 裸频道地址规范化为可列表的 /videos 页签（ISSUE-003）
+_YOUTUBE_CHANNEL_RE = re.compile(
+    r"^(https?://[^/]*youtube\.com/(?:channel/UC[\w-]{20,}|@[\w.\-]+|c/[\w.\-]+|user/[\w.\-]+?))/?$"
+)
+_YOUTUBE_LISTABLE_SUFFIXES = ("/videos", "/streams", "/shorts", "/featured", "/playlists")
+
+
+def normalize_channel_url(url: str | None, *, platform: str) -> str | None:
+    if not url or platform != "youtube":
+        return url
+    if any(s in url for s in _YOUTUBE_LISTABLE_SUFFIXES) or "/watch" in url or "list=" in url:
+        return url
+    m = _YOUTUBE_CHANNEL_RE.match(url.strip().rstrip("/"))
+    return f"{m.group(1)}/videos" if m else url

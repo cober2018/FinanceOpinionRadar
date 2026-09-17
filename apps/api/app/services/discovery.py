@@ -10,6 +10,7 @@ from app.db.models import SourceAccount, SourceItem
 from app.repositories.creators import CreatorRepository
 from app.repositories.source_accounts import SourceAccountRepository
 from app.repositories.source_items import SourceItemRepository
+from app.services.media.adapters.yt_dlp import normalize_channel_url
 from app.services.media.contracts import (
     AccountRef,
     MediaSourceAdapter,
@@ -44,7 +45,7 @@ def create_item_from_url(url: str, session: Session, adapter: MediaSourceAdapter
         creator_id=creator.id,
         platform=media.platform,
         external_id=account_external_id,
-        url=media.channel_url,  # E3：显式字段（metadata 快照里从未放过 channel_url）
+        url=normalize_channel_url(media.channel_url, platform=media.platform),  # 注记③
         discovery_mode="manual",
     )
     item, _created = SourceItemRepository(session).upsert_by_external(

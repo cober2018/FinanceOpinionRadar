@@ -5,6 +5,7 @@ from app.main import app
 from app.services.media.contracts import (
     AdapterProcessError,
     AdapterTimeoutError,
+    NotSingleItemError,
     ResolvedMedia,
     SubtitleTrack,
     UrlNotAllowedError,
@@ -112,3 +113,14 @@ def test_resolve_url_timeout_504(client, install):
         "/api/v1/source-items/resolve-url", json={"url": "https://www.youtube.com/watch?v=x"}
     )
     assert resp.status_code == 504
+
+
+def test_resolve_url_playlist_returns_400(client, install):
+    # ENG-2A：NotSingleItemError 与白名单错误同映射 400，不得落 502/504
+    install(StubAdapter(NotSingleItemError("非单条内容 URL（频道/播放列表），请提供具体视频地址")))
+    resp = client.post(
+        "/api/v1/source-items/resolve-url",
+        json={"url": "https://www.youtube.com/@macro-diary"},
+    )
+    assert resp.status_code == 400
+    assert "非单条内容" in resp.json()["detail"]

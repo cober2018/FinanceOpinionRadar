@@ -7,6 +7,7 @@ from app.services.media.adapters.yt_dlp import GenericYtDlpAdapter
 from app.services.media.contracts import (
     AdapterProcessError,
     AdapterTimeoutError,
+    NotSingleItemError,
     UrlNotAllowedError,
 )
 
@@ -92,3 +93,15 @@ def test_resolve_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter = GenericYtDlpAdapter(binary=FAKE, timeout_sec=1, allowlist=("youtube.com",))
     with pytest.raises(AdapterTimeoutError):
         adapter.resolve(URL)
+
+
+def test_resolve_rejects_playlist_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 注记④：频道/播放列表页在 _parse_resolved 即拒收，不进 60s 下载路径
+    payload = {
+        "_type": "playlist",
+        "id": "UCxxx",
+        "title": "某频道",
+        "entries": [{"_type": "url", "id": "e1", "url": "https://www.youtube.com/watch?v=e1"}],
+    }
+    with pytest.raises(NotSingleItemError):
+        make_adapter(monkeypatch, "success", payload).resolve(URL)
