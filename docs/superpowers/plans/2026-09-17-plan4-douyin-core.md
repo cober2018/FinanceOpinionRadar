@@ -183,6 +183,52 @@ douyin_discover_max_pages: int = 3         # discover 翻页上限（与风险�
 
 ---
 
+## Task 1 决策记录（spike 实录，2026-09-17，timebox 内完成）
+
+### 总裁决
+- **VOD：Evil0ctal（dtk 5.1.0）路线确认，不触发回退**（jiji262/f2 备选不再考虑）。三样本全过：单视频 resolve、主页列表+翻页、无水印直链（HTTP 206 range + ffprobe 实读 92.458s，与 `duration_ms` 92459 精确一致）。
+- **直播：StreamCap v1.0.3 路线确认（带约束，见下）**。抖音通道 API 层可用：`webcast/room/web/enter` 在本机免 cookie 直连成功（a_bogus 签名由内置 streamget 完成，未触发风控）。spike 时段房间未开播，分片落盘实录推迟到 Task 6 Step 3 真栈窗口。
+
+### dtk 栈部署事实（Task 7 compose 转正的依据）
+- 镜像 `evil0ctal/douyin_tiktok_download_api:5.1.0`（pin）。**一个镜像三种角色**：`dtk-entrypoint api|worker|migrate`；首次部署必须先跑一次性 `migrate` 容器再起 api/worker。
+- 依赖栈：**TimescaleDB**（迁移强制要求 hypertable；用 `timescale/timescaledb:latest-pg16` 轻量镜像通过）+ **Redis**。专用网络 `dtk-net`，容器名 `douyin-api`/`dtk-worker`/`dtk-postgres`/`dtk-redis`。
+- 必需 env：`DTK_SECRET_KEY`（≥32 字符，加密存储的 cookie/代理凭据主密钥，必须持久化否则已存身份不可解）、`DTK_DATABASE_URL`（`postgresql+asyncpg://...`）、`DTK_REDIS_URL`。
+- 引导序列：migrate → api → `GET /api/setup/status` 得 `initialized:false` → 从 api 日志取一次性 setup token → `POST /api/setup/init` 建管理员 → `POST /api/v1/auth/login` → `POST /api/v1/admin/api-keys` 造 key（**scopes 必填**：`douyin:read`,`media:read`,`media:write`,`archive:read`）。
+- 调用模型：`GET /api/v1/douyin/...` 返回 **202 + `{task_id,state}` 异步任务**；`&wait=30`（上限 30s）时同步直返 payload（HTTP 200）。**radar adapter 主路径用 `wait=30` 同步调用**；30s 未完成的任务再轮询 `GET /api/v1/tasks/{id}`（state: pending/running/done/failed，payload 在 `data.data`）。无任务侧缓存命中 ~5s 内返回。
+- cookie 引导：`POST /api/v1/admin/identities/import`（platform=douyin，cookies 原生支持 cookies.txt 格式，`user_agent` 必填且须与 jar 来源浏览器一致）。**坑：Plan #3 的 media.cookies.txt 是多平台混合罐（YouTube/Google/B 站/抖音混装），必须先按域过滤出纯 `.douyin.com` 子集**，否则 400。空池时任务报 `IDENTITY_POOL_EXHAUSTED`。
+- cookie 文件管理：本机 douyin-only jar 落 `~/.config/radar/douyin.cookies.txt`（600，仓库外），Task 7 compose 以只读挂载方式引导导入（或首次手工 import）。
+
+### 响应 schema（归一化，非原生 douyin 字段）→ 冻结 Task 2 映射
+dtk 5.x 返回归一化字段，**adapter 映射与单测 fixture 一律按此 schema**（Task 2 Step 3 描述中的 `aweme_id/createTime/duration` 是原生字段名，以本节为准）：
+- `/{platform}/video` 与 `/{platform}/user/posts` 的 item：`content_id`（=aweme_id 数字串）、`kind:"video"`、`created_at`（ISO8601 UTC）、`duration_ms`、`title`、`description`、`web_url`（`https://www.douyin.com/video/{content_id}` 形态）、`author.sec_uid`、`media.video.{url,urls[],width,height,format,bitrate,watermark,size_bytes}`、`stats`、`is_deleted`、`is_private`、`is_top`。
+- 翻页：`items[] + cursor + has_more`；`cursor` 为毫秒时间戳（maxCursor 语义），下一页传回 `cursor` 参数即可。
+- 认证：所有请求带 `X-API-Key` 头。
+- 单测 fixture：`tests/fixtures/media/douyin_post_sample.json`（spike 实录样本已存 `/tmp/dtk-spike/post_sample.json`，实施时拷入）。
+- 样本教训：计划中的样本 modal_id `7686343567716269667` 已被删除（`NOT_FOUND` 非重试错误）——**fixture 必须用实录新鲜样本，过期样本会误判为链路故障**。
+
+### 核对项①-④实录
+- **① 目录按日期切分：是**。StreamCap `stream_manager._get_output_dir`：模板 `<downloads>/<platform>/<anchor_name>/<YYYY-MM-DD>/`（folder_name_platform/author/time 均默认开）。**跨零点显式拆目录**：`recording_dir` 缓存进 Recording 对象，录制中每片检查“当前日期 not in recording_dir”→ 置空重建新日期目录，并把新路径 persist 回 recordings.json。**Task 5 跨零点合并规则（F2）确认为必需**：会话身份以“未收尾优先”归并，目录日期只做目录键。
+- **② author.sec_uid 完整性：是**。user/posts 与单视频响应的 `author.sec_uid` 均填充（实录：新闻联播 `MS4wLjABAAAAB...IaFYbw`）。手工贴视频链（web_url 提取 content_id → resolve → author.sec_uid）与账号发现（sec_uid → user/posts）两路归一到同一账号，无双条目风险。
+- **③ 翻页语义：cursor=毫秒时间戳 + has_more 布尔**，回传即取下一页；无 maxCursor/is_alive 组合。
+- **④ config 回写：确认发生**。运行期两处回写 recordings.json/user_settings.json：`_get_output_dir` persist recording_dir；`check_if_live` 每轮探测后 "User configuration saved"。**recorder_bridge 必须读-改-写且容忍并发**（写前读最新文件、仅改自己字段、tmp+rename 原子替换），并假设 app 不热重载（见下）。
+
+### StreamCap v1.0.3 集成契约（冻结 Task 6）
+- 镜像 `ihmily/streamcap:v1.0.3`（pin）。web UI 内部端口 **6006**（非老版 5001）。
+- **纯 UI 应用，无无头模式**。配置为多用户 JSON：`/app/config/{user_settings.json,recordings.json,cookies.json,web_auth.json}`。`login_required:false` 时免登录（写入 user_settings.json）。
+- **recordings.json 条目 schema**（`Recording.to_dict` 精确字段）：`rec_id,url,streamer_name,record_format:"TS",quality:"OD",segment_record:true,segment_time:<sec>,monitor_status:true,scheduled_recording:false,scheduled_start_time:"",monitor_hours:"",recording_dir:"",enabled_message_push:false,platform:"douyin",platform_key:"douyin",only_notify_no_record:false,flv_use_direct_download:false`。
+- **URL 必须 https**：抖音 handler 注册正则 `https://.*\.douyin\.com/`，http 前缀报 "Unknown live platform"。**recorder_bridge 同步账号 URL 时强制 http→https 归一**。
+- **监控循环启动契约**：loop 绑定 Flet web session——容器启动后必须有一个浏览器/Flet 会话连过一次 UI，监控循环才启动；**启动后与 session 解耦**（实测浏览器关闭 3 分钟后仍每 60s 探测）。第二次会话不会重复启动（进程级 guard）。
+- **配置不热重载**：recordings.json 仅在进程首个 UI 会话建立时加载。**radar 同步契约（Task 6 最终形态）：配置 diff 有变化时 → 原子写 recordings.json/user_settings.json → `docker restart streamcap` → 打开一次 UI 会话激活循环**（无变化时不重启、循环已在跑）。重启激活步在 bridge 内以最小实现封装（headless 页面一次性加载即断开）。
+- **分片命名**：`{anchor_name}_{live_title}_{YYYY-MM-DD_HH-MM-SS}_{NNN}.TS`（`_%03d` 序号 + 大写扩展名 `.TS`，base 内空格替换为下划线）。**Task 5 的序号解析按正则 `_(\d{3})\.TS$` 取 index**（替换原 `{n:04d}.ts` 归一化假设）；文件名仅用于解析 index，仍不作存储 key（F7 不变）。
+- 分片时长：per-recording `segment_time`（recorder_bridge 从 monitor_interval_sec 夹紧 [300,600] 映射到该字段）。
+
+### 环境与遗留
+- 本机 Docker 为 **OrbStack**（非 Docker Desktop），docker 29.4.0。
+- spike 容器均为 docker run 临时形态（网络 dtk-net、密钥环境变量），Task 7 转正为 `docker-compose.douyin.yml`（含 pin tag、卷、共享 live_segments 目录）。
+- **待用户提供**：全能的野人 博主主页 URL（`https://www.douyin.com/user/<sec_uid>` 形态；搜索页 URL 无法解析 sec_uid）。spike 用新闻联播 sec_uid 替身已验证全链，拿到真 URL 后 Task 4 直接入库。
+- 直播房间样本 `https://live.douyin.com/330698468897` 实为**新闻联播**直播间（房间 API 返回 `user.nickname`=新闻联播）。spike 时段未开播（`data.data` 空会报误导性 "VR live is not supported"——streamget 把“无房间数据”一律归为 VR 分支）。
+- 决策门（Step 5）：**不触发**。Evil0ctal 三样本全过；StreamCap 通道 API 层可用，分片落盘实录挂 Task 6 Step 3。
+
 ## 风险与挂账
 
 | 风险 | 处置 |
