@@ -37,6 +37,19 @@ def test_scan_streamcap_default_layout_with_platform_dir(tmp_path: Path) -> None
     assert [seg.index for seg in s.segments] == [0, 1]
 
 
+def test_scan_reconnect_numbering_reset_does_not_collide(tmp_path: Path) -> None:
+    """流重连后 StreamCap 每个 base 重新从 _000 计数（Task 6-Step3 真栈实录）：
+    index 必须按 base 时间戳+序号合成，保序且唯一，否则重连分片被幂等去重吞掉。"""
+    day = _make_tree_with_platform(tmp_path)
+    p0 = _write_seg(day, "b_2026-09-17_22-22-02", 0)
+    p1 = _write_seg(day, "b_2026-09-17_22-26-38", 0)
+    p2 = _write_seg(day, "b_2026-09-17_22-26-38", 1)
+
+    sessions = live_ingest.scan_live_dir(tmp_path)
+    assert [seg.path for seg in sessions[0].segments] == [p0, p1, p2]
+    assert len({seg.index for seg in sessions[0].segments}) == 3
+
+
 def _write_seg(day_dir: Path, base: str, index: int) -> Path:
     p = day_dir / f"{base}_{index:03d}.TS"  # StreamCap 大写扩展名 + _%03d（Task 1 实录）
     p.write_bytes(b"\x00" * 16)

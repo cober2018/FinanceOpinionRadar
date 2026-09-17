@@ -85,11 +85,29 @@ def _collect_day(
     grouped: dict[tuple[str, str], list[LiveSegment]], author: str, day_dir: Path
 ) -> None:
     for f in day_dir.iterdir():
-        m = _SEGMENT_RE.search(f.name)
-        if f.is_file() and m:
+        index = _parse_segment_index(f.name)
+        if f.is_file() and index is not None:
             grouped.setdefault((author, day_dir.name), []).append(
-                LiveSegment(index=int(m.group(1)), path=f, mtime=f.stat().st_mtime)
+                LiveSegment(index=index, path=f, mtime=f.stat().st_mtime)
             )
+
+
+# base 带 StreamCap 起录时间戳：<base>_YYYY-MM-DD_HH-MM-SS_NNN.ts
+_SEG_TS_RE = re.compile(
+    r"_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})_(\d{1,4})\.ts\Z", re.IGNORECASE
+)
+
+
+def _parse_segment_index(name: str) -> int | None:
+    """文件名 → 会话内序号。重连后每个 base 重新从 _000 计数（Task 6-Step3 实录），
+    故带时间戳的文件用 `base 时间戳数字 * 1e4 + base 内序号` 合成（时区无关、单调、唯一）；
+    裸 _NNN.ts 沿用原语义。文件名仅用于解析序号，不作存储 key（F7）。"""
+    m = _SEG_TS_RE.search(name)
+    if m is None:
+        m = _SEGMENT_RE.search(name)
+        return int(m.group(1)) if m else None
+    stamp = int((m.group(1) + m.group(2)).replace("-", ""))
+    return stamp * 10_000 + int(m.group(3))
 
 
 def ingest_live_segments(session, provider=None) -> dict:
