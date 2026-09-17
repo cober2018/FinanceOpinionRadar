@@ -176,3 +176,40 @@ def prepare_source_item_manual(item_id: int, session: DbDep):
     session.commit()
     celery_app.send_task("prepare_source_item", args=[item_id])
     return {"item_id": item_id, "dispatched": True}
+
+
+@router.get("/{item_id}/transcript")
+def get_transcript(item_id: int, session: DbDep):
+    """转录正文（视频库抽屉）：分段文本 + 主播名。未转写/不存在给 4xx。"""
+    from app.db.models import Creator, SourceAccount, SourceItem, TranscriptSegment
+
+    row = (
+        session.query(SourceItem, SourceAccount, Creator.display_name)
+        .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+        .join(Creator, Creator.id == SourceAccount.creator_id)
+        .filter(SourceItem.id == item_id)
+        .one_or_none()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    item, _account, creator_name = row
+    segments = (
+        session.query(TranscriptSegment)
+        .filter(TranscriptSegment.source_item_id == item_id)
+        .order_by(TranscriptSegment.sequence_no)
+        .all()
+    )
+    return {
+        "id": item.id,
+        "title": item.title,
+        "display_name": creator_name,
+        "segments": [
+            {
+                "sequence_no": s.sequence_no,
+                "start_ms": s.start_ms,
+                "end_ms": s.end_ms,
+                "text": s.text,
+            }
+            for s in segments
+        ],
+    }
