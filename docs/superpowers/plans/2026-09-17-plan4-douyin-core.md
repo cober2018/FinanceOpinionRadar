@@ -94,50 +94,50 @@ douyin_discover_max_pages: int = 3         # discover 翻页上限（与风险�
 
 **目的**：在写第一行 adapter 代码前，用真实抖音 URL 验证两个外部服务的 2026-09 实际可用性，产出决策记录冻结 Task 2/5/6 的细节。
 
-- [ ] **Step 1: 部署 Evil0ctal API**（`docker compose -f infra/docker/docker-compose.douyin.yml up -d crawler-services`），按其 README 配置 cookie 引导
-- [ ] **Step 2: 用 3 个真实样本验证**：单视频 resolve（用户已提供 `modal_id=7686343567716269667`）、博主主页视频列表（用户提供其关注的博主）、无水印直链可下载性（httpx 下载 ≥1 个文件成功 + ffprobe 可读）
-- [ ] **Step 3: 部署 StreamCap**（Docker Hub `ihmily/streamcap`），配置 1 个抖音直播间 room id，验证：开播检测→ts 分片落盘（无直播则用其文档/issue 确认抖音通道近期可用性即可，不硬等开播）
-- [ ] **Step 4: 写决策记录**（追加到本文件 `## Task 1 决策记录`）：VOD 首选/回退判定、分片命名与目录结构实录（ingest 依赖它）、StreamCap 配置热更新方式（改 config.yaml 是否需重启/API）；**附加核对项**：①目录是否按日期切分、跨零点直播会不会拆目录（Task 5 合并规则依赖）；②API 响应中 `author.sec_uid` 字段完整性（VOD 手工贴链接与账号发现两路必须归到同一 sec_uid 账号，否则同一视频两条 item）；③主页列表翻页 maxCursor 语义实录；④StreamCap 是否回写自身 config.yaml（状态/统计段）——若回写，radar 的 sync 写入需节段隔离避免互相覆盖（E1）
-- [ ] **Step 5: 决策门**——Evil0ctal 三个样本全败 → 切换 jiji262 CLI 路线重测 30min；再败 → f2 子进程路线；直播两项目全败 → 直播部分降级为"手工放分片文件进目录"的 ingest 先行（ingest 与录制解耦，不阻塞）
-- [ ] **Step 6: commit** `docs: Plan #4 Task 1 选型 spike 决策记录`
+- [x] **Step 1: 部署 Evil0ctal API**（`docker compose -f infra/docker/docker-compose.douyin.yml up -d crawler-services`），按其 README 配置 cookie 引导
+- [x] **Step 2: 用 3 个真实样本验证**：单视频 resolve（用户已提供 `modal_id=7686343567716269667`）、博主主页视频列表（用户提供其关注的博主）、无水印直链可下载性（httpx 下载 ≥1 个文件成功 + ffprobe 可读）
+- [x] **Step 3: 部署 StreamCap**（Docker Hub `ihmily/streamcap`），配置 1 个抖音直播间 room id，验证：开播检测→ts 分片落盘（无直播则用其文档/issue 确认抖音通道近期可用性即可，不硬等开播）
+- [x] **Step 4: 写决策记录**（追加到本文件 `## Task 1 决策记录`）：VOD 首选/回退判定、分片命名与目录结构实录（ingest 依赖它）、StreamCap 配置热更新方式（改 config.yaml 是否需重启/API）；**附加核对项**：①目录是否按日期切分、跨零点直播会不会拆目录（Task 5 合并规则依赖）；②API 响应中 `author.sec_uid` 字段完整性（VOD 手工贴链接与账号发现两路必须归到同一 sec_uid 账号，否则同一视频两条 item）；③主页列表翻页 maxCursor 语义实录；④StreamCap 是否回写自身 config.yaml（状态/统计段）——若回写，radar 的 sync 写入需节段隔离避免互相覆盖（E1）
+- [x] **Step 5: 决策门**——Evil0ctal 三个样本全败 → 切换 jiji262 CLI 路线重测 30min；再败 → f2 子进程路线；直播两项目全败 → 直播部分降级为"手工放分片文件进目录"的 ingest 先行（ingest 与录制解耦，不阻塞）
+- [x] **Step 6: commit** `docs: Plan #4 Task 1 选型 spike 决策记录`
 
 ## Task 2: DouyinAdapter（VOD，TDD）
 
 **Files:** Create `adapters/douyin_client.py`、`adapters/douyin.py`；Modify `factory.py`、`apps/api/pyproject.toml`（+httpx 依赖）；Test `tests/unit/test_douyin_client.py`、`test_douyin_adapter.py`、`test_factory_platform.py`
 
-- [ ] **Step 1: RED — client 单测**：`DouyinApiClient(base_url, timeout_sec)` 用 `httpx.MockTransport` 断言：`fetch_one_video(aweme_id)`、`fetch_user_posts(sec_uid, max_cursor, count)` 的路径/查询参数正确；非 2xx → `AdapterProcessError`，消息携带 upstream HTTP status 与截断 body（≤200 字符，进 `last_error` 供排障与 cookie 过期判别）；超时 → `AdapterTimeoutError`（两者均复用既有错误类型）
-- [ ] **Step 2: GREEN**：实现 client（同步 httpx，方法体 ≤10 行，只做 HTTP+异常映射，不做字段映射）
-- [ ] **Step 3: RED — adapter 单测**：fake client 返回 Evil0ctal 真实响应 JSON 样例（Task 1 实录存为 fixture `tests/fixtures/media/douyin_*.json`），断言：
+- [x] **Step 1: RED — client 单测**：`DouyinApiClient(base_url, timeout_sec)` 用 `httpx.MockTransport` 断言：`fetch_one_video(aweme_id)`、`fetch_user_posts(sec_uid, max_cursor, count)` 的路径/查询参数正确；非 2xx → `AdapterProcessError`，消息携带 upstream HTTP status 与截断 body（≤200 字符，进 `last_error` 供排障与 cookie 过期判别）；超时 → `AdapterTimeoutError`（两者均复用既有错误类型）
+- [x] **Step 2: GREEN**：实现 client（同步 httpx，方法体 ≤10 行，只做 HTTP+异常映射，不做字段映射）
+- [x] **Step 3: RED — adapter 单测**：fake client 返回 Evil0ctal 真实响应 JSON 样例（Task 1 实录存为 fixture `tests/fixtures/media/douyin_*.json`），断言：
   - `resolve`：`/video/{id}`、`/note/{id}`、`modal_id=` 提取 aweme_id；`v.douyin.com` 短链先 HEAD 跟随（跟随目标过 `ensure_allowed_url`）再 resolve；输出 `ResolvedMedia(item_type="vod", platform="douyin", channel_external_id=sec_uid, channel_url=user 页)`
   - `discover`：aweme_list → `DiscoveredItem(external_item_id=str(aweme_id), published_at=createTime, duration_ms=duration)`，置顶/置顶视频去重靠既有 upsert
   - `download_media`：play_addr URL 必须过 `ensure_allowed_url(douyin_cdn_allowlist)`（**SSRF 闸：伪造响应返回内网 URL → 抛 UrlNotAllowedError**，此测试必须先红）；httpx 流式写 workdir，返回 `DownloadResult(local_path, size_bytes)`
   - `fetch_subtitle` 恒返 None
   - **chaos（F8）**：API 200 但 body 缺字段（`aweme_detail=None`/缺 `author`）→ 抛 `AdapterProcessError` 而非 KeyError
-- [ ] **Step 4: GREEN**：实现 adapter（client 持有 `httpx.Client` 连接复用，非每次新建）；`settings.douyin_api_base_url` 为空时构造抛 `AdapterError`，消息按 问题+原因+修复 三段（缺哪个键 `DOUYIN_API_BASE_URL`、意味着什么、README 排障锚点），沿「错误码速查」表风格
-- [ ] **Step 5: RED→GREEN — factory 分流**：`detect_platform(url)`（host 含 douyin → "douyin"，youtu/be → "youtube"，bilibili → "bilibili"，其余 yt-dlp 兜底；实现前先查 discovery 既有 host 判断是否同逻辑，抽单一函数复用，E7）；`get_media_adapter(platform=None)` 按 platform 返回 DouyinAdapter / GenericYtDlpAdapter（无参调用兼容既有调用方）；`prepare_source_item` 任务改为 item→`source_account.platform` 查询后按平台取 adapter（补 1 条分流单测，F8；douyin 未配置时失败写 last_error，与其他 prepare 失败同语义）
-- [ ] **Step 6: 全量 `pytest` + `ruff check` + `mypy app`**（apps/api 目录约定不变）
-- [ ] **Step 7: commit** `feat: 抖音 VOD adapter 走外部解析服务，factory per-platform 分流`
+- [x] **Step 4: GREEN**：实现 adapter（client 持有 `httpx.Client` 连接复用，非每次新建）；`settings.douyin_api_base_url` 为空时构造抛 `AdapterError`，消息按 问题+原因+修复 三段（缺哪个键 `DOUYIN_API_BASE_URL`、意味着什么、README 排障锚点），沿「错误码速查」表风格
+- [x] **Step 5: RED→GREEN — factory 分流**：`detect_platform(url)`（host 含 douyin → "douyin"，youtu/be → "youtube"，bilibili → "bilibili"，其余 yt-dlp 兜底；实现前先查 discovery 既有 host 判断是否同逻辑，抽单一函数复用，E7）；`get_media_adapter(platform=None)` 按 platform 返回 DouyinAdapter / GenericYtDlpAdapter（无参调用兼容既有调用方）；`prepare_source_item` 任务改为 item→`source_account.platform` 查询后按平台取 adapter（补 1 条分流单测，F8；douyin 未配置时失败写 last_error，与其他 prepare 失败同语义）
+- [x] **Step 6: 全量 `pytest` + `ruff check` + `mypy app`**（apps/api 目录约定不变）
+- [x] **Step 7: commit** `feat: 抖音 VOD adapter 走外部解析服务，factory per-platform 分流`
 
 ## Task 3: 账号管理 API + live 字段迁移（TDD）
 
 **Files:** Modify `db/models/source.py`、`repositories/source_accounts.py`；Create `api/v1/source_accounts.py`、迁移；Test `tests/unit/test_source_accounts_api.py`、`tests/integration/test_source_account_live_fields.py`
 
-- [ ] **Step 1: RED — 模型/迁移**：`SourceAccount` + `live_monitor_enabled: bool = False`、`expected_schedule: dict | None (JSONB)`、`monitor_interval_sec: int = 300`；`alembic revision` 生成迁移（列默认值非空安全）；integration：迁移后可读写三字段
-- [ ] **Step 2: RED — repository**：仅新增 `list_live_monitored()`（enabled + live_monitor_enabled，Task 6 调用方）。**不做 `list_enabled_auto_poll`**（CEO 审计 F1：现有 `list_due` 不筛 discovery_mode——enabled 即参与轮询是既有语义，YouTube/B 站 manual 账号一直被轮询且经 /qa 验证；v1 保持现状零破坏，`discovery_mode` 是意图标注字段，`enabled` 才是轮询开关，README 如实写明）
-- [ ] **Step 3: RED — API 单测**（FastAPI TestClient，覆盖既有 conftest 模式）：
+- [x] **Step 1: RED — 模型/迁移**：`SourceAccount` + `live_monitor_enabled: bool = False`、`expected_schedule: dict | None (JSONB)`、`monitor_interval_sec: int = 300`；`alembic revision` 生成迁移（列默认值非空安全）；integration：迁移后可读写三字段
+- [x] **Step 2: RED — repository**：仅新增 `list_live_monitored()`（enabled + live_monitor_enabled，Task 6 调用方）。**不做 `list_enabled_auto_poll`**（CEO 审计 F1：现有 `list_due` 不筛 discovery_mode——enabled 即参与轮询是既有语义，YouTube/B 站 manual 账号一直被轮询且经 /qa 验证；v1 保持现状零破坏，`discovery_mode` 是意图标注字段，`enabled` 才是轮询开关，README 如实写明）
+- [x] **Step 3: RED — API 单测**（FastAPI TestClient，覆盖既有 conftest 模式）：
   - `POST /source-accounts`：`{platform, url, display_name?, discovery_mode?, poll_interval_sec?, config_json?}` → 201 get-or-create creator+account（复用 discovery.py 的 get-or-create 逻辑抽函数）；url 过 `ensure_allowed_url`；`discovery_mode` 仅接受 `manual|auto_poll`（422 校验）
   - `GET /source-accounts`：列表（platform/enabled 过滤）
   - `PATCH /source-accounts/{id}`：discovery_mode/poll_interval_sec/enabled/live 三字段局部更新（RAD-LIVE-04 入口）；404
-- [ ] **Step 4: GREEN** 实现；`api/v1/__init__.py` 挂 router
-- [ ] **Step 5: 既有 `dispatch_due_discoveries` 回归**：auto_poll 账号被正确扫到（既有测试全绿 + 补 1 条 auto_poll 用例）
-- [ ] **Step 6: lint/mypy/全量测试；commit** `feat: 账号管理 API 与 source_account 直播值守字段`
+- [x] **Step 4: GREEN** 实现；`api/v1/__init__.py` 挂 router
+- [x] **Step 5: 既有 `dispatch_due_discoveries` 回归**：auto_poll 账号被正确扫到（既有测试全绿 + 补 1 条 auto_poll 用例）
+- [x] **Step 6: lint/mypy/全量测试；commit** `feat: 账号管理 API 与 source_account 直播值守字段`
 
 ## Task 4: 抖音 VOD 自动发现端到端（真栈，Task 2 之后）
 
-- [ ] **Step 1: 手工验收脚本化**：用真实博主主页 sec_uid `POST /source-accounts`（platform=douyin, discovery_mode=auto_poll, poll_interval_sec=1800）
-- [ ] **Step 2: 手动触发 `discover_account`**：≥2 条新视频入 `source_item`（status=discovered）→ 补扫/直投 prepare → transcript 落库（610 段级验证沿 Plan #3 方法）
-- [ ] **Step 3: 发现的问题按 /qa 流程处置**；如有 adapter 缺口回 Task 2 补
-- [ ] **Step 4: README「抖音 VOD 跟踪」小节 + commit** `feat: 抖音博主新视频自动跟踪链路验收`
+- [x] **Step 1: 手工验收脚本化**：用真实博主主页 sec_uid `POST /source-accounts`（platform=douyin, discovery_mode=auto_poll, poll_interval_sec=1800）
+- [x] **Step 2: 手动触发 `discover_account`**：≥2 条新视频入 `source_item`（status=discovered）→ 补扫/直投 prepare → transcript 落库（610 段级验证沿 Plan #3 方法）
+- [x] **Step 3: 发现的问题按 /qa 流程处置**；如有 adapter 缺口回 Task 2 补
+- [x] **Step 4: README「抖音 VOD 跟踪」小节 + commit** `feat: 抖音博主新视频自动跟踪链路验收`
 
 ## Task 5: 直播分片 ingest 编排（TDD，不依赖录制器）
 
@@ -153,19 +153,19 @@ douyin_discover_max_pages: int = 3         # discover 翻页上限（与风险�
 - **分片重试上限（F4）**：同一 index 连续失败 ≥ `live_segment_max_attempts`（默认 3）次后跳过并记入 segment_errors[last_error]，不再每轮 beat 重试（防 ASR 失败循环烧 CPU）
 - 会话收尾：扫描时 `now - last_segment_at > live_close_grace_sec` → status transcribing→transcribed（状态机 `"transcribing": {"transcribed", "failed"}` 已允许）
 
-- [ ] **Step 1: RED — 会话聚合**：给定目录树 fake（tmp_path 造 `{date}/0000.ts...`），`scan_live_dir` 返回按会话分组的 (session_key, 有序分片路径)；`live_min_segment_sec` 以下跳过（ffprobe 时长由 fake binary 提供，沿 test_audio_normalize 的 fake 模式）
-- [ ] **Step 2: RED — 幂等与偏移**：integration（真 PG）：新会话→建 item；seg0 处理后 transcript 起点 0；seg1 处理后起点 = seg0 实际时长；同分片重复投递 → 跳过且 transcript 行数不变；超 `live_max_segments_per_session` → 告警停扫；分片静默 > `live_close_grace_sec` → 会话收尾 transcribing→transcribed（G1 收尾用例）
-- [ ] **Step 3: GREEN** 实现 `live_ingest.py` + `ingest_live_segments`（beat 扫描任务：扫目录→建会话→逐个未处理分片**同步串行**处理——顺序依赖偏移，V1 不并发同会话；每轮输出 `sessions_active/segments_pending/segments_failed` 计数行供运维 grep，F12）+ `dispatch_live_prepares` 保留作失败恢复（扫 transcribing 会话的缺号分片）
-- [ ] **Step 4: 状态机复核**：分片处理失败 → 会话 item 保持 transcribing + `metadata_json["live"]["segment_errors"]` 记账（下轮重试缺号），整会话级错误才 failed
-- [ ] **Step 5: lint/mypy/全量；commit** `feat: 直播分片 ingest 编排（会话聚合/偏移拼接/幂等）`
+- [x] **Step 1: RED — 会话聚合**：给定目录树 fake（tmp_path 造 `{date}/0000.ts...`），`scan_live_dir` 返回按会话分组的 (session_key, 有序分片路径)；`live_min_segment_sec` 以下跳过（ffprobe 时长由 fake binary 提供，沿 test_audio_normalize 的 fake 模式）
+- [x] **Step 2: RED — 幂等与偏移**：integration（真 PG）：新会话→建 item；seg0 处理后 transcript 起点 0；seg1 处理后起点 = seg0 实际时长；同分片重复投递 → 跳过且 transcript 行数不变；超 `live_max_segments_per_session` → 告警停扫；分片静默 > `live_close_grace_sec` → 会话收尾 transcribing→transcribed（G1 收尾用例）
+- [x] **Step 3: GREEN** 实现 `live_ingest.py` + `ingest_live_segments`（beat 扫描任务：扫目录→建会话→逐个未处理分片**同步串行**处理——顺序依赖偏移，V1 不并发同会话；每轮输出 `sessions_active/segments_pending/segments_failed` 计数行供运维 grep，F12）+ `dispatch_live_prepares` 保留作失败恢复（扫 transcribing 会话的缺号分片）
+- [x] **Step 4: 状态机复核**：分片处理失败 → 会话 item 保持 transcribing + `metadata_json["live"]["segment_errors"]` 记账（下轮重试缺号），整会话级错误才 failed
+- [x] **Step 5: lint/mypy/全量；commit** `feat: 直播分片 ingest 编排（会话聚合/偏移拼接/幂等）`
 
 ## Task 6: 值守桥——账号 → 录制器配置同步（TDD）
 
 **Files:** Create `services/recorder_bridge.py`；Modify `worker/tasks.py`、`celery_app.py`；Test `tests/unit/test_recorder_bridge.py`
 
-- [ ] **Step 1: RED**：`sync_live_monitors()`：`list_live_monitored()` → 生成 StreamCap 目标配置（room url=account.url, segment 时长取 monitor_interval_sec 夹紧到 [300,600]s；边界 300/600/越界三个夹紧用例，G2）→ 与 `recorder_config_path` 现文件 diff → 仅变化时原子写（tmp+rename）+ 触发 recorder 热加载方式按 Task 1 决策记录；`recorder_config_path` 空 → no-op 日志
-- [ ] **Step 2: GREEN**；beat 条目 `sync-live-monitors`（recorder_sync_interval_sec）
-- [ ] **Step 3: 真栈验证**：任一关注博主开播时段实测（或 StreamCap 指向任一公开测试直播间）：分片文件出现 → ingest 建会话 → 分片转写 → 下播静默后收尾 transcribed；commit `feat: 直播值守桥（账号订阅同步到录制器）`
+- [x] **Step 1: RED**：`sync_live_monitors()`：`list_live_monitored()` → 生成 StreamCap 目标配置（room url=account.url, segment 时长取 monitor_interval_sec 夹紧到 [300,600]s；边界 300/600/越界三个夹紧用例，G2）→ 与 `recorder_config_path` 现文件 diff → 仅变化时原子写（tmp+rename）+ 触发 recorder 热加载方式按 Task 1 决策记录；`recorder_config_path` 空 → no-op 日志
+- [x] **Step 2: GREEN**；beat 条目 `sync-live-monitors`（recorder_sync_interval_sec）
+- [x] **Step 3: 真栈验证**：任一关注博主开播时段实测（或 StreamCap 指向任一公开测试直播间）：分片文件出现 → ingest 建会话 → 分片转写 → 下播静默后收尾 transcribed；commit `feat: 直播值守桥（账号订阅同步到录制器）`
 
 ## Task 7: 配置、文档与执行计划注记
 
@@ -239,6 +239,7 @@ dtk 5.x 返回归一化字段，**adapter 映射与单测 fixture 一律按此 s
 | prepare_max_media_duration_sec=14400 对超长直播分片无效 | 分片粒度 ≤10min 天然规避；会话总时长不设限（分片逐个处理） |
 | Evil0ctal API 对主页列表的翻页游标行为 | Task 1 Step 2 实录 maxCursor 语义，Task 2 discover 按 v1 只取第一页 ×N 翻页上限（`douyin_discover_max_pages`，默认 3） |
 | **VOD 首扫涌量**（Task 4 实录）：高频博主首轮 discover 一次 60 条，单身份池被打爆（IDENTITY_POOL_EXHAUSTED）+ douyinvod CDN 单 IP 限速 403，首轮 failed 率 ~40% | 运营性而非链路故障：稳定轮询每轮增量 0–2 条无此问题；处置=低峰分批重驱 failed（prepare 白名单 failed→resolved，README「抖音 VOD 跟踪」有命令）；根治挂账 EPIC-04+（导入第 2 个 dtk 身份 / discover 单轮条目上限设置化） |
+| **值守订阅 URL 身份冲突**（Task 6-Step3 实录）：冻结契约 room url=account.url，但账号注册/发现要求主页 URL（sec_uid 归一锚点）——同一账号无法同时承载 VOD 发现与直播值守 | 本次验收 SQL 手改 account.url 变通；根治方案（挂账 EPIC-04+）：source_account 增 `live_room_url` 独立列（迁移+API+bridge 改造，桥的 build_recording 改读新列），或账号侧支持多 URL |
 
 **明示不做（V1 边界）**：直播实时字幕流式抽取（EPIC-04 后）、弹幕采集、多录制器实例编排、douyin 评论区、TikTok 海外版。
 
