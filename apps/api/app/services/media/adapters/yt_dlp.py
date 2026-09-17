@@ -77,11 +77,16 @@ class GenericYtDlpAdapter:
         download_timeout_sec: int = 600,
         allowlist: tuple[str, ...] = ("youtube.com", "youtu.be", "bilibili.com", "douyin.com"),
         playlist_max_items: int = 50,
+        cookies_file: str | None = None,
     ) -> None:
         self._proc = YtDlpProcess(binary=binary, timeout_sec=timeout_sec)
         self._download_timeout = download_timeout_sec
         self._allowlist = allowlist
         self._playlist_max_items = playlist_max_items
+        self._cookies_args = ["--cookies", cookies_file] if cookies_file else []
+
+    def _base_args(self) -> list[str]:
+        return [*self._cookies_args, *_SABR_ARGS]
 
     # --- EPIC-02 实现 ---
 
@@ -93,7 +98,7 @@ class GenericYtDlpAdapter:
                 "--no-playlist",
                 "--no-warnings",
                 "--skip-download",
-                *_SABR_ARGS,
+                *self._base_args(),
                 url,
             ]
         )
@@ -110,7 +115,7 @@ class GenericYtDlpAdapter:
                 "--no-warnings",
                 "--playlist-items",
                 f"1:{self._playlist_max_items}",
-                *_SABR_ARGS,
+                *self._base_args(),
                 account.url,
             ]
         )
@@ -136,7 +141,7 @@ class GenericYtDlpAdapter:
                 "json3/vtt",
                 "-o",
                 str(Path(tmp) / "%(id)s.%(ext)s"),
-                *_SABR_ARGS,
+                *self._base_args(),
                 item.canonical_url,
             ]
             self._proc.run_json(args)
@@ -162,7 +167,7 @@ class GenericYtDlpAdapter:
                 "--no-warnings",
                 "-o",
                 str(Path(workdir) / "%(id)s.%(ext)s"),
-                *_SABR_ARGS,
+                *self._base_args(),
                 item.canonical_url,
             ],
             timeout_sec=self._download_timeout,

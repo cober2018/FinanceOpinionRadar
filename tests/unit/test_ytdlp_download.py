@@ -14,11 +14,18 @@ ITEM = ItemRef(external_item_id="abc123", canonical_url=URL)
 AUDIO = b"ID3fake-audio-bytes"
 
 
-def make(monkeypatch: pytest.MonkeyPatch, *, behavior: str = "writeout") -> GenericYtDlpAdapter:
+def make(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    behavior: str = "writeout",
+    **adapter_kwargs,
+) -> GenericYtDlpAdapter:
     monkeypatch.setenv("FAKE_YTDLP_BEHAVIOR", behavior)
     monkeypatch.setenv("FAKE_YTDLP_WRITE_NAME", "abc123.m4a")
     monkeypatch.setenv("FAKE_YTDLP_CONTENT", AUDIO.decode("latin-1"))
-    return GenericYtDlpAdapter(binary=FAKE, timeout_sec=5, allowlist=("youtube.com",))
+    return GenericYtDlpAdapter(
+        binary=FAKE, timeout_sec=5, allowlist=("youtube.com",), **adapter_kwargs
+    )
 
 
 def test_download_returns_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -64,3 +71,31 @@ def test_download_rejects_disallowed_url(monkeypatch: pytest.MonkeyPatch) -> Non
     bad = ItemRef(external_item_id="x", canonical_url="https://evil.com/watch?v=x")
     with pytest.raises(UrlNotAllowedError):
         make(monkeypatch).download_media(bad, Path("/tmp/whatever"))
+
+
+def test_download_carries_cookies_when_configured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # /qa 发现：抖音提取器要求新鲜访客 cookie，adapter 必须能透传 --cookies
+    args_file = tmp_path / "args.json"
+    monkeypatch.setenv("FAKE_YTDLP_ARGS_FILE", str(args_file))
+    cookie = tmp_path / "cookies.txt"
+    cookie.write_text("# Netscape HTTP Cookie File\n")
+    workdir = tmp_path / "w"
+    workdir.mkdir()
+    make(monkeypatch, cookies_file=str(cookie)).download_media(ITEM, workdir)
+    argv = json.loads(args_file.read_text())
+    at = argv.index("--cookies")
+    assert argv[at + 1] == str(cookie)
+
+
+def test_download_no_cookies_flag_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    args_file = tmp_path / "args.json"
+    monkeypatch.setenv("FAKE_YTDLP_ARGS_FILE", str(args_file))
+    workdir = tmp_path / "w"
+    workdir.mkdir()
+    make(monkeypatch).download_media(ITEM, workdir)
+    argv = json.loads(args_file.read_text())
+    assert "--cookies" not in argv

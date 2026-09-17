@@ -16,4 +16,5 @@ def get_media_adapter() -> MediaSourceAdapter:
         download_timeout_sec=s.ytdlp_download_timeout_sec,
         allowlist=s.media_host_allowlist,
         playlist_max_items=s.discover_playlist_max_items,
+        cookies_file=s.ytdlp_cookies_file or None,
     )

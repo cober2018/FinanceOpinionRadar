@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     ytdlp_binary: str = "yt-dlp"
     ytdlp_timeout_sec: int = 60
     ytdlp_download_timeout_sec: int = 600  # 媒体下载远慢于 resolve，独立超时（RAD-031）
+    # 抖音等平台要求新鲜访客 cookie；空=不传 --cookies（Netscape 格式 cookie 文件路径）
+    ytdlp_cookies_file: str = ""
     ffmpeg_binary: str = "ffmpeg"
     ffmpeg_timeout_sec: int = 600
     media_host_allowlist: tuple[str, ...] = (
