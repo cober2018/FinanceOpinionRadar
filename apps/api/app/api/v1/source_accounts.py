@@ -30,12 +30,17 @@ class CreateSourceAccountRequest(BaseModel):
     display_name: str | None = None
     discovery_mode: Literal["manual", "auto_poll"] = "manual"
     poll_interval_sec: int = 3600
+    # 人类化随机区间（秒）：设置后每次发现成功在区间内重抽 poll_interval_sec
+    poll_interval_min_sec: int | None = None
+    poll_interval_max_sec: int | None = None
     config_json: dict = {}
 
 
 class PatchSourceAccountRequest(BaseModel):
     discovery_mode: Literal["manual", "auto_poll"] | None = None
     poll_interval_sec: int | None = None
+    poll_interval_min_sec: int | None = None
+    poll_interval_max_sec: int | None = None
     enabled: bool | None = None
     live_monitor_enabled: bool | None = None
     monitor_interval_sec: int | None = None
@@ -51,6 +56,8 @@ class SourceAccountResponse(BaseModel):
     url: str | None
     discovery_mode: str
     poll_interval_sec: int
+    poll_interval_min_sec: int | None
+    poll_interval_max_sec: int | None
     enabled: bool
     live_monitor_enabled: bool
     monitor_interval_sec: int
@@ -92,6 +99,8 @@ def create_source_account(body: CreateSourceAccountRequest, session: DbDep):
         discovery_mode=body.discovery_mode,
     )
     account.poll_interval_sec = body.poll_interval_sec
+    account.poll_interval_min_sec = body.poll_interval_min_sec
+    account.poll_interval_max_sec = body.poll_interval_max_sec
     account.config_json = body.config_json
     session.commit()
     return account

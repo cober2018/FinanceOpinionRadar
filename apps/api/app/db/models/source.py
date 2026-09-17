@@ -38,6 +38,10 @@ class SourceAccount(TimestampMixin, IdMixin, Base):
     url: Mapped[str | None] = mapped_column(Text)
     discovery_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="manual")
     poll_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=3600)
+    # 人类化随机轮询（RAD-023 扩展）：设置 [min, max] 后每次发现成功在区间内均匀重抽
+    # poll_interval_sec，使下次到点随机化（模仿人工浏览节奏）；为空保持固定间隔，兼容旧账号
+    poll_interval_min_sec: Mapped[int | None] = mapped_column(Integer)
+    poll_interval_max_sec: Mapped[int | None] = mapped_column(Integer)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # --- Plan #4 直播值守（RAD-LIVE-04）---
     # true 时 recorder_bridge 将该账号同步到 StreamCap 值守；enabled 仍为总开关

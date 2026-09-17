@@ -71,7 +71,9 @@ def test_discover_source_account_task_runs_end_to_end(
     assert sent == [("prepare_source_item", {"args": [1]})]
 
 
-def test_dispatch_due_only_enabled_and_due(db_session, sent, task_session_factory):
+def test_dispatch_due_only_enabled_and_due(
+    db_session, sent, task_session_factory, monkeypatch: pytest.MonkeyPatch
+):
     due = _make_account(db_session, external_id="due", url="https://www.youtube.com/@d/videos")
     _make_account(
         db_session,
@@ -87,9 +89,28 @@ def test_dispatch_due_only_enabled_and_due(db_session, sent, task_session_factor
     )
     db_session.commit()
 
+    # 封闭 .env：stagger 显式 0 → payload 无 countdown
+    from types import SimpleNamespace
+
+    real_settings = worker_tasks.get_settings
+
+    def _settings_with(stagger: int):
+        return lambda: SimpleNamespace(
+            **{**real_settings().__dict__, "discover_dispatch_stagger_max_sec": stagger}
+        )
+
+    monkeypatch.setattr(worker_tasks, "get_settings", _settings_with(0))
     n = worker_tasks.dispatch_due_discoveries.run()
     assert n == 1
     assert sent == [("discover_source_account", {"args": [due.id]})]
+
+    # stagger>0：payload 带 0~N 随机 countdown（人类化错峰）
+    monkeypatch.setattr(worker_tasks, "get_settings", _settings_with(60))
+    sent.clear()
+    worker_tasks.dispatch_due_discoveries.run()
+    ((name, kwargs),) = sent
+    assert name == "discover_source_account" and kwargs["args"] == [due.id]
+    assert 0 <= kwargs["countdown"] <= 60
 
     # repo 层三态单测（E5）
     repo = SourceAccountRepository(db_session)

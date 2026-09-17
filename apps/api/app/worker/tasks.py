@@ -2,6 +2,8 @@
 Plan #4 Task 2：adapter 按 platform 分流（douyin → 外部 dtk，其余 → yt-dlp 通用）。
 """
 
+import random
+
 import structlog
 
 from app.core.settings import get_settings
@@ -55,11 +57,14 @@ def dispatch_due_discoveries() -> int:
     """
     from app.repositories.source_accounts import SourceAccountRepository
 
+    # 人类化错峰：同批到期账号在 0~N 秒内随机延迟派发，避免同一秒并发访问平台（0=关闭）
+    stagger_max = get_settings().discover_dispatch_stagger_max_sec
     session = get_session_factory()()
     try:
         due = SourceAccountRepository(session).list_due()
         for account in due:
-            celery_app.send_task("discover_source_account", args=[account.id])
+            kwargs = {"countdown": random.uniform(0, stagger_max)} if stagger_max > 0 else {}
+            celery_app.send_task("discover_source_account", args=[account.id], **kwargs)
         logger.info("dispatch_due_discoveries", dispatched=len(due))
         return len(due)
     finally:

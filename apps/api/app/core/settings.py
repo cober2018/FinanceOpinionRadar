@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     )
     discover_playlist_max_items: int = 50
     discover_dispatch_interval_sec: int = 300
+    # 人类化错峰：同批到期账号派发时加 0~N 秒随机 countdown，避免同一秒并发打向平台；
+    # 0 = 关闭（测试默认）
+    discover_dispatch_stagger_max_sec: int = 0
     # --- Plan #4 抖音（外部 dtk 解析服务，部署见 infra/docker/docker-compose.douyin.yml） ---
     # 空=未配置；douyin 平台 adapter 构造即报错（三段消息，见 factory）
     douyin_api_base_url: str = ""

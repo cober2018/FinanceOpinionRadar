@@ -1,5 +1,6 @@
 """来源发现编排（RAD-022/023）：resolve → 建/联账号 → upsert 条目 → 派生下游任务。"""
 
+import random
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -23,6 +24,17 @@ logger = structlog.get_logger(__name__)
 SendFunc = Callable[..., object]
 
 FALLBACK_CREATOR_NAME = "未知来源"
+
+
+def _redraw_random_poll_interval(account: SourceAccount) -> None:
+    """配置了 [min, max] 区间时，本次成功后在区间内均匀重抽 poll_interval_sec。
+
+    到期判定仍是 last_success_at + poll_interval_sec，间隔本身每轮随机 ⇒ 访问到点随机，
+    模仿人工浏览节奏；未配置区间（NULL）的账号保持固定间隔不变。
+    """
+    lo, hi = account.poll_interval_min_sec, account.poll_interval_max_sec
+    if lo is not None and hi is not None and 0 < lo <= hi:
+        account.poll_interval_sec = random.randint(lo, hi)
 
 
 def resolve_url_preview(url: str, session: Session, adapter: MediaSourceAdapter) -> ResolvedMedia:
@@ -117,6 +129,7 @@ def discover_account(
                 created_ids.append(item.id)
         account.last_success_at = datetime.now(UTC)
         account.failure_count = 0
+        _redraw_random_poll_interval(account)
         session.commit()
     except Exception:
         # F2：任务边界捕获——记完整上下文后重抛，绝不吞错
