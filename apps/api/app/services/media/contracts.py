@@ -7,6 +7,7 @@ fetch_subtitle/download 的返回结构在 EPIC-03 充实字段，此处先钉�
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 
 
@@ -111,4 +112,4 @@ class MediaSourceAdapter(Protocol):
         self, item: ItemRef, language: str | None = None
     ) -> SubtitleResult | None: ...
 
-    def download_media(self, item: ItemRef) -> DownloadResult: ...
+    def download_media(self, item: ItemRef, workdir: str | Path) -> DownloadResult: ...

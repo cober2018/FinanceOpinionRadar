@@ -13,6 +13,7 @@ def get_media_adapter() -> MediaSourceAdapter:
     return GenericYtDlpAdapter(
         binary=s.ytdlp_binary,
         timeout_sec=s.ytdlp_timeout_sec,
+        download_timeout_sec=s.ytdlp_download_timeout_sec,
         allowlist=s.media_host_allowlist,
         playlist_max_items=s.discover_playlist_max_items,
     )

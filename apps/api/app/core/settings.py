@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # --- EPIC-02 媒体发现 ---
     ytdlp_binary: str = "yt-dlp"
     ytdlp_timeout_sec: int = 60
+    ytdlp_download_timeout_sec: int = 600  # 媒体下载远慢于 resolve，独立超时（RAD-031）
     media_host_allowlist: tuple[str, ...] = (
         "youtube.com",
         "youtu.be",

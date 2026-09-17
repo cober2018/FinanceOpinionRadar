@@ -13,6 +13,7 @@ from app.services.media.contracts import (
     AdapterProcessError,
     AdapterTimeoutError,
     DiscoveredItem,
+    DownloadResult,
     ItemRef,
     NotSingleItemError,
     ResolvedMedia,
@@ -70,10 +71,12 @@ class GenericYtDlpAdapter:
         *,
         binary: str = "yt-dlp",
         timeout_sec: int = 60,
+        download_timeout_sec: int = 600,
         allowlist: tuple[str, ...] = ("youtube.com", "youtu.be", "bilibili.com", "douyin.com"),
         playlist_max_items: int = 50,
     ) -> None:
         self._proc = YtDlpProcess(binary=binary, timeout_sec=timeout_sec)
+        self._download_timeout = download_timeout_sec
         self._allowlist = allowlist
         self._playlist_max_items = playlist_max_items
 
@@ -136,8 +139,28 @@ class GenericYtDlpAdapter:
                 auto=auto,
             )
 
-    def download_media(self, item):  # type: ignore[no-untyped-def]
-        raise NotImplementedError("EPIC-03 RAD-031")
+    def download_media(self, item: ItemRef, workdir: str | Path) -> DownloadResult:
+        # workdir 归编排层所有（TemporaryDirectory 生命周期），adapter 只往里写
+        ensure_allowed_url(item.canonical_url, self._allowlist)
+        self._proc.run_json(
+            [
+                "-f",
+                "bestaudio/best",
+                "--no-playlist",
+                "--no-warnings",
+                "-o",
+                str(Path(workdir) / "%(id)s.%(ext)s"),
+                item.canonical_url,
+            ],
+            timeout_sec=self._download_timeout,
+        )
+        files = [
+            f for f in Path(workdir).iterdir() if f.is_file() and f.suffix != ".part"
+        ]  # ENG-3A：跳过 yt-dlp 半成品残留
+        if not files:
+            raise AdapterProcessError("yt-dlp 未产出下载文件")
+        f = files[0]
+        return DownloadResult(local_path=str(f), size_bytes=f.stat().st_size)
 
 
 def _parse_resolved(data: dict) -> ResolvedMedia:
