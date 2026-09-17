@@ -139,6 +139,28 @@ curl -fsS -X PATCH localhost:8000/api/v1/source-accounts/<账号id> \
 
 **关键：StreamCap 配置不热重载**——每次重启后需打开一次 http://localhost:5001（Web UI）激活监控循环，此后循环与浏览器解耦。开播后 `ls data/douyin/live_segments/douyin/<主播>/<日期>/` 看分片出现；transcript 追加沿上方 SQL（会话条目 `item_type='live'`），下播静默 15min 后会话收尾。
 
+### 抖音 VOD 跟踪（Task 4 真栈验收实录，2026-09-17）
+
+新闻联播替身账号（sec_uid 样本）端到端实测：注册 auto_poll 账号 → 手动触发一次 discover（3 页 60 条）→ prepare 自动接队 → **37/60 条转写完成（1398 段 transcript）**，段落为真实中文文本；余量为可重试的运营性失败（见下）。
+
+**首扫涌量预期**：高频更新博主首轮 discover 一次拉满 `DOUYIN_DISCOVER_MAX_PAGES`×20 条，60 个解析/下载请求打向 dtk 与 douyinvod CDN，单身份池会被打爆（`IDENTITY_POOL_EXHAUSTED`）、CDN 会限速 403——**这不是链路故障**，稳定运行后每轮增量只有 0–2 条，无此问题。首轮残余 failed 项的恢复操作（prepare 白名单允许 failed 重跑，只是不自动补扫）：
+
+```bash
+# 低峰分批重驱（每批 4-5 条间隔 30s，避免再次触发限速）
+docker exec financeopinionradar-postgres-1 psql -U radar -d radar -tAc \
+  "SELECT id FROM source_item WHERE source_account_id=<账号id> AND status='failed'" \
+| xargs .venv/bin/python -c "
+import sys, time
+from app.worker.celery_app import celery_app
+ids = [int(x) for x in sys.stdin if x.strip()]
+for i in range(0, len(ids), 4):
+    [celery_app.send_task('prepare_source_item', args=[j]) for j in ids[i:i+4]]
+    if i + 4 < len(ids): time.sleep(30)
+"
+```
+
+失败分类速查：`IDENTITY_POOL_EXHAUSTED`/CDN 403 = 限速，冷却后重驱即可；`TRANSCRIPT_FAILED`（清洗后 0 段）= 视频无有效语音（纯音乐/空拍），属保护性拒绝，不重驱。
+
 字段速查——两个 interval 别混：
 
 | 字段 | 语义 | 默认 |

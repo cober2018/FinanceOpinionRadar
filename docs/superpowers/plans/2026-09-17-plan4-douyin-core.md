@@ -238,6 +238,7 @@ dtk 5.x 返回归一化字段，**adapter 映射与单测 fixture 一律按此 s
 | 无直播可测（验收时段博主没开播） | ingest 与录制解耦（Task 5 不依赖 Task 6）；录制链路用公开测试直播间或降级为文件投喂验收 |
 | prepare_max_media_duration_sec=14400 对超长直播分片无效 | 分片粒度 ≤10min 天然规避；会话总时长不设限（分片逐个处理） |
 | Evil0ctal API 对主页列表的翻页游标行为 | Task 1 Step 2 实录 maxCursor 语义，Task 2 discover 按 v1 只取第一页 ×N 翻页上限（`douyin_discover_max_pages`，默认 3） |
+| **VOD 首扫涌量**（Task 4 实录）：高频博主首轮 discover 一次 60 条，单身份池被打爆（IDENTITY_POOL_EXHAUSTED）+ douyinvod CDN 单 IP 限速 403，首轮 failed 率 ~40% | 运营性而非链路故障：稳定轮询每轮增量 0–2 条无此问题；处置=低峰分批重驱 failed（prepare 白名单 failed→resolved，README「抖音 VOD 跟踪」有命令）；根治挂账 EPIC-04+（导入第 2 个 dtk 身份 / discover 单轮条目上限设置化） |
 
 **明示不做（V1 边界）**：直播实时字幕流式抽取（EPIC-04 后）、弹幕采集、多录制器实例编排、douyin 评论区、TikTok 海外版。
 
