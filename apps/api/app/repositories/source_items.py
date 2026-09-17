@@ -78,6 +78,17 @@ class SourceItemRepository(BaseRepository[SourceItem]):
             raise RuntimeError(f"upsert 后行缺失: {source_account_id}/{external_item_id}")
         return row, True
 
+    def list_by_status(self, status: str, *, limit: int) -> list[SourceItem]:
+        """注记②补扫：按 id 升序取指定状态条目（limit 截断防单轮过载）。"""
+        return list(
+            self.session.scalars(
+                select(SourceItem)
+                .where(SourceItem.status == status)
+                .order_by(SourceItem.id)
+                .limit(limit)
+            )
+        )
+
     def _select(self, *, account_id: int, external: str) -> SourceItem | None:
         return self.session.scalars(
             select(SourceItem).where(

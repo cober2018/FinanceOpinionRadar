@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     subtitle_min_chars: int = 10  # 解析后总字符数低于此视为不可用 → 走 ASR
     transcript_overlap_tolerance_ms: int = 2000  # RAD-034 重叠阈值
     prepare_max_media_duration_sec: int = 14400  # CEO-2C：超限快速失败防 CPU 长期占用
+    prepare_sweep_interval_sec: int = 600  # 注记②：discovered 周期补扫（beat）
+    prepare_sweep_batch_size: int = 200  # 单轮补扫派发上限，防任务风暴
 
     @field_validator("media_host_allowlist", mode="before")
     @classmethod

@@ -1,7 +1,8 @@
-"""EPIC-02 Celery 任务：账号发现 + 到期派发（RAD-023）。"""
+"""EPIC-02 Celery 任务：账号发现 + 到期派发（RAD-023）；EPIC-03：prepare 编排 + 存量补扫。"""
 
 import structlog
 
+from app.core.settings import get_settings
 from app.db.session import get_session_factory
 from app.services import discovery
 from app.services.media.contracts import MediaSourceAdapter
@@ -43,5 +44,41 @@ def dispatch_due_discoveries() -> int:
             celery_app.send_task("discover_source_account", args=[account.id])
         logger.info("dispatch_due_discoveries", dispatched=len(due))
         return len(due)
+    finally:
+        session.close()
+
+
+@celery_app.task(name="prepare_source_item")  # 注记①：幂等在编排层（行锁+状态门槛），重复投递安全
+def prepare_source_item(item_id: int) -> dict:
+    from app.services.preparation import prepare_source_item as run_prepare
+    from app.services.storage import get_storage
+    from app.services.transcription import get_transcription_provider
+
+    session = get_session_factory()()
+    try:
+        return run_prepare(
+            item_id,
+            session,
+            build_adapter(),
+            get_storage(),
+            get_transcription_provider(),
+        )
+    finally:
+        session.close()
+
+
+@celery_app.task(name="dispatch_pending_prepares")  # 注记②：周期补扫 discovered（G1 兜底）
+def dispatch_pending_prepares() -> int:
+    from app.repositories.source_items import SourceItemRepository
+
+    session = get_session_factory()()
+    try:
+        pending = SourceItemRepository(session).list_by_status(
+            "discovered", limit=get_settings().prepare_sweep_batch_size
+        )
+        for item in pending:
+            celery_app.send_task("prepare_source_item", args=[item.id])
+        logger.info("dispatch_pending_prepares", dispatched=len(pending))
+        return len(pending)
     finally:
         session.close()

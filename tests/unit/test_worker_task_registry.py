@@ -11,3 +11,16 @@ def test_worker_registry_contains_epic02_tasks() -> None:
     celery_app.loader.import_default_modules()
     assert "dispatch_due_discoveries" in celery_app.tasks
     assert "discover_source_account" in celery_app.tasks
+
+
+def test_worker_registry_contains_prepare_tasks() -> None:
+    # 注记②：prepare 任务 + discovered 周期补扫必须在 worker 注册表里
+    celery_app.loader.import_default_modules()
+    assert "prepare_source_item" in celery_app.tasks
+    assert "dispatch_pending_prepares" in celery_app.tasks
+
+
+def test_beat_schedule_wires_prepare_sweep() -> None:
+    sched = celery_app.conf.beat_schedule.get("dispatch-pending-prepares")
+    assert sched is not None and sched["task"] == "dispatch_pending_prepares"
+    assert sched["schedule"] > 0
