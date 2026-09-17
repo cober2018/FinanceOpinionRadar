@@ -7,12 +7,14 @@ import structlog
 from app.core.settings import get_settings
 from app.services.transcription.contracts import TranscriptionProvider
 from app.services.transcription.faster_whisper import FasterWhisperProvider
+from app.services.transcription.mlx_whisper import MlxWhisperProvider
 from app.services.transcription.whisperx_provider import WhisperXProvider
 
 logger = structlog.get_logger(__name__)
 
 __all__ = [
     "FasterWhisperProvider",
+    "MlxWhisperProvider",
     "TranscriptionProvider",
     "WhisperXProvider",
     "build_transcription_provider",
@@ -29,8 +31,18 @@ def build_transcription_provider(
     enable_diarization: bool,
     beam_size: int = 5,
     max_segment_end_ratio: float = 1.05,
+    provider: str = "faster_whisper",
+    mlx_model: str = "mlx-community/whisper-medium",
+    mlx_python: str = "",
+    mlx_worker: str = "",
 ) -> TranscriptionProvider:
     """纯工厂：显式入参，便于单测覆盖 flag 组合。"""
+    if provider == "mlx":
+        return MlxWhisperProvider(
+            model_name=mlx_model,
+            mlx_python=mlx_python,
+            mlx_worker=mlx_worker,
+        )
     fw = FasterWhisperProvider(
         model_name=model_name,
         device=device,
@@ -64,4 +76,8 @@ def get_transcription_provider() -> TranscriptionProvider:
         enable_diarization=s.enable_diarization,
         beam_size=s.asr_beam_size,
         max_segment_end_ratio=s.asr_max_segment_end_ratio,
+        provider=s.asr_provider,
+        mlx_model=s.asr_mlx_model,
+        mlx_python=s.asr_mlx_python,
+        mlx_worker=s.asr_mlx_worker,
     )

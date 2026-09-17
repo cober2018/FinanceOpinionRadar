@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     recorder_container_name: str = "streamcap"  # 配置变更后 docker restart 的目标容器
     recorder_sync_interval_sec: int = 600  # beat：账号 → 录制器配置同步
     # --- EPIC-03 ASR（RAD-033/035） ---
+    asr_provider: str = "faster_whisper"  # faster_whisper | mlx（Apple Silicon Metal）
+    asr_mlx_python: str = ""  # venv_arm64 python 路径（voice-pro，见 README「ASR 引擎」）
+    asr_mlx_worker: str = ""  # mlx_worker.py 路径
+    asr_mlx_model: str = "mlx-community/whisper-medium"
     # medium：与 voice-pro 共用本地模型缓存（无 small），中文财经内容效果更好
     asr_model_name: str = "medium"
     asr_device: str = "cpu"

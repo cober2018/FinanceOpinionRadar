@@ -221,6 +221,9 @@ docker compose -f infra/docker/docker-compose.douyin.yml up -d   # 3) 重启生�
 
 ### 运维注记
 
+- **ASR 引擎（mlx，Apple Silicon）**：`.env` 设 `ASR_PROVIDER=mlx` + `ASR_MLX_PYTHON`/`ASR_MLX_WORKER` 指向 voice-pro 的 venv_arm64（Python 3.12 + mlx-metal + mlx-whisper），radar 以子进程桥接、零新依赖。基准：whisper-medium 转录 13.4min 中文音频 **59s vs CPU faster-whisper 56min（~57x）**，模型 `mlx-community/whisper-medium` 已在本机 HF 缓存。模型质量与 faster-whisper medium 同级。
+- **视频转录语义**：注册账号的首扫只采集历史视频**标题**（metadata `backfill` 标记），不自动转录；周期轮询发现的**新**视频仅当「视频监控」开（auto_poll）才自动转写；其余一律在监控台「视频库」手动点「转写」。
+
 - **worker 低并发**：ASR 是 CPU 密集且长事务占用 DB 连接，`make worker-beat` 建议低并发（如 `--concurrency=2`）；高并发只会互相抢 CPU。
 - **模型缓存**：本机 venv 运行走 `~/.cache/huggingface`（已与 `~/Project/voice-pro` 共用 Systran faster-whisper 模型，无需重复下载）；容器化 worker 需把该目录挂载为卷，否则每次重启重新下载模型。
 
