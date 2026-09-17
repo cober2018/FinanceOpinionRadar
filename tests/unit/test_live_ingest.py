@@ -10,10 +10,31 @@ from app.services import live_ingest
 
 
 def _make_tree(root: Path) -> Path:
-    """StreamCap 实录布局：<root>/<author>/<YYYY-MM-DD>/<base>_NNN.TS（Task 1 决策记录）。"""
+    """StreamCap 实录布局：<root>/<author>/<YYYY-MM-DD>/<base>_NNN.TS（folder_name_platform 关）。"""
     d = root / "新闻联播" / "2026-09-17"
     d.mkdir(parents=True)
     return d
+
+
+def _make_tree_with_platform(root: Path) -> Path:
+    """StreamCap 默认布局（folder_name_platform 开，bridge user_settings 默认）：
+    <root>/<platform>/<author>/<YYYY-MM-DD>/<base>_NNN.TS——Task 1 决策记录，Task 6-Step3 实录。"""
+    d = root / "抖音" / "MS4wLjABxxx" / "2026-09-17"
+    d.mkdir(parents=True)
+    return d
+
+
+def test_scan_streamcap_default_layout_with_platform_dir(tmp_path: Path) -> None:
+    day = _make_tree_with_platform(tmp_path)
+    _write_seg(day, "base", 1)
+    _write_seg(day, "base", 0)
+
+    sessions = live_ingest.scan_live_dir(tmp_path)
+    assert len(sessions) == 1
+    s = sessions[0]
+    assert s.author == "MS4wLjABxxx"  # author 取主播级目录，平台级不进会话键
+    assert s.date == "2026-09-17"
+    assert [seg.index for seg in s.segments] == [0, 1]
 
 
 def _write_seg(day_dir: Path, base: str, index: int) -> Path:

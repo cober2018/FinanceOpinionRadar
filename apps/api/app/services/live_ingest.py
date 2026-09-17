@@ -54,26 +54,42 @@ class LiveSessionDir:
 
 
 def scan_live_dir(root: Path) -> list[LiveSessionDir]:
-    """扫描 <root>/<author>/<date>/*.ts 两级布局，按 (author, date) 分组、index 升序。"""
+    """扫描 StreamCap 目录树，按 (author, date) 分组、index 升序。
+
+    两种实录布局（Task 1 决策记录 + Task 6-Step3 真栈）：
+    `<root>/<platform>/<author>/<date>/*.ts`（folder_name_platform 开，bridge 默认）与
+    `<root>/<author>/<date>/*.ts`（关）。author 取主播级目录（平台级不进会话键）。
+    """
     grouped: dict[tuple[str, str], list[LiveSegment]] = {}
-    for author_dir in root.iterdir():
-        if not author_dir.is_dir():
+    for d1 in root.iterdir():
+        if not d1.is_dir():
             continue
-        for day_dir in author_dir.iterdir():
-            if not day_dir.is_dir() or not _DATE_DIR_RE.match(day_dir.name):
+        for d2 in d1.iterdir():
+            if not d2.is_dir():
                 continue
-            for f in day_dir.iterdir():
-                m = _SEGMENT_RE.search(f.name)
-                if f.is_file() and m:
-                    grouped.setdefault((author_dir.name, day_dir.name), []).append(
-                        LiveSegment(index=int(m.group(1)), path=f, mtime=f.stat().st_mtime)
-                    )
+            if _DATE_DIR_RE.match(d2.name):
+                _collect_day(grouped, d1.name, d2)
+                continue
+            for d3 in d2.iterdir():  # <platform>/<author>/<date>
+                if d3.is_dir() and _DATE_DIR_RE.match(d3.name):
+                    _collect_day(grouped, d2.name, d3)
     sessions = [
         LiveSessionDir(author=a, date=d, segments=sorted(segs, key=lambda x: x.index))
         for (a, d), segs in grouped.items()
     ]
     sessions.sort(key=lambda x: (x.author, x.date))
     return sessions
+
+
+def _collect_day(
+    grouped: dict[tuple[str, str], list[LiveSegment]], author: str, day_dir: Path
+) -> None:
+    for f in day_dir.iterdir():
+        m = _SEGMENT_RE.search(f.name)
+        if f.is_file() and m:
+            grouped.setdefault((author, day_dir.name), []).append(
+                LiveSegment(index=int(m.group(1)), path=f, mtime=f.stat().st_mtime)
+            )
 
 
 def ingest_live_segments(session, provider=None) -> dict:

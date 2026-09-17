@@ -225,7 +225,9 @@ def test_max_segments_per_session_stops_scan(flow, db_session, monkeypatch):
 # --- 从 unit 归并（需真库：conftest 作用域） ---
 
 
-def test_ingest_noop_when_dir_unconfigured(db_session) -> None:
+def test_ingest_noop_when_dir_unconfigured(db_session, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 显式置空而非依赖环境：本机 .env 可能配置 LIVE_SEGMENTS_DIR（真栈验收）
+    _set_dir(monkeypatch, "")
     result = live_ingest.ingest_live_segments(db_session)
     assert result["sessions_active"] == 0
     assert result["noop"] == "live_segments_dir 未配置"
