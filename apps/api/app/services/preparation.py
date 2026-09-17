@@ -187,7 +187,7 @@ def _subtitle_or_asr(
                         item.id,
                         asset_type="subtitle",
                         storage_uri=uri,
-                        mime_type="application/json",
+                        mime_type="text/vtt" if result.fmt == "vtt" else "application/json",
                         size_bytes=len(result.content),
                     )
                     _commit_status(session, item, "media_ready")
