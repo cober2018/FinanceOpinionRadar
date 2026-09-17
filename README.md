@@ -65,6 +65,9 @@ docker compose exec postgres psql -U radar -d radar -c \
 | prepare 日志 `MEDIA_FFMPEG_FAILED` / `ffmpeg` 不存在 | worker 机器无 ffmpeg | `brew install ffmpeg`；API 镜像已内置 |
 | 首次 ASR 转录长时间无输出 | 首次 transcribe 才从 HuggingFace 拉模型（medium 约 1.4GB），非卡死 | 等待即可；慢/失败见下一行 |
 | ASR 模型下载失败/超时 | HF 网络不通（国内常见） | `.env` 设 `HF_ENDPOINT=https://hf-mirror.com` 后重试 |
+| B 站/YouTube 报 412 或 "Sign in to confirm you're not a bot" | 平台反爬要求访客 cookie | 导出浏览器 cookie 为 Netscape 文件，`.env` 设 `YTDLP_COOKIES_FILE=<路径>` |
+| YouTube 报 "Requested format is not available"（仅剩 storyboard） | YouTube PO Token 墙（媒体流需来源证明 token） | 暂不支持 YouTube 下载；需部署 bgutil POT provider（挂账 EPIC-03+/Plan #4） |
+| 抖音单视频报 "Fresh cookies are needed" | Argus 设备指纹风控，补 cookie 也无效 | yt-dlp 上游不支持抖音过盾；抖音采集走 Plan #4 专属 adapter |
 | 抖音账号无法定时发现 | yt-dlp 抖音无频道列表能力 | 注册具体视频链接；账号定时发现仅 YouTube/B 站 |
 
 ### prepare 错误码速查（读自 `source_item.metadata_json.last_error`）

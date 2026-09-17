@@ -2,7 +2,8 @@
 
 幂等模型：FOR UPDATE 行锁 + 状态门槛；commit 释放行锁后每阶段重锁复核（ENG-1A），
 中途状态即时落库，崩溃后可从 failed 重跑（failed→resolved 是白名单迁移）。
-异常一律不重抛（无 autoretry 风暴），失败写 metadata_json.last_error 交补扫/手工重试。
+异常一律不重抛（无 autoretry 风暴），失败写 metadata_json.last_error 供手工重试；
+补扫只接管 discovered，failed 不自动重试（防失败风暴）。
 """
 
 import json
@@ -307,6 +308,7 @@ def _persist_transcript(
         **item.metadata_json,
         "transcript": {**meta, "segment_count": len(cleaned)},
     }
+    item.metadata_json.pop("last_error", None)  # 成功后清掉历史失败残留，避免误读
     if item.language is None and meta["language"]:
         item.language = meta["language"]
     _commit_status(session, item, "transcribed")
