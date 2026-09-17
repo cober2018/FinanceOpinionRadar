@@ -55,7 +55,7 @@ def stub_adapter(monkeypatch: pytest.MonkeyPatch):
         DiscoveredItem("v1", "一", "https://www.youtube.com/watch?v=v1", None, None, {}),
     ]
     adapter = StubAdapter(discovered=items)
-    monkeypatch.setattr(worker_tasks, "build_adapter", lambda: adapter)
+    monkeypatch.setattr(worker_tasks, "build_adapter", lambda platform=None: adapter)
     return adapter
 
 
@@ -105,7 +105,7 @@ def test_failure_marks_task_failed(db_session, monkeypatch, task_session_factory
     monkeypatch.setattr(
         worker_tasks,
         "build_adapter",
-        lambda: StubAdapter(discovered=AdapterError("yt-dlp 崩了")),
+        lambda platform=None: StubAdapter(discovered=AdapterError("yt-dlp 崩了")),
     )
     with pytest.raises(AdapterError):
         worker_tasks.discover_source_account.run(account.id)

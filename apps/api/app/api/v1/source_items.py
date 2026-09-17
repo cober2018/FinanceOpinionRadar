@@ -14,7 +14,7 @@ from app.services.media.contracts import (
     NotSingleItemError,
     UrlNotAllowedError,
 )
-from app.services.media.factory import get_media_adapter
+from app.services.media.factory import detect_platform, get_media_adapter
 
 router = APIRouter(prefix="/source-items", tags=["source-items"])
 
@@ -63,12 +63,24 @@ def _map_adapter_errors(exc: AdapterError) -> HTTPException:
     return HTTPException(status_code=502, detail=str(exc))
 
 
-AdapterDep = Annotated[MediaSourceAdapter, Depends(get_media_adapter)]
 DbDep = Annotated[Session, Depends(get_db)]
 
 
+def _resolve_adapter(body: ResolveUrlRequest) -> MediaSourceAdapter:
+    # per-platform 分流（Task 2 Step 5）：douyin URL → 外部 dtk adapter
+    return get_media_adapter(detect_platform(str(body.url)))
+
+
+def _create_adapter(body: CreateSourceItemRequest) -> MediaSourceAdapter:
+    return get_media_adapter(detect_platform(str(body.url)))
+
+
+RoutedResolveAdapterDep = Annotated[MediaSourceAdapter, Depends(_resolve_adapter)]
+RoutedCreateAdapterDep = Annotated[MediaSourceAdapter, Depends(_create_adapter)]
+
+
 @router.post("/resolve-url", response_model=ResolveUrlResponse)
-def resolve_url(body: ResolveUrlRequest, adapter: AdapterDep) -> ResolveUrlResponse:
+def resolve_url(body: ResolveUrlRequest, adapter: RoutedResolveAdapterDep) -> ResolveUrlResponse:
     """RAD-022 第一步：解析预览，不落库。"""
     try:
         media = adapter.resolve(str(body.url))
@@ -89,7 +101,7 @@ def resolve_url(body: ResolveUrlRequest, adapter: AdapterDep) -> ResolveUrlRespo
 
 @router.post("", response_model=SourceItemResponse, status_code=201)
 def create_source_item(
-    body: CreateSourceItemRequest, session: DbDep, adapter: AdapterDep
+    body: CreateSourceItemRequest, session: DbDep, adapter: RoutedCreateAdapterDep
 ) -> SourceItemResponse:
     """RAD-022 第二步：确认后创建（服务端重新 resolve，C4）。"""
     try:

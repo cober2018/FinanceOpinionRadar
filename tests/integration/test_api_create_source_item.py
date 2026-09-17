@@ -1,9 +1,9 @@
 """POST /source-items 端到端（真库 + StubAdapter）：创建与幂等。"""
 
 import pytest
+from app.api.v1.source_items import _create_adapter
 from app.db.models import SourceItem
 from app.main import app
-from app.services.media.factory import get_media_adapter
 from fastapi.testclient import TestClient
 
 from tests.fixtures.media.payloads import URL
@@ -13,15 +13,20 @@ from tests.integration.test_discovery_service import StubAdapter, _resolved
 @pytest.fixture
 def client(db_session):
     # get_db 也必须 override：否则 TestClient 会把测试数据写进开发库
+    from app.api.v1.source_items import CreateSourceItemRequest
     from app.db.session import get_db
 
+    def fake_create(body: CreateSourceItemRequest) -> StubAdapter:
+        # override 按替身签名解析参数，body 必须带类型标注（否则被当 query 参数 422）
+        return StubAdapter(_resolved())
+
     app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_media_adapter] = lambda: StubAdapter(_resolved())
+    app.dependency_overrides[_create_adapter] = fake_create
     return TestClient(app)
 
 
 def teardown_module():
-    app.dependency_overrides.pop(get_media_adapter, None)
+    app.dependency_overrides.pop(_create_adapter, None)
     from app.db.session import get_db
 
     app.dependency_overrides.pop(get_db, None)

@@ -340,6 +340,11 @@ def _clean_segments(
     return cleaned
 
 
+def record_stage_failure(session: Session, item_id: int, stage: str, exc: Exception) -> dict:
+    """任务入口构造期失败（如 douyin 未配置，F8）复用 _record_failure 落 last_error。"""
+    return _record_failure(session, item_id, stage, exc)
+
+
 def _record_failure(
     session: Session, item_id: int, stage: str, exc: Exception
 ) -> dict:

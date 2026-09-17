@@ -1,6 +1,12 @@
 from datetime import UTC, datetime
 
 import pytest
+from app.api.v1.source_items import (
+    CreateSourceItemRequest,
+    ResolveUrlRequest,
+    _create_adapter,
+    _resolve_adapter,
+)
 from app.main import app
 from app.services.media.contracts import (
     AdapterProcessError,
@@ -10,7 +16,6 @@ from app.services.media.contracts import (
     SubtitleTrack,
     UrlNotAllowedError,
 )
-from app.services.media.factory import get_media_adapter
 from fastapi.testclient import TestClient
 
 
@@ -60,11 +65,20 @@ def client():
 @pytest.fixture
 def install(monkeypatch: pytest.MonkeyPatch):
     def _install(adapter: StubAdapter):
-        # 端点用 Depends(get_media_adapter) → 走 dependency_overrides：
-        app.dependency_overrides[get_media_adapter] = lambda: adapter
+        # 端点按 body URL 分流（Task 2 Step 5）→ override 两个路由依赖。
+        # 注意：override 按**替身签名**解析参数，body 必须带类型标注（否则被当 query 参数 422）
+        def fake_resolve(body: ResolveUrlRequest) -> StubAdapter:
+            return adapter
+
+        def fake_create(body: CreateSourceItemRequest) -> StubAdapter:
+            return adapter
+
+        app.dependency_overrides[_resolve_adapter] = fake_resolve
+        app.dependency_overrides[_create_adapter] = fake_create
 
     yield _install
-    app.dependency_overrides.pop(get_media_adapter, None)
+    app.dependency_overrides.pop(_resolve_adapter, None)
+    app.dependency_overrides.pop(_create_adapter, None)
 
 
 def test_resolve_url_returns_metadata(client, install):

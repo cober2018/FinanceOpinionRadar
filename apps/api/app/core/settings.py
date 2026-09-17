@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     )
     discover_playlist_max_items: int = 50
     discover_dispatch_interval_sec: int = 300
+    # --- Plan #4 抖音（外部 dtk 解析服务，部署见 infra/docker/docker-compose.douyin.yml） ---
+    # 空=未配置；douyin 平台 adapter 构造即报错（三段消息，见 factory）
+    douyin_api_base_url: str = ""
+    douyin_api_key: str = ""
+    douyin_api_timeout_sec: int = 60
+    # 无水印直链落 CDN 白名单（防伪造响应把内网地址当下载源）；实测域名 douyinvod.com
+    douyin_cdn_allowlist: tuple[str, ...] = ("douyin.com", "douyinvod.com")
+    douyin_discover_max_pages: int = 3  # E4：单轮 discover 翻页上限（20 条/页）
     # --- EPIC-03 ASR（RAD-033/035） ---
     # medium：与 voice-pro 共用本地模型缓存（无 small），中文财经内容效果更好
     asr_model_name: str = "medium"
@@ -63,6 +71,14 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_allowlist(cls, v: object) -> object:
         # 环境变量是 CSV（MEDIA_HOST_ALLOWLIST=youtube.com,bilibili.com），归一为小写 tuple
+        if isinstance(v, str):
+            return tuple(h.strip().lower() for h in v.split(",") if h.strip())
+        return v
+
+    @field_validator("douyin_cdn_allowlist", mode="before")
+    @classmethod
+    def _parse_douyin_cdn_allowlist(cls, v: object) -> object:
+        # 同 CSV 模式（DOUYIN_CDN_ALLOWLIST=douyin.com,douyinvod.com）
         if isinstance(v, str):
             return tuple(h.strip().lower() for h in v.split(",") if h.strip())
         return v

@@ -47,7 +47,7 @@ def sent(monkeypatch: pytest.MonkeyPatch):
 def test_prepare_task_runs_pipeline(db_session, task_session_factory, monkeypatch):
     item = _make_discovered_item(db_session)
     db_session.commit()  # 任务用独立 session，先落库
-    monkeypatch.setattr(worker_tasks, "build_adapter", lambda: FakeAdapter(_resolved()))
+    monkeypatch.setattr(worker_tasks, "build_adapter", lambda platform=None: FakeAdapter(_resolved()))
     monkeypatch.setattr("app.services.storage.get_storage", lambda: FakeStorage())
     monkeypatch.setattr(
         "app.services.transcription.get_transcription_provider", lambda: FakeProvider()
@@ -85,3 +85,81 @@ def test_sweep_respects_batch_size(db_session, task_session_factory, sent, monke
     n = worker_tasks.dispatch_pending_prepares.run()
     assert n == 2
     assert [c[1]["args"][0] for c in sent] == sorted(x.id for x in items)[:2]  # id 升序截断
+
+
+# --- Plan #4 Task 2 Step 5：per-platform 分流（F8） ---
+
+
+def _make_douyin_discovered_item(session):
+    from app.db.models import Creator
+    from app.db.models.source import SourceAccount
+    from app.repositories.source_items import SourceItemRepository
+
+    creator = Creator(display_name="抖音博主", status="active")
+    session.add(creator)
+    session.flush()
+    account = SourceAccount(
+        creator_id=creator.id,
+        platform="douyin",
+        external_id="MS4wLjABdytest",
+        url="https://www.douyin.com/user/MS4wLjABdytest",
+        discovery_mode="manual",
+        poll_interval_sec=3600,
+    )
+    session.add(account)
+    session.flush()
+    item, _created = SourceItemRepository(session).upsert_by_external(
+        source_account_id=account.id,
+        external_item_id="dy001",
+        title="抖音视频",
+        canonical_url="https://www.douyin.com/video/dy001",
+        item_type="vod",
+    )
+    session.flush()
+    return item
+
+
+def test_prepare_task_routes_douyin_platform(db_session, task_session_factory, monkeypatch):
+    """douyin 平台 item → build_adapter 收到 "douyin"（分流正确性）。"""
+    item = _make_douyin_discovered_item(db_session)
+    db_session.commit()
+    seen: dict = {}
+
+    def fake_build(platform=None):
+        seen["platform"] = platform
+        return FakeAdapter(_resolved())
+
+    monkeypatch.setattr(worker_tasks, "build_adapter", fake_build)
+    monkeypatch.setattr("app.services.storage.get_storage", lambda: FakeStorage())
+    monkeypatch.setattr(
+        "app.services.transcription.get_transcription_provider", lambda: FakeProvider()
+    )
+    monkeypatch.setattr(preparation, "normalize_audio", _fake_normalize)
+
+    worker_tasks.prepare_source_item.run(item.id)
+    assert seen["platform"] == "douyin"
+
+
+def test_prepare_task_douyin_unconfigured_writes_last_error(
+    db_session, task_session_factory, monkeypatch
+):
+    """douyin 未配置 dtk → 构造期 AdapterError 与其他 prepare 失败同语义落 last_error。"""
+    from app.core.settings import get_settings
+    from app.services.media.factory import get_media_adapter
+
+    item = _make_douyin_discovered_item(db_session)
+    db_session.commit()
+    monkeypatch.setenv("DOUYIN_API_BASE_URL", "")
+    get_settings.cache_clear()
+    get_media_adapter.cache_clear()
+    try:
+        result = worker_tasks.prepare_source_item.run(item.id)
+    finally:
+        get_settings.cache_clear()
+        get_media_adapter.cache_clear()
+
+    assert result["code"] == "RESOLVE_FAILED" and result["status"] == "failed"
+    db_session.expire_all()
+    meta = db_session.get(SourceItem, item.id).metadata_json
+    assert meta["last_error"]["code"] == "RESOLVE_FAILED"
+    assert "DOUYIN_API_BASE_URL" in meta["last_error"]["message"]
