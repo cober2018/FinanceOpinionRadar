@@ -1102,6 +1102,20 @@ platform-adapter-broken.md
 
 # 14. V1.5：直播能力（V1 稳定后才开始）
 
+> **落地注记⑤（2026-09-17，Plan #4 `docs/superpowers/plans/2026-09-17-plan4-douyin-core.md`）**：
+> RAD-LIVE 经提前裁决自 V1.5 前置实施（抖音是 PRD 核心采集源，直播链路不等 EPIC-04+）。
+> 自建 LiveAdapter/Recorder 改为**外部服务路线**，原小节映射如下：
+> RAD-LIVE-01（LiveAdapter）+ RAD-LIVE-02（Recorder Service）→ Evil0ctal dtk 5.1.0（VOD 解析）
+> + ihmily/StreamCap v1.0.3（直播录制，独立容器自循环值守；radar 侧 `recorder_bridge` 只做
+> recordings.json 原子同步 + docker restart 触发重载——配置不热重载、重启后需一次 UI 会话激活，
+> 契约由 Task 1 spike 决策记录冻结）；RAD-LIVE-03（分片）→ `services/live_ingest.py`
+> 会话聚合/偏移拼接/幂等/单飞闸（e2c3107，分片命名实录 `_{nnn}.TS`，目录按日期切分、
+> 跨零点会话归并）；RAD-LIVE-04（值守字段）→ source_account 增列迁移 + 账号管理 API
+> （61ccac5）+ 值守桥 beat 同步（1bbb17a）；RAD-LIVE-05（去重）→ 会话幂等唯一键
+> `live:{account_external_id}:{目录日期}`（未收尾优先归并）。VOD 侧配套：douyin adapter
+> 走外部解析服务、factory per-platform 分流（e92ec57），douyin 配置键见 `.env.example`，
+> 外部栈部署见 `infra/docker/docker-compose.douyin.yml` 与 README「抖音 Quickstart」。
+
 ## RAD-LIVE-01 LiveAdapter
 
 接口：

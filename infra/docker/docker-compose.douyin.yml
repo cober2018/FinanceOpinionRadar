@@ -1,0 +1,116 @@
+# Plan #4 抖音外部服务栈：Evil0ctal dtk 5.1.0（VOD 解析）+ StreamCap v1.0.3（直播录制）。
+# 与仓库根 docker-compose.yml（radar 自身 dev 依赖）相互独立、可并存。
+# 部署/引导序列与每步预期输出见 README「抖音 Quickstart」；镜像升级见「升级外部镜像」。
+#
+# 镜像 pin 策略（沿 D6/D51，禁 :latest）：两个外部镜像 pin 明确 tag；
+# timescaledb 以 spike 实测 digest pin（latest 漂移可能破坏 hypertable 迁移假设）。
+# 网络注意（OrbStack + registry mirror）：本机 mirror 对个别 docker.io 仓库返回 403
+# （radar 主 compose 的 mc 因此改走 quay.io）；本文件涉及镜像在 spike 实拉均直连成功，
+# 遇 pull 403/404 先查 Docker 设置中的 registry mirrors。
+#
+# 共享状态（host bind，宿主 venv 跑 make worker-beat 的 radar 进程直接读写）：
+#   ${DOUYIN_STATE_DIR}/streamcap-config  StreamCap 配置目录
+#     —— radar 值守桥原子写 recordings.json（.env: RECORDER_CONFIG_PATH）
+#   ${DOUYIN_STATE_DIR}/live_segments     分片落盘目录
+#     —— StreamCap 写 / radar live ingest 读（.env: LIVE_SEGMENTS_DIR）
+#
+# 必需变量：
+#   DTK_SECRET_KEY   dtk 凭据主密钥（≥32 字符；必须跨重启持久，换钥则已存身份不可解）
+#     生成：export DTK_SECRET_KEY="$(openssl rand -base64 48)"
+# 可选变量：DOUYIN_API_PORT(8080)  STREAMCAP_UI_PORT(5001)
+#   DOUYIN_STATE_DIR(../../data/douyin，相对本文件)
+#   DOUYIN_COOKIES_FILE(/dev/null；真实 jar 见 README cookie 步骤)
+
+name: radar-douyin
+
+services:
+  dtk-postgres:
+    image: timescale/timescaledb:latest-pg16@sha256:f495f2bc25ca7596ca8e1606c6241ca250ccc56a0c082b9f2ec0d290e0126cd9
+    container_name: dtk-postgres
+    environment:
+      POSTGRES_USER: dtk
+      POSTGRES_PASSWORD: dtk
+      POSTGRES_DB: dtk
+    volumes: ["dtk_pgdata:/var/lib/postgresql/data"]
+    networks: [dtk-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dtk -d dtk"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  dtk-redis:
+    image: redis:7-alpine
+    container_name: dtk-redis
+    networks: [dtk-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # dtk 迁移强制 hypertable（TimescaleDB）；一次性容器，api/worker 等它成功后再起
+  dtk-migrate:
+    image: evil0ctal/douyin_tiktok_download_api:5.1.0
+    container_name: dtk-migrate
+    entrypoint: ["dtk-entrypoint"]
+    command: ["migrate"]
+    environment: &dtk_env
+      DTK_SECRET_KEY: ${DTK_SECRET_KEY:?未设置——openssl rand -base64 48 生成后 export，见文件头注释}
+      DTK_DATABASE_URL: postgresql+asyncpg://dtk:dtk@dtk-postgres:5432/dtk
+      DTK_REDIS_URL: redis://dtk-redis:6379/0
+    depends_on:
+      dtk-postgres: { condition: service_healthy }
+      dtk-redis: { condition: service_healthy }
+    networks: [dtk-net]
+    restart: "no"
+
+  douyin-api:
+    image: evil0ctal/douyin_tiktok_download_api:5.1.0
+    container_name: douyin-api
+    entrypoint: ["dtk-entrypoint"]
+    command: ["api"]
+    environment: *dtk_env
+    ports: ["127.0.0.1:${DOUYIN_API_PORT:-8080}:8000"]
+    volumes:
+      # cookie jar 只读挂载仅为容器内取用方便；radar 的 import 走 API（curl 在宿主侧读文件）
+      - "${DOUYIN_COOKIES_FILE:-/dev/null}:/cookies/douyin.cookies.txt:ro"
+    depends_on:
+      dtk-migrate: { condition: service_completed_successfully }
+    networks: [dtk-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/docs', timeout=5)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  dtk-worker:
+    image: evil0ctal/douyin_tiktok_download_api:5.1.0
+    container_name: dtk-worker
+    entrypoint: ["dtk-entrypoint"]
+    command: ["worker"]
+    environment: *dtk_env
+    depends_on:
+      dtk-migrate: { condition: service_completed_successfully }
+    networks: [dtk-net]
+    restart: unless-stopped
+
+  streamcap:
+    image: ihmily/streamcap:v1.0.3
+    container_name: streamcap
+    environment:
+      # 分片目录日期键用容器本地时间；radar ingest 会话键按日期目录归并，须与观测时区一致
+      TZ: Asia/Shanghai
+    ports: ["127.0.0.1:${STREAMCAP_UI_PORT:-5001}:6006"]
+    volumes:
+      - "${DOUYIN_STATE_DIR:-../../data/douyin}/streamcap-config:/app/config"
+      - "${DOUYIN_STATE_DIR:-../../data/douyin}/live_segments:/app/downloads"
+    restart: unless-stopped
+
+volumes:
+  dtk_pgdata:
+
+networks:
+  dtk-net:

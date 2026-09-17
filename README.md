@@ -50,6 +50,116 @@ docker compose exec postgres psql -U radar -d radar -c \
 
 `cp .env.example .env` 可选——dev 环境默认值即开箱可用；仅当本地端口被占用时才需要覆盖（见下方排障）。
 
+## 抖音（Plan #4）
+
+抖音与 YouTube/B 站（内置 yt-dlp 路径）分流：VOD（博主新视频）走外部 [Evil0ctal dtk 解析服务](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)，直播录制走外部 [StreamCap](https://github.com/ihmily/StreamCap)，两个外部容器由 `infra/docker/docker-compose.douyin.yml` 声明，与 radar 自身 compose 独立。未配置 `DOUYIN_API_BASE_URL` 时 douyin 链路整体不可用，其余平台不受影响。
+
+### 抖音 Quickstart
+
+从零到第一条抖音 transcript：机械步骤合计约 10 分钟（外加镜像首次拉取时间）。**导出 cookie 是唯一不可压缩的人工步骤**，需要登录过抖音的浏览器。
+
+前置（一次性）：导出 Netscape 格式 cookies.txt 后**必须按域过滤出纯 `.douyin.com` 子集**（多平台混合 jar 会被 dtk 400 拒收），并记下导出浏览器的 User-Agent（第 4 步要原样回传）：
+
+```bash
+grep '\.douyin\.com' ~/Downloads/cookies.txt > ~/.config/radar/douyin.cookies.txt
+chmod 600 ~/.config/radar/douyin.cookies.txt
+```
+
+第 1 步——起外部栈（compose 内置 migrate→api/worker 顺序闸与 StreamCap）：
+
+```bash
+export DTK_SECRET_KEY="$(openssl rand -base64 48)"   # dtk 凭据主密钥，固化到 shell profile；换钥则已存身份不可解
+docker compose -f infra/docker/docker-compose.douyin.yml up -d
+docker compose -f infra/docker/docker-compose.douyin.yml ps
+# 预期：dtk-migrate Exited(0)；douyin-api/dtk-worker/dtk-postgres/dtk-redis/streamcap Up
+curl -fsS localhost:8080/api/setup/status
+# {"success":true,"data":{"initialized":false},...}
+```
+
+第 2 步——dtk 首次引导（仅首次部署；管理员账号 + 会话 cookie）：
+
+```bash
+TOKEN=$(docker logs douyin-api 2>&1 | grep -o 'setup?token=[A-Za-z0-9_-]*' | head -1 | cut -d= -f2)
+curl -fsS -X POST localhost:8080/api/setup/init -H 'content-type: application/json' \
+  -d "{\"token\":\"$TOKEN\",\"username\":\"radar\",\"password\":\"<自定管理员密码>\"}"
+curl -fsS -c /tmp/dtk-jar -X POST localhost:8080/api/v1/auth/login \
+  -H 'content-type: application/json' -d '{"username":"radar","password":"<同上>"}'
+# 预期 {"success":true,...}；会话落 /tmp/dtk-jar，admin 接口用 -b /tmp/dtk-jar
+```
+
+第 3 步——造 radar 用的 API key（scopes 必填，radar 全链依赖这四项；明文只在创建响应出现一次）：
+
+```bash
+curl -fsS -b /tmp/dtk-jar -X POST localhost:8080/api/v1/admin/api-keys \
+  -H 'content-type: application/json' \
+  -d '{"name":"radar","scopes":["douyin:read","media:read","media:write","archive:read"]}' \
+  | .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["data"]["secret"])'
+# 输出 dtk_… 即 DOUYIN_API_KEY
+```
+
+第 4 步——导入抖音 cookie（身份池为空时任务报 `IDENTITY_POOL_EXHAUSTED`）：
+
+```bash
+curl -fsS -b /tmp/dtk-jar -X POST localhost:8080/api/v1/admin/identities/import \
+  -H 'content-type: application/json' \
+  -d "$(jq -n --rawfile c ~/.config/radar/douyin.cookies.txt \
+        '{platform:"douyin",cookies:$c,user_agent:"<导出该 jar 的浏览器 UA>"}')"
+# 预期 {"success":true,"data":{"stored":true,"identity_id":"…"}}
+```
+
+第 5 步——radar 侧接线（`.env` 取消注释并填写）后起 worker：
+
+```bash
+# DOUYIN_API_BASE_URL=http://localhost:8080
+# DOUYIN_API_KEY=dtk_…                                # 第 3 步
+# LIVE_SEGMENTS_DIR=data/douyin/live_segments        # 与 compose 共享卷同目录
+# RECORDER_CONFIG_PATH=data/douyin/streamcap-config/recordings.json
+make worker-beat
+```
+
+第 6 步——VOD 链验收（注册账号 → 自动发现 → 自动转写）。URL 必须是主页形态 `https://www.douyin.com/user/<sec_uid>`（搜索页解析不出 sec_uid，422 拒收）：
+
+```bash
+curl -fsS -X POST localhost:8000/api/v1/source-accounts \
+  -H 'content-type: application/json' \
+  -d '{"platform":"douyin","url":"https://www.douyin.com/user/<sec_uid>","display_name":"<名字>","discovery_mode":"auto_poll","poll_interval_sec":1800}'
+# 201 返回账号（enabled 默认 true）；beat 日志出现 discover_ok 后 prepare 自动接手
+```
+
+transcript 验收沿「自动转录」节的 SQL（`WHERE source_item_id=<新视频 id>`）。
+
+第 7 步——直播值守链（同一账号加三个字段）：
+
+```bash
+curl -fsS -X PATCH localhost:8000/api/v1/source-accounts/<账号id> \
+  -H 'content-type: application/json' \
+  -d '{"live_monitor_enabled":true,"monitor_interval_sec":600}'
+# 值守桥 beat（默认 10min）写入 data/douyin/streamcap-config/recordings.json 并 docker restart streamcap
+```
+
+**关键：StreamCap 配置不热重载**——每次重启后需打开一次 http://localhost:5001（Web UI）激活监控循环，此后循环与浏览器解耦。开播后 `ls data/douyin/live_segments/douyin/<主播>/<日期>/` 看分片出现；transcript 追加沿上方 SQL（会话条目 `item_type='live'`），下播静默 15min 后会话收尾。
+
+字段速查——两个 interval 别混：
+
+| 字段 | 语义 | 默认 |
+|---|---|---|
+| `poll_interval_sec` | VOD 发现轮询间隔：auto_poll 账号多久 discover 一次新视频 | 3600 |
+| `monitor_interval_sec` | 直播值守录制分片时长：映射 StreamCap `segment_time`，夹紧到 300–600s | 600 |
+
+`PATCH /source-accounts/<id>` 全量字段：`discovery_mode` / `poll_interval_sec` / `enabled` / `live_monitor_enabled` / `monitor_interval_sec` / `expected_schedule`。
+
+升级外部镜像（douyin 链路异常的第一响应）——改 tag → pull → 冒烟 → 重启：
+
+```bash
+# 1) 编辑 infra/docker/docker-compose.douyin.yml 的 image: 行（dtk 与 streamcap 两处）
+docker compose -f infra/docker/docker-compose.douyin.yml pull douyin-api streamcap
+curl -fsS -o /dev/null -w '%{http_code}\n' localhost:8080/docs   # 2) 冒烟，预期 200
+docker compose -f infra/docker/docker-compose.douyin.yml up -d   # 3) 重启生效
+# 4) 升级后复查：/api/setup/status 仍 initialized:true；必要时重跑 Quickstart 第 4 步补身份池
+```
+
+诊断一条龙：`curl $DOUYIN_API_BASE_URL/docs`（dtk 探活）→ `ls data/douyin/live_segments/douyin/`（分片观测）→ worker 日志 grep `recorder_sync_`（值守桥）与 `sessions_active`（ingest）。
+
 ## 排障
 
 | 症状 | 原因 | 处理 |
@@ -68,7 +178,11 @@ docker compose exec postgres psql -U radar -d radar -c \
 | B 站/YouTube 报 412 或 "Sign in to confirm you're not a bot" | 平台反爬要求访客 cookie | 导出浏览器 cookie 为 Netscape 文件，`.env` 设 `YTDLP_COOKIES_FILE=<路径>` |
 | YouTube 报 "Requested format is not available"（仅剩 storyboard） | YouTube PO Token 墙（媒体流需来源证明 token） | 暂不支持 YouTube 下载；需部署 bgutil POT provider（挂账 EPIC-03+/Plan #4） |
 | 抖音单视频报 "Fresh cookies are needed" | Argus 设备指纹风控，补 cookie 也无效 | yt-dlp 上游不支持抖音过盾；抖音采集走 Plan #4 专属 adapter |
-| 抖音账号无法定时发现 | yt-dlp 抖音无频道列表能力 | 注册具体视频链接；账号定时发现仅 YouTube/B 站 |
+| 抖音账号无法定时发现 | yt-dlp 抖音无频道列表能力 | 注册具体视频链接；账号定时发现走 Plan #4（外部 dtk 服务，见「抖音 Quickstart」） |
+| prepare 报 `douyin 未配置`（问题+原因+修复三段消息） | `.env` 缺 `DOUYIN_API_BASE_URL`（或 `DOUYIN_API_KEY`） | 填键后重启 worker；YouTube/B 站链路不受影响 |
+| douyin 链路整体超时/连接拒绝 | 外部 dtk 栈未起或 migrate 失败 | `curl -fsS localhost:8080/docs` 探活；`docker compose -f infra/docker/docker-compose.douyin.yml ps` 看 dtk-migrate 是否 Exited(0)，日志定位 |
+| dtk 任务 400 / `IDENTITY_POOL_EXHAUSTED`，或提示 cookie 失效 | 身份池为空、jar 过期或混入他域 cookie（Discussion #548 同类） | 重导新鲜 douyin-only jar（Quickstart 前置步+第 4 步）；`user_agent` 必须与 jar 来源浏览器一致 |
+| StreamCap 无分片落盘 | 监控循环未激活（配置写入触发重启后需一次 UI 会话）/未开播/值守桥未写入 | 打开一次 http://localhost:5001；`ls data/douyin/live_segments/douyin/`；worker 日志 grep `recorder_sync_` |
 
 ### prepare 错误码速查（读自 `source_item.metadata_json.last_error`）
 
