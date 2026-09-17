@@ -72,3 +72,16 @@ class SourceAccountRepository(BaseRepository[SourceAccount]):
             .limit(limit)
         )
         return list(self.session.scalars(stmt).all())
+
+    def list_live_monitored(self, *, limit: int = 1000) -> list[SourceAccount]:
+        """直播值守账号（Plan #4 Task 6 调用方）：enabled 且 live_monitor_enabled。"""
+        stmt = (
+            select(SourceAccount)
+            .where(
+                SourceAccount.enabled.is_(True),
+                SourceAccount.live_monitor_enabled.is_(True),
+            )
+            .order_by(SourceAccount.id)
+            .limit(limit)
+        )
+        return list(self.session.scalars(stmt).all())

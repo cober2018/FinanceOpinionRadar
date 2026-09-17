@@ -30,13 +30,19 @@ def resolve_url_preview(url: str, session: Session, adapter: MediaSourceAdapter)
     return adapter.resolve(url)
 
 
+def get_or_create_creator(session: Session, display_name: str | None):
+    """creator get-or-create（C5）：按名幂等，空名回退占位（Plan #4 Task 3 账号 API 复用）。"""
+    creators = CreatorRepository(session)
+    creator = creators.get_by_name(display_name or FALLBACK_CREATOR_NAME)
+    if creator is None:
+        creator = creators.create(display_name=display_name or FALLBACK_CREATOR_NAME)
+    return creator
+
+
 def create_item_from_url(url: str, session: Session, adapter: MediaSourceAdapter) -> SourceItem:
     """RAD-022 确认后创建：服务端重新 resolve（C4），账号/creator get-or-create（C5）。"""
     media = adapter.resolve(url)
-    creators = CreatorRepository(session)
-    creator = creators.get_by_name(media.channel_name or FALLBACK_CREATOR_NAME)
-    if creator is None:
-        creator = creators.create(display_name=media.channel_name or FALLBACK_CREATOR_NAME)
+    creator = get_or_create_creator(session, media.channel_name)
 
     accounts = SourceAccountRepository(session)
     # channel 级账号；无 channel 信息回退为"每视频一账号"

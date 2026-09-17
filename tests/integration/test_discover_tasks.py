@@ -119,3 +119,18 @@ def test_beat_schedule_wired():
     sched = celery_app.conf.beat_schedule.get("dispatch-due-discoveries")
     assert sched is not None and sched["task"] == "dispatch_due_discoveries"
     assert sched["schedule"] > 0
+
+
+def test_dispatch_includes_auto_poll_accounts(db_session, task_session_factory, sent):
+    """CEO F1 语义：enabled 即参与轮询，auto_poll 是意图标注——auto_poll 账号必须被派发。"""
+    account = _make_account(
+        db_session,
+        external_id="auto_poll_acc",
+        url="https://www.douyin.com/user/MS4wLjABauto",
+    )
+    account.discovery_mode = "auto_poll"
+    account.poll_interval_sec = 1800
+    db_session.commit()
+
+    worker_tasks.dispatch_due_discoveries.run()
+    assert any(c[1]["args"][0] == account.id for c in sent)

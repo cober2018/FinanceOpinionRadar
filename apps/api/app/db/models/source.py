@@ -39,6 +39,17 @@ class SourceAccount(TimestampMixin, IdMixin, Base):
     discovery_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="manual")
     poll_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=3600)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # --- Plan #4 直播值守（RAD-LIVE-04）---
+    # true 时 recorder_bridge 将该账号同步到 StreamCap 值守；enabled 仍为总开关
+    live_monitor_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # 值守录制分片间隔（秒），与发现轮询间隔 poll_interval_sec 语义不同（README 字段速查表）
+    monitor_interval_sec: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=300, server_default="300"
+    )
+    # 期望开播时段（如 {"days":["sat","sun"],"start":"20:00","end":"23:00"}），空=全天值守
+    expected_schedule: Mapped[dict | None] = mapped_column(JSONB)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     config_json: Mapped[dict] = mapped_column(
