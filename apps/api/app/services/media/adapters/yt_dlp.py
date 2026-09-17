@@ -3,7 +3,9 @@
 import json
 import re
 import subprocess
+import tempfile
 from datetime import UTC, datetime
+from pathlib import Path
 
 from app.services.media.contracts import (
     AccountRef,
@@ -11,8 +13,10 @@ from app.services.media.contracts import (
     AdapterProcessError,
     AdapterTimeoutError,
     DiscoveredItem,
+    ItemRef,
     NotSingleItemError,
     ResolvedMedia,
+    SubtitleResult,
     SubtitleTrack,
 )
 from app.services.media.url_guard import ensure_allowed_url
@@ -30,18 +34,19 @@ class YtDlpProcess:
         self._binary = binary
         self._timeout_sec = timeout_sec
 
-    def run_json(self, args: list[str]) -> dict:
+    def run_json(self, args: list[str], *, timeout_sec: int | None = None) -> dict:
+        effective = timeout_sec if timeout_sec is not None else self._timeout_sec
         argv = [self._binary, *args]
         try:
             proc = subprocess.run(  # noqa: S603  argv 列表直传，无 shell 拼接
                 argv,
                 capture_output=True,
                 text=True,
-                timeout=self._timeout_sec,
+                timeout=effective,
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise AdapterTimeoutError(f"yt-dlp 超时（>{self._timeout_sec}s）: {args[0]}") from exc
+            raise AdapterTimeoutError(f"yt-dlp 超时（>{effective}s）: {args[0]}") from exc
         except FileNotFoundError as exc:
             raise AdapterProcessError(
                 f"yt-dlp 二进制不存在: {self._binary!r}，检查 YTDLP_BINARY"
@@ -99,10 +104,37 @@ class GenericYtDlpAdapter:
         # _type='playlist' 是频道页签（Videos/Shorts/Live）等子播放列表，真条目是 'url'
         return [_parse_entry(e) for e in entries if e.get("id") and e.get("_type") != "playlist"]
 
-    # --- EPIC-03 接口占位（契约完整性优先，实现随 ASR 落地） ---
+    # --- EPIC-03：字幕 / 媒体下载 ---
 
-    def fetch_subtitle(self, item, language: str | None = None):  # type: ignore[no-untyped-def]
-        raise NotImplementedError("EPIC-03 RAD-030")
+    def fetch_subtitle(
+        self, item: ItemRef, language: str | None = None, *, auto: bool = False
+    ) -> SubtitleResult | None:
+        ensure_allowed_url(item.canonical_url, self._allowlist)
+        with tempfile.TemporaryDirectory() as tmp:
+            args = [
+                "--skip-download",
+                "--no-playlist",
+                "--no-warnings",
+                "--write-auto-subs" if auto else "--write-subs",
+                "--sub-langs",
+                language or "all",
+                "--sub-format",
+                "json3/vtt",
+                "-o",
+                str(Path(tmp) / "%(id)s.%(ext)s"),
+                item.canonical_url,
+            ]
+            self._proc.run_json(args)
+            files = sorted(Path(tmp).glob("*.json3")) or sorted(Path(tmp).glob("*.vtt"))
+            if not files:
+                return None
+            f = files[0]
+            return SubtitleResult(
+                language=language or "",
+                content=f.read_bytes(),
+                fmt=f.suffix.lstrip("."),
+                auto=auto,
+            )
 
     def download_media(self, item):  # type: ignore[no-untyped-def]
         raise NotImplementedError("EPIC-03 RAD-031")

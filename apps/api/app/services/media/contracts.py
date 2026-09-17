@@ -67,10 +67,12 @@ class ResolvedMedia:
 
 @dataclass(frozen=True)
 class SubtitleResult:
-    """EPIC-03 落地真实字段，先钉形状。"""
+    """字幕抓取产物：内容字节 + 语言 + 格式（json3|vtt）+ 是否自动生成。"""
 
     language: str
     content: bytes
+    fmt: str = "vtt"
+    auto: bool = False
 
 
 @dataclass(frozen=True)
