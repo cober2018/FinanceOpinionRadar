@@ -1,0 +1,64 @@
+"""live_ingest 纯逻辑单测（Plan #4 Task 5 Step 1）：目录扫描/分组/序号解析。
+
+DB 相关行为（会话建立/幂等/单飞闸/收尾）在 tests/integration/test_live_ingest_flow.py
+（conftest 作用域决定，unit 目录拿不到 db_session）。
+"""
+
+from pathlib import Path
+
+from app.services import live_ingest
+
+
+def _make_tree(root: Path) -> Path:
+    """StreamCap 实录布局：<root>/<author>/<YYYY-MM-DD>/<base>_NNN.TS（Task 1 决策记录）。"""
+    d = root / "新闻联播" / "2026-09-17"
+    d.mkdir(parents=True)
+    return d
+
+
+def _write_seg(day_dir: Path, base: str, index: int) -> Path:
+    p = day_dir / f"{base}_{index:03d}.TS"  # StreamCap 大写扩展名 + _%03d（Task 1 实录）
+    p.write_bytes(b"\x00" * 16)
+    return p
+
+
+def test_scan_groups_by_author_and_date_sorted_by_index(tmp_path: Path) -> None:
+    day = _make_tree(tmp_path)
+    _write_seg(day, "base", 2)
+    _write_seg(day, "base", 0)
+    _write_seg(day, "base", 1)
+
+    sessions = live_ingest.scan_live_dir(tmp_path)
+    assert len(sessions) == 1
+    s = sessions[0]
+    assert s.author == "新闻联播"
+    assert s.date == "2026-09-17"
+    assert [seg.index for seg in s.segments] == [0, 1, 2]
+
+
+def test_scan_ignores_non_segment_files_and_wrong_depth(tmp_path: Path) -> None:
+    day = _make_tree(tmp_path)
+    _write_seg(day, "base", 0)
+    (day / "notes.txt").write_text("x")
+    (day / "base_part.tmp").write_bytes(b"x")  # 无 _NNN 序号 → 忽略
+    (tmp_path / "loose.ts").write_bytes(b"x")  # 层级不对 → 忽略
+
+    sessions = live_ingest.scan_live_dir(tmp_path)
+    assert len(sessions) == 1
+    assert len(sessions[0].segments) == 1
+
+
+def test_scan_empty_root_returns_empty(tmp_path: Path) -> None:
+    assert live_ingest.scan_live_dir(tmp_path) == []
+
+
+def test_scan_multiple_authors_and_dates(tmp_path: Path) -> None:
+    d1 = tmp_path / "主播A" / "2026-09-17"
+    d2 = tmp_path / "主播B" / "2026-09-18"
+    d1.mkdir(parents=True)
+    d2.mkdir(parents=True)
+    (d1 / "a_000.TS").write_bytes(b"x")
+    (d2 / "b_000.ts").write_bytes(b"x")  # 小写扩展名同样命中
+
+    sessions = live_ingest.scan_live_dir(tmp_path)
+    assert [(s.author, s.date) for s in sessions] == [("主播A", "2026-09-17"), ("主播B", "2026-09-18")]

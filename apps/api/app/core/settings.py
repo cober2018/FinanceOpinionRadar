@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     # 无水印直链落 CDN 白名单（防伪造响应把内网地址当下载源）；实测域名 douyinvod.com
     douyin_cdn_allowlist: tuple[str, ...] = ("douyin.com", "douyinvod.com")
     douyin_discover_max_pages: int = 3  # E4：单轮 discover 翻页上限（20 条/页）
+    # --- Plan #4 直播值守（Task 5/6）---
+    # StreamCap downloads 共享卷根目录；空 = live ingest 不启用（beat 每轮单行 no-op 日志）
+    live_segments_dir: str = ""
+    live_scan_interval_sec: int = 300  # beat：分片扫描
+    live_close_grace_sec: int = 900  # 分片静默 ≥ 此值 → 会话视为下播收尾
+    live_min_segment_sec: int = 30  # 小于视为残片跳过（F5：不计入转写偏移）
+    live_max_segments_per_session: int = 120  # 防失控（4h@2min 上限量级）
+    live_segment_max_attempts: int = 3  # 同分片连续失败 N 次后跳过记账（F4）
+    recorder_sync_interval_sec: int = 600  # beat：账号 → 录制器配置同步
     # --- EPIC-03 ASR（RAD-033/035） ---
     # medium：与 voice-pro 共用本地模型缓存（无 small），中文财经内容效果更好
     asr_model_name: str = "medium"

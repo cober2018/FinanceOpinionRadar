@@ -23,4 +23,13 @@ celery_app.conf.beat_schedule = {
         "task": "dispatch_pending_prepares",
         "schedule": get_settings().prepare_sweep_interval_sec,
     },
+    # Plan #4 Task 5/6：直播分片扫描 + 值守桥同步（服务端未配置时任务内 no-op）
+    "ingest-live-segments": {
+        "task": "ingest_live_segments",
+        "schedule": get_settings().live_scan_interval_sec,
+    },
+    "sync-live-monitors": {
+        "task": "sync_live_monitors",
+        "schedule": get_settings().recorder_sync_interval_sec,
+    },
 }

@@ -107,3 +107,34 @@ def dispatch_pending_prepares() -> int:
         return len(pending)
     finally:
         session.close()
+
+
+# --- Plan #4 Task 5：直播分片 ingest ---
+
+
+@celery_app.task(name="ingest_live_segments")  # E2：单飞闸在编排内（pg advisory lock）
+def ingest_live_segments() -> dict:
+    from app.services import live_ingest
+    from app.services.transcription import get_transcription_provider
+
+    session = get_session_factory()()
+    try:
+        return live_ingest.ingest_live_segments(
+            session, get_transcription_provider()
+        )
+    finally:
+        session.close()
+
+
+@celery_app.task(name="prepare_live_segment")
+def prepare_live_segment(item_id: int, segment_index: int, path: str) -> dict:
+    from app.services import live_ingest
+
+    return live_ingest.prepare_live_segment(item_id, segment_index, path)
+
+
+@celery_app.task(name="dispatch_live_prepares")  # 失败恢复：缺号分片重派发
+def dispatch_live_prepares() -> int:
+    from app.services import live_ingest
+
+    return live_ingest.dispatch_live_prepares()
