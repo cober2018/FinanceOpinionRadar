@@ -75,3 +75,12 @@ class AuditLog(IdMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class AppSetting(TimestampMixin, Base):
+    """运行时键值配置（前端"安全设置"等类目的持久层；env 是初始默认，DB 可覆盖）。"""
+
+    __tablename__ = "app_setting"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSONB, nullable=False)

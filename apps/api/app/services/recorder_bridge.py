@@ -42,11 +42,29 @@ def clamp_segment_time(sec: int) -> int:
     return max(SEGMENT_TIME_MIN, min(SEGMENT_TIME_MAX, int(sec)))
 
 
-def build_recording(account) -> dict:
-    """账号 → StreamCap Recording 字典（schema 见 Task 1 决策记录 to_dict 全字段）。"""
-    url = account.url or ""
-    if url.startswith("http://"):  # 抖音 handler 注册正则只认 https
-        url = "https://" + url[len("http://"):]
+def resolve_room_url(account) -> str | None:
+    """值守房间解析：live_room_url 优先；url 旧形态（房间页）兼容；否则 None（跳过同步）。
+
+    主页 URL 不能当直播间用（StreamCap 房间 API 拿不到数据，报误导性 "VR live"）。
+    """
+    room = (getattr(account, "live_room_url", None) or "").strip() or None
+    if room is None:
+        url = account.url or ""
+        if "live.douyin.com/" in url:
+            room = url
+    if room and room.startswith("http://"):  # 抖音 handler 注册正则只认 https
+        room = "https://" + room[len("http://"):]
+    return room
+
+
+def build_recording(account) -> dict | None:
+    """账号 → StreamCap Recording 字典（schema 见 Task 1 决策记录 to_dict 全字段）。
+
+    无可值守房间（既无 live_room_url，url 也非直播间形态）→ None，调用方跳过。
+    """
+    url = resolve_room_url(account)
+    if url is None:
+        return None
     return {
         "rec_id": str(uuid.uuid5(_REC_ID_NS, url)),
         "url": url,
@@ -81,7 +99,7 @@ def sync_live_monitors(session, repo=None, *, restart: bool = True) -> dict:
 
         repo = SourceAccountRepository(session)
     accounts = repo.list_live_monitored()
-    desired = [build_recording(a) for a in accounts]
+    desired = [r for a in accounts if (r := build_recording(a)) is not None]
 
     existing = _load_json(path) if path.exists() else []
     if _strip_volatile(existing) == _strip_volatile(desired):

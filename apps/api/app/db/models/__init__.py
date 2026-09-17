@@ -4,11 +4,12 @@ from app.db.models.consensus import CreatorTopicSnapshot, TopicConsensusDaily
 from app.db.models.creator import Creator
 from app.db.models.media import MediaAsset, TranscriptSegment
 from app.db.models.source import SourceAccount, SourceItem
-from app.db.models.system import AuditLog, JobRun, PromptVersion
+from app.db.models.system import AppSetting, AuditLog, JobRun, PromptVersion
 from app.db.models.taxonomy import Entity, Topic
 from app.db.models.viewpoint import Viewpoint, ViewpointEvidence
 
 __all__ = [
+    "AppSetting",
     "AuditLog",
     "Creator",
     "CreatorTopicSnapshot",

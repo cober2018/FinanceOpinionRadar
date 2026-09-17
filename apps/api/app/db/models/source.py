@@ -36,6 +36,9 @@ class SourceAccount(TimestampMixin, IdMixin, Base):
     external_id: Mapped[str] = mapped_column(String(200), nullable=False)
     handle: Mapped[str | None] = mapped_column(String(200))
     url: Mapped[str | None] = mapped_column(Text)
+    # 值守直播间 URL（live.douyin.com/<room_id>），与发现用主页 url 分离——
+    # 一个博主可同时配短视频发现 + 直播值守（解 Plan #4 挂账的 URL 身份冲突）
+    live_room_url: Mapped[str | None] = mapped_column(Text)
     discovery_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="manual")
     poll_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=3600)
     # 人类化随机轮询（RAD-023 扩展）：设置 [min, max] 后每次发现成功在区间内均匀重抽

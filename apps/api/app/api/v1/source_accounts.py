@@ -33,14 +33,18 @@ class CreateSourceAccountRequest(BaseModel):
     # 人类化随机区间（秒）：设置后每次发现成功在区间内重抽 poll_interval_sec
     poll_interval_min_sec: int | None = None
     poll_interval_max_sec: int | None = None
+    # 值守直播间 URL（live.douyin.com/<room_id>）；与主页 url 分离，可同时配两路
+    live_room_url: HttpUrl | None = None
     config_json: dict = {}
 
 
 class PatchSourceAccountRequest(BaseModel):
+    url: HttpUrl | None = None
     discovery_mode: Literal["manual", "auto_poll"] | None = None
     poll_interval_sec: int | None = None
     poll_interval_min_sec: int | None = None
     poll_interval_max_sec: int | None = None
+    live_room_url: HttpUrl | None = None
     enabled: bool | None = None
     live_monitor_enabled: bool | None = None
     monitor_interval_sec: int | None = None
@@ -54,6 +58,7 @@ class SourceAccountResponse(BaseModel):
     external_id: str
     handle: str | None
     url: str | None
+    live_room_url: str | None
     discovery_mode: str
     poll_interval_sec: int
     poll_interval_min_sec: int | None
@@ -66,6 +71,25 @@ class SourceAccountResponse(BaseModel):
     failure_count: int
 
     model_config = {"from_attributes": True}
+
+
+_LIVE_ROOM_RE = re.compile(r"https?://live\.douyin\.com/\d+/?$")
+
+
+def _ensure_live_room_url(url: str) -> None:
+    """douyin 值守直播间必须是房间页形态（StreamCap handler 只认该形态）。"""
+    if not _LIVE_ROOM_RE.match(url):
+        raise HTTPException(
+            status_code=422,
+            detail="直播间 URL 需为 https://live.douyin.com/<room_id> 房间页形态",
+        )
+
+
+def _reject_bad_profile_url(url: str) -> None:
+    raise HTTPException(
+        status_code=422,
+        detail="抖音账号 URL 需为主页形态 https://www.douyin.com/user/<sec_uid>",
+    )
 
 
 def _derive_external_id(platform: str, url: str) -> str:
@@ -101,6 +125,9 @@ def create_source_account(body: CreateSourceAccountRequest, session: DbDep):
     account.poll_interval_sec = body.poll_interval_sec
     account.poll_interval_min_sec = body.poll_interval_min_sec
     account.poll_interval_max_sec = body.poll_interval_max_sec
+    if body.live_room_url is not None:
+        _ensure_live_room_url(str(body.live_room_url))
+        account.live_room_url = str(body.live_room_url)
     account.config_json = body.config_json
     session.commit()
     return account
@@ -126,6 +153,17 @@ def patch_source_account(account_id: int, body: PatchSourceAccountRequest, sessi
     if account is None:
         raise HTTPException(status_code=404, detail=f"source_account {account_id} 不存在")
     for field, value in body.model_dump(exclude_unset=True).items():
+        if field == "live_room_url" and value is not None:
+            _ensure_live_room_url(value)
+            value = str(value)
+        elif field == "url" and value is not None:
+            value = str(value)
+            if account.platform == "douyin":  # 主页形态校验 + sec_uid 重锚（与注册同规则）
+                m = _SEC_UID_RE.search(value)
+                if m is None:
+                    _reject_bad_profile_url(value)  # raises 422
+                    return  # 不可达，仅为类型收窄
+                account.external_id = m.group(1)
         setattr(account, field, value)
     session.commit()
     return account

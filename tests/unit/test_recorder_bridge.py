@@ -136,3 +136,28 @@ def test_sync_user_settings_only_created_when_missing(
 
     recorder_bridge.sync_live_monitors(Mock(), repo=repo)
     assert json.loads(user_settings.read_text())["loop_time_seconds"] == "120"
+
+
+def test_resolve_room_prefers_live_room_url_over_profile():
+    account = _account(
+        url="https://www.douyin.com/user/MS4wLjABxxx",
+        live_room_url="http://live.douyin.com/2040437791",
+    )
+    # live_room_url 优先且 http→https 归一；主页 URL 不再被当直播间
+    assert (
+        recorder_bridge.resolve_room_url(account) == "https://live.douyin.com/2040437791"
+    )
+
+
+def test_sync_skips_account_without_room_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    path = _set(monkeypatch, tmp_path)
+    repo = Mock()
+    # 只有主页 URL（live_room_url 未配）→ 跳过，不写也不重启
+    repo.list_live_monitored.return_value = [_account(url="https://www.douyin.com/user/MS4wLjABxxx")]
+    calls: list[list[str]] = []
+    monkeypatch.setattr(recorder_bridge.subprocess, "run", lambda argv, **kw: calls.append(argv))
+
+    result = recorder_bridge.sync_live_monitors(Mock(), repo=repo)
+    assert result["changed"] is False and result["monitors"] == 0
+    assert not path.exists()
+    assert calls == []

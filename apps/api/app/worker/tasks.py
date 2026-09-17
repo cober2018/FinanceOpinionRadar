@@ -15,11 +15,13 @@ from app.worker.celery_app import celery_app
 logger = structlog.get_logger(__name__)
 
 
-def build_adapter(platform: str | None = None) -> MediaSourceAdapter:
+def build_adapter(
+    platform: str | None = None, *, discover_max_pages: int | None = None
+) -> MediaSourceAdapter:
     # F1：工厂在 services/media，worker 不依赖 app.api；platform=douyin 走外部 dtk
     from app.services.media.factory import get_media_adapter
 
-    return get_media_adapter(platform)
+    return get_media_adapter(platform, discover_max_pages=discover_max_pages)
 
 
 def _account_platform(session, account_id: int) -> str | None:
@@ -41,7 +43,18 @@ def _item_platform(session, item_id: int) -> str | None:
 def discover_source_account(account_id: int) -> dict:
     session = get_session_factory()()
     try:
-        adapter = build_adapter(_account_platform(session, account_id))
+        platform = _account_platform(session, account_id)
+        pages = None
+        if platform == "douyin":  # 安全设置：DB 覆盖 env 的发现翻页上限（防风控节流）
+            from app.services.live_status import get_security_settings
+
+            pages = get_security_settings(session)["effective"]["douyin_discover_max_pages"]
+        # 非 douyin 不传关键字，保持既有 build_adapter(platform) 调用形态（测试桩兼容）
+        adapter = (
+            build_adapter(platform, discover_max_pages=pages)
+            if pages is not None
+            else build_adapter(platform)
+        )
         return discovery.discover_account(
             account_id, session, adapter, send=celery_app.send_task
         )
@@ -58,8 +71,15 @@ def dispatch_due_discoveries() -> int:
     from app.repositories.source_accounts import SourceAccountRepository
 
     # 人类化错峰：同批到期账号在 0~N 秒内随机延迟派发，避免同一秒并发访问平台（0=关闭）
-    stagger_max = get_settings().discover_dispatch_stagger_max_sec
     session = get_session_factory()()
+    try:
+        from app.services.live_status import get_security_settings
+
+        stagger_max = get_security_settings(session)["effective"][
+            "discover_dispatch_stagger_max_sec"
+        ]
+    except Exception:  # noqa: BLE001 设置读取失败回落 env 默认，不阻断派发
+        stagger_max = get_settings().discover_dispatch_stagger_max_sec
     try:
         due = SourceAccountRepository(session).list_due()
         for account in due:
