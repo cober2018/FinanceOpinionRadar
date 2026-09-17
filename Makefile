@@ -24,6 +24,9 @@ dev: ## 启动 API 开发服务器 (前端开发服务器用 make web)
 web: ## 启动前端 Vite 开发服务器
 	cd apps/web && npm run dev
 
+build-web: ## 构建前端产物（apps/web/dist），此后 API 单端口同时服务页面与 /api
+	cd apps/web && npm run build
+
 stop: ## 停止 docker compose 服务
 	docker compose stop
 

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 
+/* ---------------- 类型 ---------------- */
+
 type LiveMonitor = {
   account_id: number
   display_name: string
@@ -24,13 +26,6 @@ type LiveMonitor = {
   last_segment_at: string | null
 }
 
-type SecuritySettings = {
-  discover_dispatch_stagger_max_sec: number | null
-  douyin_discover_max_pages: number | null
-  proxy_pool: string[]
-  effective: { discover_dispatch_stagger_max_sec: number; douyin_discover_max_pages: number }
-}
-
 type LibraryItem = {
   id: number
   account_id: number
@@ -44,6 +39,213 @@ type LibraryItem = {
   backfill: boolean
 }
 
+type TranscriptRow = { sequence_no: number; start_ms: number; end_ms: number; text: string }
+
+type SearchHit = {
+  item_id: number
+  title: string | null
+  display_name: string
+  platform: string
+  published_at: string | null
+  match_count: number
+  snippet: string
+}
+
+type SecuritySettings = {
+  discover_dispatch_stagger_max_sec: number | null
+  douyin_discover_max_pages: number | null
+  proxy_pool: string[]
+  effective: { discover_dispatch_stagger_max_sec: number; douyin_discover_max_pages: number }
+}
+
+type SystemStatus = {
+  asr_provider: string
+  asr_model: string
+  douyin: { configured: boolean; reachable: boolean }
+  recorder: { configured: boolean; container: string; synced_monitors: number }
+}
+
+/* ---------------- 基础 ---------------- */
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const resp = await fetch(`/api/v1${path}`, {
+    headers: { 'content-type': 'application/json' },
+    ...init,
+  })
+  if (!resp.ok) {
+    const body = await resp.text()
+    let detail = body.slice(0, 200)
+    try {
+      detail = JSON.parse(body).detail ?? detail
+    } catch {
+      /* 原样使用 */
+    }
+    throw new Error(detail)
+  }
+  return resp.json() as Promise<T>
+}
+
+function fmtAgo(iso: string | null): string {
+  if (!iso) return '-'
+  const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (secs < 60) return '刚刚'
+  if (secs < 3600) return `${Math.floor(secs / 60)} 分钟前`
+  if (secs < 86400) return `${Math.floor(secs / 3600)} 小时前`
+  return `${Math.floor(secs / 86400)} 天前`
+}
+
+function fmtTs(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
+const STATUS_CN: Record<string, string> = {
+  discovered: '已发现',
+  resolved: '已解析',
+  media_ready: '媒体就绪',
+  transcribing: '转写中',
+  transcribed: '已转写',
+  failed: '失败',
+}
+
+function statusBadge(status: string | null) {
+  if (!status) return <span className="muted">-</span>
+  const cn = STATUS_CN[status] ?? status
+  if (status === 'transcribed') return <span className="badge ok">{cn}</span>
+  if (status === 'failed') return <span className="badge err">{cn}</span>
+  if (status === 'transcribing') return <span className="badge run">{cn}</span>
+  return <span className="badge">{cn}</span>
+}
+
+/* ---------------- 总览 ---------------- */
+
+function OverviewPage({ go }: { go: (tab: string) => void }) {
+  const [monitors, setMonitors] = useState<LiveMonitor[]>([])
+  const [recent, setRecent] = useState<LibraryItem[]>([])
+  const [status, setStatus] = useState<SystemStatus | null>(null)
+
+  useEffect(() => {
+    api<LiveMonitor[]>('/live/monitors').then(setMonitors).catch(() => {})
+    api<LibraryItem[]>('/source-items?limit=10&status=transcribed')
+      .then(setRecent)
+      .catch(() => {})
+    api<SystemStatus>('/system/status').then(setStatus).catch(() => {})
+  }, [])
+
+  const liveCount = monitors.filter((m) => m.is_live === true).length
+  const watching = monitors.filter((m) => m.live_monitor_enabled).length
+  const totalSegs = monitors.reduce((acc, m) => acc + m.transcript_count, 0)
+
+  return (
+    <div className="stack">
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-num">{monitors.length}</div>
+          <div className="stat-label">监控主播</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num">{watching}</div>
+          <div className="stat-label">直播值守中</div>
+        </div>
+        <div className="stat-card">
+          <div className={`stat-num ${liveCount > 0 ? 'live-num' : ''}`}>{liveCount}</div>
+          <div className="stat-label">正在直播</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num">{totalSegs}</div>
+          <div className="stat-label">直播转录段落</div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
+          <h3>直播间状态</h3>
+          <button className="ghost" onClick={() => go('accounts')}>
+            主播管理 →
+          </button>
+        </div>
+        <div className="room-grid">
+          {monitors
+            .filter((m) => m.live_monitor_enabled)
+            .map((m) => (
+              <div key={m.account_id} className={`room-card ${m.is_live === true ? 'room-live' : ''}`}>
+                <div className="room-name">
+                  {m.display_name}
+                  {m.is_live === true && <span className="live-dot">● 直播中</span>}
+                </div>
+                <div className="room-meta">
+                  房间 {m.room_id ?? '-'} · 值守 {m.monitor_interval_sec}s 分片
+                </div>
+                <div className="room-meta">
+                  最近会话 {statusBadge(m.session_status)} · {m.segment_count} 片 / {m.transcript_count} 段
+                </div>
+              </div>
+            ))}
+          {watching === 0 && <p className="muted pad">还没有开启直播值守的主播。到「主播」页添加并打开值守开关。</p>}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
+          <h3>最近转写</h3>
+          <button className="ghost" onClick={() => go('library')}>
+            视频库 →
+          </button>
+        </div>
+        <table className="board">
+          <thead>
+            <tr>
+              <th>主播</th>
+              <th>标题</th>
+              <th>平台</th>
+              <th>发布时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recent.map((r) => (
+              <tr key={r.id}>
+                <td>{r.display_name}</td>
+                <td className="title-cell">{r.title ?? '-'}</td>
+                <td>{r.platform}</td>
+                <td>{fmtAgo(r.published_at)}</td>
+              </tr>
+            ))}
+            {recent.length === 0 && (
+              <tr>
+                <td colSpan={4} className="muted pad">
+                  暂无已完成转写的内容
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {status && (
+        <div className="panel">
+          <div className="panel-head">
+            <h3>引擎状态</h3>
+          </div>
+          <div className="status-row">
+            <span>
+              转录引擎 <b>{status.asr_provider === 'mlx' ? 'mlx（Apple Metal 加速）' : status.asr_provider}</b> · {status.asr_model}
+            </span>
+            <span>
+              抖音解析服务{' '}
+              {status.douyin.reachable ? <b className="ok-text">在线</b> : <b className="err-text">不可达</b>}
+            </span>
+            <span>
+              录制器 {status.recorder.configured ? `${status.recorder.container} · ${status.recorder.synced_monitors} 路值守` : '未配置'}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------------- 主播 ---------------- */
+
 type Draft = {
   profile_url: string
   live_room_url: string
@@ -53,41 +255,13 @@ type Draft = {
   monitor_interval_sec: number
 }
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(`/api/v1${path}`, {
-    headers: { 'content-type': 'application/json' },
-    ...init,
-  })
-  if (!resp.ok) {
-    const body = await resp.text()
-    throw new Error(`${resp.status}: ${body.slice(0, 200)}`)
-  }
-  return resp.json() as Promise<T>
-}
-
-function fmtAgo(iso: string | null): string {
-  if (!iso) return '-'
-  const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
-  if (secs < 3600) return `${Math.floor(secs / 60)} 分钟前`
-  if (secs < 86400) return `${Math.floor(secs / 3600)} 小时前`
-  return `${Math.floor(secs / 86400)} 天前`
-}
-
-const STATUS_CN: Record<string, string> = {
-  discovered: '发现',
-  resolved: '已解析',
-  media_ready: '媒体就绪',
-  transcribing: '转写中',
-  transcribed: '已收尾',
-  failed: '失败',
-}
-
-function MonitorPage() {
+function AccountsPage() {
   const [rows, setRows] = useState<LiveMonitor[]>([])
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<number | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
+  const [adding, setAdding] = useState(false)
 
   const reload = useCallback(() => {
     api<LiveMonitor[]>('/live/monitors')
@@ -128,17 +302,19 @@ function MonitorPage() {
 
   const saveEdit = async (id: number) => {
     if (!draft) return
-    const body: object = {
-      url: draft.profile_url || null,
-      live_room_url: draft.live_room_url || null,
-      poll_interval_sec: draft.poll_interval_sec,
-      poll_interval_min_sec: draft.poll_interval_min_sec === '' ? null : Number(draft.poll_interval_min_sec),
-      poll_interval_max_sec: draft.poll_interval_max_sec === '' ? null : Number(draft.poll_interval_max_sec),
-      monitor_interval_sec: draft.monitor_interval_sec,
-    }
     setBusy(true)
     try {
-      await api(`/source-accounts/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+      await api(`/source-accounts/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          url: draft.profile_url || null,
+          live_room_url: draft.live_room_url || null,
+          poll_interval_sec: draft.poll_interval_sec,
+          poll_interval_min_sec: draft.poll_interval_min_sec === '' ? null : Number(draft.poll_interval_min_sec),
+          poll_interval_max_sec: draft.poll_interval_max_sec === '' ? null : Number(draft.poll_interval_max_sec),
+          monitor_interval_sec: draft.monitor_interval_sec,
+        }),
+      })
       setEditing(null)
       reload()
     } catch (e) {
@@ -149,8 +325,14 @@ function MonitorPage() {
   }
 
   return (
-    <div>
+    <div className="stack">
       {error && <p className="error">{error}</p>}
+      <div className="toolbar">
+        <h3 className="toolbar-title">全部主播（{rows.length}）</h3>
+        <button className="primary" onClick={() => setAdding(true)}>
+          ＋ 添加主播
+        </button>
+      </div>
       <table className="board">
         <thead>
           <tr>
@@ -186,9 +368,7 @@ function MonitorPage() {
                     checked={r.enabled && r.discovery_mode === 'auto_poll'}
                     disabled={busy}
                     onChange={(e) =>
-                      patch(r.account_id, {
-                        discovery_mode: e.target.checked ? 'auto_poll' : 'manual',
-                      })
+                      patch(r.account_id, { discovery_mode: e.target.checked ? 'auto_poll' : 'manual' })
                     }
                   />
                   <span className="slider" />
@@ -207,7 +387,7 @@ function MonitorPage() {
               </td>
               <td>
                 {r.is_live === true ? (
-                  <span className="live">🔴 在播</span>
+                  <span className="live-text">● 在播</span>
                 ) : r.is_live === false ? (
                   '未播'
                 ) : (
@@ -217,7 +397,7 @@ function MonitorPage() {
               <td>{r.live_monitor_enabled ? (r.recorder_synced ? '✓' : '✗ 未同步') : '-'}</td>
               <td>
                 {r.session_status
-                  ? `${STATUS_CN[r.session_status] ?? r.session_status}${r.session_closed ? '(closed)' : ''}`
+                  ? `${STATUS_CN[r.session_status] ?? r.session_status}${r.session_closed ? '（已收尾）' : ''}`
                   : '-'}
               </td>
               <td>{r.session_status ? `${r.segment_count}/${r.transcript_count}` : '-'}</td>
@@ -232,19 +412,28 @@ function MonitorPage() {
                     busy={busy}
                   />
                 ) : (
-                  <button onClick={() => startEdit(r)}>编辑</button>
+                  <button className="ghost" onClick={() => startEdit(r)}>
+                    编辑
+                  </button>
                 )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {rows.length === 0 && !error && <p>暂无抖音账号：先用 POST /api/v1/source-accounts 注册。</p>}
       <p className="hint">
-        视频监控 = 跟踪该主播"新发布"的视频（自动发现+自动转写）；注册时的历史视频只采集标题，
-        不自动转录（去「视频库」手动点转写）。直播值守 = 开播自动录制分片并转写（历史不管）。
-        开启值守后第一次需打开一次 StreamCap Web UI 激活监控循环。页面每 30 秒自动刷新。
+        视频监控 = 跟踪新发布视频（自动发现+转写）；注册时的历史视频只采标题，去「视频库」手动转写。
+        直播值守 = 开播自动录制分片并转写（历史不管）。值守配置变更后值守桥在下一轮同步（默认 10 分钟）生效。
       </p>
+      {adding && (
+        <AddAccountModal
+          onClose={() => setAdding(false)}
+          onDone={() => {
+            setAdding(false)
+            reload()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -284,21 +473,132 @@ function EditForm(props: {
         值守分片时长（秒，300-600）
         <input type="number" value={draft.monitor_interval_sec} onChange={(e) => set('monitor_interval_sec', e.target.value)} />
       </label>
-      <div>
-        <button onClick={onSave} disabled={busy}>保存</button>
+      <div className="form-actions">
+        <button className="primary" onClick={onSave} disabled={busy}>保存</button>
         <button onClick={onCancel} disabled={busy}>取消</button>
       </div>
     </div>
   )
 }
 
+function AddAccountModal(props: { onClose: () => void; onDone: () => void }) {
+  const [platform, setPlatform] = useState('douyin')
+  const [displayName, setDisplayName] = useState('')
+  const [profileUrl, setProfileUrl] = useState('')
+  const [liveRoomUrl, setLiveRoomUrl] = useState('')
+  const [liveMonitor, setLiveMonitor] = useState(false)
+  const [intervalMin, setIntervalMin] = useState('1800')
+  const [intervalMax, setIntervalMax] = useState('3600')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const created = await api<{ id: number }>('/source-accounts', {
+        method: 'POST',
+        body: JSON.stringify({
+          platform,
+          url: profileUrl,
+          display_name: displayName || undefined,
+          discovery_mode: 'auto_poll',
+          poll_interval_sec: Number(intervalMin) || 1800,
+          poll_interval_min_sec: intervalMin === '' ? null : Number(intervalMin),
+          poll_interval_max_sec: intervalMax === '' ? null : Number(intervalMax),
+          live_room_url: platform === 'douyin' && liveRoomUrl ? liveRoomUrl : undefined,
+        }),
+      })
+      if (liveMonitor && platform === 'douyin') {
+        await api(`/source-accounts/${created.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ live_monitor_enabled: true, monitor_interval_sec: 600 }),
+        })
+      }
+      props.onDone()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const placeholder =
+    platform === 'douyin'
+      ? 'https://www.douyin.com/user/<sec_uid>'
+      : platform === 'youtube'
+        ? 'https://www.youtube.com/channel/<id>/videos'
+        : 'https://space.bilibili.com/<uid>'
+
+  return (
+    <div className="modal-mask" onClick={props.onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>添加主播</h3>
+        {error && <p className="error">{error}</p>}
+        <label className="field">
+          平台
+          <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
+            <option value="douyin">抖音</option>
+            <option value="youtube">YouTube</option>
+            <option value="bilibili">B 站</option>
+          </select>
+        </label>
+        <label className="field">
+          名称（可选）
+          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="主播昵称，便于辨识" />
+        </label>
+        <label className="field">
+          主页 URL（必填）
+          <input value={profileUrl} onChange={(e) => setProfileUrl(e.target.value)} placeholder={placeholder} />
+        </label>
+        {platform === 'douyin' && (
+          <>
+            <label className="field">
+              直播间 URL（可选，开启值守用）
+              <input value={liveRoomUrl} onChange={(e) => setLiveRoomUrl(e.target.value)} placeholder="https://live.douyin.com/<room_id>" />
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={liveMonitor} onChange={(e) => setLiveMonitor(e.target.checked)} />
+              同时开启直播值守（开播自动录制分片并转写）
+            </label>
+          </>
+        )}
+        <div className="grid-2">
+          <label className="field">
+            轮询区间下限（秒）
+            <input type="number" value={intervalMin} onChange={(e) => setIntervalMin(e.target.value)} />
+          </label>
+          <label className="field">
+            轮询区间上限（秒）
+            <input type="number" value={intervalMax} onChange={(e) => setIntervalMax(e.target.value)} />
+          </label>
+        </div>
+        <p className="hint">
+          添加后立即执行首次扫描：只采集历史视频标题（不自动转录）；此后按随机区间轮询，发现新视频自动转写。
+        </p>
+        <div className="form-actions">
+          <button className="primary" onClick={submit} disabled={busy || !profileUrl}>
+            {busy ? '添加中…' : '添加'}
+          </button>
+          <button onClick={props.onClose} disabled={busy}>取消</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- 视频库 ---------------- */
+
 function LibraryPage() {
   const [rows, setRows] = useState<LibraryItem[]>([])
   const [monitors, setMonitors] = useState<LiveMonitor[]>([])
-  const [accountFilter, setAccountFilter] = useState<string>('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [accountFilter, setAccountFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [query, setQuery] = useState('')
+  const [hits, setHits] = useState<SearchHit[] | null>(null)
+  const [drawer, setDrawer] = useState<number | null>(null)
 
   const reload = useCallback(() => {
     const params = new URLSearchParams()
@@ -331,28 +631,85 @@ function LibraryPage() {
     }
   }
 
+  const search = async () => {
+    if (!query.trim()) {
+      setHits(null)
+      return
+    }
+    try {
+      setHits(await api<SearchHit[]>(`/transcripts/search?q=${encodeURIComponent(query.trim())}`))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   return (
-    <div>
+    <div className="stack">
       {error && <p className="error">{error}</p>}
-      <div className="filters">
+      <div className="toolbar">
+        <input
+          className="search-box"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && search()}
+          placeholder="全文搜索已转写内容（如「降息」「AI」）…"
+        />
+        <button className="primary" onClick={search}>搜索</button>
+      </div>
+
+      {hits !== null && (
+        <div className="panel">
+          <div className="panel-head">
+            <h3>搜索结果（{hits.length}）</h3>
+            <button className="ghost" onClick={() => { setHits(null); setQuery('') }}>关闭</button>
+          </div>
+          <table className="board">
+            <thead>
+              <tr>
+                <th>主播</th>
+                <th>标题</th>
+                <th>命中</th>
+                <th>摘录</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hits.map((h) => (
+                <tr key={h.item_id} className="clickable" onClick={() => setDrawer(h.item_id)}>
+                  <td>{h.display_name}</td>
+                  <td className="title-cell">{h.title ?? '-'}</td>
+                  <td>{h.match_count}</td>
+                  <td className="snippet-cell">{h.snippet}</td>
+                </tr>
+              ))}
+              {hits.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="muted pad">无匹配内容</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="toolbar">
+        <h3 className="toolbar-title">内容列表（{rows.length}）</h3>
         <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
           <option value="">全部账号</option>
           {monitors.map((m) => (
             <option key={m.account_id} value={m.account_id}>
-              {m.display_name}（{m.platform}）
+              {m.display_name}
             </option>
           ))}
         </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">全部状态</option>
-          {['discovered', 'transcribing', 'transcribed', 'failed'].map((s) => (
-            <option key={s} value={s}>
-              {STATUS_CN[s] ?? s}
-            </option>
+          {Object.entries(STATUS_CN).map(([v, cn]) => (
+            <option key={v} value={v}>{cn}</option>
           ))}
         </select>
-        <button onClick={reload}>刷新</button>
+        <button className="ghost" onClick={reload}>刷新</button>
       </div>
+
       <table className="board">
         <thead>
           <tr>
@@ -362,30 +719,34 @@ function LibraryPage() {
             <th>类型</th>
             <th>状态</th>
             <th>时长</th>
-            <th>发布时间</th>
+            <th>发布</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id}>
+            <tr
+              key={r.id}
+              className={r.status === 'transcribed' ? 'clickable' : undefined}
+              onClick={() => r.status === 'transcribed' && setDrawer(r.id)}
+            >
               <td>{r.display_name}</td>
               <td>{r.platform}</td>
               <td className="title-cell">{r.title ?? '-'}</td>
               <td>{r.item_type === 'live' ? '直播' : '视频'}</td>
               <td>
-                {STATUS_CN[r.status] ?? r.status}
-                {r.backfill && r.status === 'discovered' && (
-                  <span className="muted">（旧视频）</span>
-                )}
+                {statusBadge(r.status)}
+                {r.backfill && r.status === 'discovered' && <span className="muted">（旧）</span>}
               </td>
-              <td>{r.duration_ms ? `${Math.round(r.duration_ms / 60000)} 分钟` : '-'}</td>
+              <td>{r.duration_ms ? `${Math.round(r.duration_ms / 60000)} 分` : '-'}</td>
               <td>{r.published_at ? new Date(r.published_at).toLocaleDateString() : '-'}</td>
-              <td>
+              <td onClick={(e) => e.stopPropagation()}>
                 {r.status === 'discovered' || r.status === 'failed' ? (
                   <button disabled={busyId === r.id} onClick={() => transcribe(r.id)}>
-                    {busyId === r.id ? '转写中…' : '转写'}
+                    {busyId === r.id ? '派发中…' : '转写'}
                   </button>
+                ) : r.status === 'transcribed' ? (
+                  <button className="ghost" onClick={() => setDrawer(r.id)}>正文</button>
                 ) : (
                   '-'
                 )}
@@ -395,14 +756,54 @@ function LibraryPage() {
         </tbody>
       </table>
       <p className="hint">
-        旧视频（注册账号时首扫采集的标题）默认不自动转录；点「转写」手动解析单条。
-        视频监控开着的主播，新发布视频会自动发现并转写。
+        旧视频（注册时首扫采集标题）不自动转录，点「转写」手动解析；已转写条目点击行或「正文」查看分段文本。
       </p>
+
+      {drawer !== null && <TranscriptDrawer itemId={drawer} onClose={() => setDrawer(null)} />}
     </div>
   )
 }
 
-function SecurityPage() {
+function TranscriptDrawer(props: { itemId: number; onClose: () => void }) {
+  const [data, setData] = useState<{ title: string | null; display_name: string; segments: TranscriptRow[] } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api<{ title: string | null; display_name: string; segments: TranscriptRow[] }>(
+      `/source-items/${props.itemId}/transcript`,
+    )
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+  }, [props.itemId])
+
+  return (
+    <div className="drawer-mask" onClick={props.onClose}>
+      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head">
+          <div>
+            <div className="drawer-title">{data?.title ?? `内容 #${props.itemId}`}</div>
+            <div className="muted">{data?.display_name} · {data?.segments.length ?? 0} 段</div>
+          </div>
+          <button className="ghost" onClick={props.onClose}>关闭</button>
+        </div>
+        {error && <p className="error pad">{error}</p>}
+        <div className="drawer-body">
+          {data?.segments.map((s) => (
+            <div key={s.sequence_no} className="ts-row">
+              <span className="ts-time">{fmtTs(s.start_ms)}–{fmtTs(s.end_ms)}</span>
+              <span className="ts-text">{s.text}</span>
+            </div>
+          ))}
+          {data && data.segments.length === 0 && <p className="muted pad">无分段（可能是空音频或纯音乐）</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- 设置 ---------------- */
+
+function SettingsPage() {
   const [stagger, setStagger] = useState('')
   const [pages, setPages] = useState('')
   const [pool, setPool] = useState('')
@@ -427,17 +828,13 @@ function SecurityPage() {
     setError(null)
     setMsg(null)
     try {
-      const body = {
-        discover_dispatch_stagger_max_sec: stagger === '' ? null : Number(stagger),
-        douyin_discover_max_pages: pages === '' ? null : Number(pages),
-        proxy_pool: pool
-          .split('\n')
-          .map((s) => s.trim())
-          .filter(Boolean),
-      }
       const saved = await api<SecuritySettings>('/settings/security', {
         method: 'PUT',
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          discover_dispatch_stagger_max_sec: stagger === '' ? null : Number(stagger),
+          douyin_discover_max_pages: pages === '' ? null : Number(pages),
+          proxy_pool: pool.split('\n').map((s) => s.trim()).filter(Boolean),
+        }),
       })
       setEffective(saved.effective)
       setMsg('已保存，worker 下一轮生效')
@@ -447,49 +844,78 @@ function SecurityPage() {
   }
 
   return (
-    <div className="security">
-      {error && <p className="error">{error}</p>}
-      {msg && <p className="ok">{msg}</p>}
-      <p className="hint">
-        防风控原则：低频、错峰、身份与出口稳定。以下设置存库覆盖 .env 默认；worker 下一轮读取生效。
-        代理池为出口代理预留位（下载/解析链路接线挂账 EPIC-04+），当前仅存储。
-      </p>
-      <label>
-        派发错峰上限（秒，0=关闭）：同批到期账号在 0~N 秒内随机延迟，避免同一秒并发访问平台。
-        <input type="number" min={0} max={3600} value={stagger} onChange={(e) => setStagger(e.target.value)} placeholder="留空用 .env 默认" />
-        {effective && <span className="muted"> 当前生效：{effective.discover_dispatch_stagger_max_sec}s</span>}
-      </label>
-      <label>
-        抖音发现翻页上限（1-20，每页 20 条）：压首扫涌量，防身份池被打爆。
-        <input type="number" min={1} max={20} value={pages} onChange={(e) => setPages(e.target.value)} placeholder="留空用 .env 默认" />
-        {effective && <span className="muted"> 当前生效：{effective.douyin_discover_max_pages} 页</span>}
-      </label>
-      <label>
-        代理池（每行一条 http/socks5 URL；按"身份↔出口稳定绑定"原则使用，勿按请求轮换）
-        <textarea rows={5} value={pool} onChange={(e) => setPool(e.target.value)} placeholder={'http://user:pass@host:port\nsocks5://host:port'} />
-      </label>
-      <button onClick={save}>保存安全设置</button>
+    <div className="settings-grid">
+      <div className="panel">
+        <div className="panel-head">
+          <h3>安全（防风控）</h3>
+        </div>
+        <div className="stack">
+          {error && <p className="error">{error}</p>}
+          {msg && <p className="ok">{msg}</p>}
+          <label className="field">
+            派发错峰上限（秒，0=关闭）：同批到期账号在 0~N 秒内随机延迟，避免同一秒并发访问平台
+            <input type="number" min={0} max={3600} value={stagger} onChange={(e) => setStagger(e.target.value)} placeholder="留空用 .env 默认" />
+            {effective && <span className="muted">当前生效：{effective.discover_dispatch_stagger_max_sec}s</span>}
+          </label>
+          <label className="field">
+            抖音发现翻页上限（1-20，每页 20 条）：压首扫涌量，防身份池被打爆
+            <input type="number" min={1} max={20} value={pages} onChange={(e) => setPages(e.target.value)} placeholder="留空用 .env 默认" />
+            {effective && <span className="muted">当前生效：{effective.douyin_discover_max_pages} 页</span>}
+          </label>
+          <label className="field">
+            代理池（每行一条 http/socks5 URL；按「身份↔出口稳定绑定」使用，勿按请求轮换）
+            <textarea rows={5} value={pool} onChange={(e) => setPool(e.target.value)} placeholder={'http://user:pass@host:port\nsocks5://host:port'} />
+          </label>
+          <div>
+            <button className="primary" onClick={save}>保存安全设置</button>
+          </div>
+          <p className="hint">防风控原则：低频、错峰、身份与出口稳定。设置存库即时生效（worker 下一轮读取）。</p>
+        </div>
+      </div>
     </div>
   )
 }
 
+/* ---------------- 外壳 ---------------- */
+
+const NAV = [
+  { key: 'overview', label: '总览' },
+  { key: 'accounts', label: '主播' },
+  { key: 'library', label: '视频库' },
+  { key: 'settings', label: '设置' },
+] as const
+
+type Tab = (typeof NAV)[number]['key']
+
 function App() {
-  const [tab, setTab] = useState<'monitor' | 'library' | 'security'>('monitor')
+  const [tab, setTab] = useState<Tab>('overview')
   return (
-    <div className="app">
-      <nav>
-        <h1>财经观点雷达 · 监控台</h1>
-        <button className={tab === 'monitor' ? 'active' : ''} onClick={() => setTab('monitor')}>
-          监控
-        </button>
-        <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')}>
-          视频库
-        </button>
-        <button className={tab === 'security' ? 'active' : ''} onClick={() => setTab('security')}>
-          安全设置
-        </button>
-      </nav>
-      {tab === 'monitor' ? <MonitorPage /> : tab === 'library' ? <LibraryPage /> : <SecurityPage />}
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden>
+            <circle cx="16" cy="16" r="11" fill="none" stroke="#2f5a94" strokeWidth="1.4" />
+            <circle cx="16" cy="16" r="7" fill="none" stroke="#4f83c9" strokeWidth="1.2" />
+            <circle cx="16" cy="16" r="1.4" fill="#7fb0ec" />
+            <path d="M16 16 L26 8" stroke="#e0442f" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          <span>财经观点雷达</span>
+        </div>
+        <nav>
+          {NAV.map((n) => (
+            <button key={n.key} className={tab === n.key ? 'active' : ''} onClick={() => setTab(n.key)}>
+              {n.label}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-foot">V1 · 抖音采集基座</div>
+      </aside>
+      <main className="main">
+        {tab === 'overview' && <OverviewPage go={(t) => setTab(t as Tab)} />}
+        {tab === 'accounts' && <AccountsPage />}
+        {tab === 'library' && <LibraryPage />}
+        {tab === 'settings' && <SettingsPage />}
+      </main>
     </div>
   )
 }

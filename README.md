@@ -182,7 +182,7 @@ docker compose -f infra/docker/docker-compose.douyin.yml up -d   # 3) 重启生�
 
 诊断一条龙：`curl $DOUYIN_API_BASE_URL/docs`（dtk 探活）→ `ls data/douyin/live_segments/douyin/`（分片观测）→ worker 日志 grep `recorder_sync_`（值守桥）与 `sessions_active`（ingest）。
 
-前端监控台：`make web`（或 API_PORT=8010 make web 指定后端端口）——「监控」页平铺全部抖音账号：主页/直播间双路配置、视频监控与直播值守开关、在播/同步/会话/转录状态 30 秒自刷新；「安全设置」页管理防风控节流（派发错峰、发现翻页上限、代理池预留）。终端版看板：`make live-status`——每个值守直播间一行（主播/在播态/录制器同步/最近会话/分片与转录段数/最近活动），数据取自 DB + recordings.json + StreamCap 日志（零额外抖音请求）。
+监控台（单入口）：`make build-web` 后由 API 一个端口同时服务页面与接口（如 http://localhost:8000/）；开发模式用 `make web`（Vite 热更）。四个页面：「总览」统计卡/直播间状态/引擎状态；「主播」账号表格（添加主播、视频监控与直播值守开关、主页/直播间双路配置编辑）；「视频库」全文搜索、转录正文抽屉、旧视频手动转写；「设置」安全（防风控）参数。终端版看板：`make live-status`。StreamCap（:5001）与 dtk（:8080）的管理页是内部运维工具，不面向使用者，其状态已聚合进「总览」页。——每个值守直播间一行（主播/在播态/录制器同步/最近会话/分片与转录段数/最近活动），数据取自 DB + recordings.json + StreamCap 日志（零额外抖音请求）。
 
 ## 排障
 
