@@ -109,3 +109,70 @@ def create_source_item(
     except AdapterError as exc:
         raise _map_adapter_errors(exc) from exc
     return SourceItemResponse.model_validate(item)
+
+
+@router.get("")
+def list_source_items(
+    session: DbDep,
+    account_id: int | None = None,
+    status: str | None = None,
+    limit: int = 100,
+):
+    """视频库列表（监控台"视频库"页）：按账号/状态过滤，id 倒序。"""
+    from sqlalchemy import select
+
+    from app.db.models import Creator, SourceAccount, SourceItem
+
+    stmt = (
+        select(SourceItem, SourceAccount, Creator.display_name)
+        .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+        .join(Creator, Creator.id == SourceAccount.creator_id)
+        .order_by(SourceItem.id.desc())
+        .limit(min(limit, 500))
+    )
+    if account_id is not None:
+        stmt = stmt.where(SourceItem.source_account_id == account_id)
+    if status is not None:
+        stmt = stmt.where(SourceItem.status == status)
+    rows = session.execute(stmt).all()
+    return [
+        {
+            "id": item.id,
+            "account_id": item.source_account_id,
+            "platform": account.platform,
+            "display_name": creator_name,
+            "external_item_id": item.external_item_id,
+            "title": item.title,
+            "item_type": item.item_type,
+            "status": item.status,
+            "duration_ms": item.duration_ms,
+            "published_at": item.published_at,
+            "backfill": bool((item.metadata_json or {}).get("backfill")),
+        }
+        for item, account, creator_name in rows
+    ]
+
+
+@router.post("/{item_id}/prepare", status_code=202)
+def prepare_source_item_manual(item_id: int, session: DbDep):
+    """手动转录（视频库"转写"按钮）：清 backfill 标记后投递 prepare。
+
+    discovered/failed 可投；其余状态 409（幂等保护，与 prepare 状态门槛一致）。
+    """
+    from app.db.models import SourceItem
+    from app.worker.celery_app import celery_app
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    if item.status not in ("discovered", "failed"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"当前状态 {item.status} 不可发起转录（仅 discovered/failed）",
+        )
+    meta = dict(item.metadata_json or {})
+    meta.pop("backfill", None)
+    item.metadata_json = meta
+    session.commit()
+    celery_app.send_task("prepare_source_item", args=[item_id])
+    return {"item_id": item_id, "dispatched": True}

@@ -4,6 +4,7 @@ import './App.css'
 type LiveMonitor = {
   account_id: number
   display_name: string
+  platform?: string
   profile_url: string | null
   live_room_url: string | null
   room_id: string | null
@@ -28,6 +29,19 @@ type SecuritySettings = {
   douyin_discover_max_pages: number | null
   proxy_pool: string[]
   effective: { discover_dispatch_stagger_max_sec: number; douyin_discover_max_pages: number }
+}
+
+type LibraryItem = {
+  id: number
+  account_id: number
+  platform: string
+  display_name: string
+  title: string | null
+  item_type: string
+  status: string
+  duration_ms: number | null
+  published_at: string | null
+  backfill: boolean
 }
 
 type Draft = {
@@ -227,7 +241,8 @@ function MonitorPage() {
       </table>
       {rows.length === 0 && !error && <p>暂无抖音账号：先用 POST /api/v1/source-accounts 注册。</p>}
       <p className="hint">
-        视频监控 = 定时发现新视频并转写；直播值守 = 开播自动录制分片并转写（需已配直播间且同步到录制器）。
+        视频监控 = 跟踪该主播"新发布"的视频（自动发现+自动转写）；注册时的历史视频只采集标题，
+        不自动转录（去「视频库」手动点转写）。直播值守 = 开播自动录制分片并转写（历史不管）。
         开启值守后第一次需打开一次 StreamCap Web UI 激活监控循环。页面每 30 秒自动刷新。
       </p>
     </div>
@@ -273,6 +288,116 @@ function EditForm(props: {
         <button onClick={onSave} disabled={busy}>保存</button>
         <button onClick={onCancel} disabled={busy}>取消</button>
       </div>
+    </div>
+  )
+}
+
+function LibraryPage() {
+  const [rows, setRows] = useState<LibraryItem[]>([])
+  const [monitors, setMonitors] = useState<LiveMonitor[]>([])
+  const [accountFilter, setAccountFilter] = useState<string>('')
+  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<number | null>(null)
+
+  const reload = useCallback(() => {
+    const params = new URLSearchParams()
+    if (accountFilter) params.set('account_id', accountFilter)
+    if (statusFilter) params.set('status', statusFilter)
+    params.set('limit', '200')
+    api<LibraryItem[]>(`/source-items?${params}`)
+      .then(setRows)
+      .catch((e: Error) => setError(e.message))
+  }, [accountFilter, statusFilter])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  useEffect(() => {
+    api<LiveMonitor[]>('/live/monitors').then(setMonitors).catch(() => {})
+  }, [])
+
+  const transcribe = async (id: number) => {
+    setBusyId(id)
+    setError(null)
+    try {
+      await api(`/source-items/${id}/prepare`, { method: 'POST' })
+      setTimeout(reload, 1500)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div>
+      {error && <p className="error">{error}</p>}
+      <div className="filters">
+        <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
+          <option value="">全部账号</option>
+          {monitors.map((m) => (
+            <option key={m.account_id} value={m.account_id}>
+              {m.display_name}（{m.platform}）
+            </option>
+          ))}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">全部状态</option>
+          {['discovered', 'transcribing', 'transcribed', 'failed'].map((s) => (
+            <option key={s} value={s}>
+              {STATUS_CN[s] ?? s}
+            </option>
+          ))}
+        </select>
+        <button onClick={reload}>刷新</button>
+      </div>
+      <table className="board">
+        <thead>
+          <tr>
+            <th>主播</th>
+            <th>平台</th>
+            <th>标题</th>
+            <th>类型</th>
+            <th>状态</th>
+            <th>时长</th>
+            <th>发布时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <td>{r.display_name}</td>
+              <td>{r.platform}</td>
+              <td className="title-cell">{r.title ?? '-'}</td>
+              <td>{r.item_type === 'live' ? '直播' : '视频'}</td>
+              <td>
+                {STATUS_CN[r.status] ?? r.status}
+                {r.backfill && r.status === 'discovered' && (
+                  <span className="muted">（旧视频）</span>
+                )}
+              </td>
+              <td>{r.duration_ms ? `${Math.round(r.duration_ms / 60000)} 分钟` : '-'}</td>
+              <td>{r.published_at ? new Date(r.published_at).toLocaleDateString() : '-'}</td>
+              <td>
+                {r.status === 'discovered' || r.status === 'failed' ? (
+                  <button disabled={busyId === r.id} onClick={() => transcribe(r.id)}>
+                    {busyId === r.id ? '转写中…' : '转写'}
+                  </button>
+                ) : (
+                  '-'
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="hint">
+        旧视频（注册账号时首扫采集的标题）默认不自动转录；点「转写」手动解析单条。
+        视频监控开着的主播，新发布视频会自动发现并转写。
+      </p>
     </div>
   )
 }
@@ -349,7 +474,7 @@ function SecurityPage() {
 }
 
 function App() {
-  const [tab, setTab] = useState<'monitor' | 'security'>('monitor')
+  const [tab, setTab] = useState<'monitor' | 'library' | 'security'>('monitor')
   return (
     <div className="app">
       <nav>
@@ -357,11 +482,14 @@ function App() {
         <button className={tab === 'monitor' ? 'active' : ''} onClick={() => setTab('monitor')}>
           监控
         </button>
+        <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')}>
+          视频库
+        </button>
         <button className={tab === 'security' ? 'active' : ''} onClick={() => setTab('security')}>
           安全设置
         </button>
       </nav>
-      {tab === 'monitor' ? <MonitorPage /> : <SecurityPage />}
+      {tab === 'monitor' ? <MonitorPage /> : tab === 'library' ? <LibraryPage /> : <SecurityPage />}
     </div>
   )
 }

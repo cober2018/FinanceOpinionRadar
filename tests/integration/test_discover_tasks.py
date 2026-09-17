@@ -62,7 +62,12 @@ def stub_adapter(monkeypatch: pytest.MonkeyPatch):
 def test_discover_source_account_task_runs_end_to_end(
     db_session, stub_adapter, sent, task_session_factory
 ):
-    account = _make_account(db_session, external_id="ch_a", url="https://www.youtube.com/@a/videos")
+    account = _make_account(
+        db_session,
+        external_id="ch_a",
+        url="https://www.youtube.com/@a/videos",
+        last_success=datetime.now(UTC) - timedelta(hours=2),  # 非首扫：跟踪新视频才自动转录
+    )
     db_session.commit()  # 任务用独立 session，先落库
 
     outcome = worker_tasks.discover_source_account.run(account.id)
@@ -155,3 +160,32 @@ def test_dispatch_includes_auto_poll_accounts(db_session, task_session_factory, 
 
     worker_tasks.dispatch_due_discoveries.run()
     assert any(c[1]["args"][0] == account.id for c in sent)
+
+
+def test_first_scan_backfill_titles_only_second_scan_auto_prepares(
+    db_session, stub_adapter, sent, task_session_factory
+):
+    """机制语义：首扫（回溯）只采标题（backfill 标记、不投转录）；
+    二扫起的新视频仅 auto_poll 账号自动转录；manual 账号永不自动转录。"""
+    account = _make_account(
+        db_session, external_id="fresh_chan", url="https://www.youtube.com/@fresh/videos"
+    )
+    db_session.commit()
+
+    # 首扫：last_success_at 为 NULL → backfill
+    worker_tasks.discover_source_account.run(account.id)
+    assert sent == []  # 不投递转录
+    item = db_session.query(SourceItem).filter(SourceItem.external_item_id == "v1").one()
+    assert item.metadata_json["backfill"] is True
+
+    # 二扫：无新条目，也不补投 backfill 条目
+    db_session.expire_all()
+    worker_tasks.discover_source_account.run(account.id)
+    assert sent == []
+
+    # 账号开视频监控（auto_poll）后，二扫无新条目 → 依旧无投递（backfill 条目不补投）
+    account.discovery_mode = "auto_poll"
+    db_session.commit()
+    db_session.expire_all()
+    worker_tasks.discover_source_account.run(account.id)
+    assert sent == []

@@ -95,7 +95,11 @@ def test_discover_success_redraws_interval(db_session, monkeypatch):
     from app.services.media.contracts import DiscoveredItem
 
     account = _make_account(
-        db_session, poll_interval_sec=3600, poll_interval_min_sec=300, poll_interval_max_sec=900
+        db_session,
+        poll_interval_sec=3600,
+        poll_interval_min_sec=300,
+        poll_interval_max_sec=900,
+        discovery_mode="auto_poll",  # 开视频监控才会自动投递转录
     )
     old_success = datetime.now(UTC) - timedelta(hours=2)
     account.last_success_at = old_success

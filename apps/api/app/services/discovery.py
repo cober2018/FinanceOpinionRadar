@@ -116,6 +116,9 @@ def discover_account(
         )
         repo = SourceItemRepository(session)
         created_ids: list[int] = []
+        # 首扫 = 旧视频回溯：只采标题建条目（backfill 标记），不投递转录；
+        # 之后的周期轮询才是"跟踪最新"，仅 auto_poll（视频监控开关开）才自动转录新视频。
+        first_scan = account.last_success_at is None
         for discovered in items:
             item, is_new = repo.upsert_by_external(
                 source_account_id=account.id,
@@ -123,10 +126,14 @@ def discover_account(
                 title=discovered.title,
                 canonical_url=discovered.url,
                 duration_ms=discovered.duration_ms,
-                metadata_json={"discovered_via": "discover_job"},
+                metadata_json={
+                    "discovered_via": "discover_job",
+                    **({"backfill": True} if first_scan else {}),
+                },
             )
             if is_new:
                 created_ids.append(item.id)
+        auto_prepare = account.discovery_mode == "auto_poll" and not first_scan
         account.last_success_at = datetime.now(UTC)
         account.failure_count = 0
         _redraw_random_poll_interval(account)
@@ -145,11 +152,18 @@ def discover_account(
         )
         raise
 
-    for item_id in created_ids:
-        # C7：按名投递，EPIC-03 落地实现；G1：commit 后 send 失败由 EPIC-03 存量补扫兜底
-        send("prepare_source_item", args=[item_id])
+    if auto_prepare:
+        for item_id in created_ids:
+            # C7：按名投递，EPIC-03 落地实现；G1：commit 后 send 失败由补扫兜底
+            # （补扫只接无 backfill 标记且账号开视频监控的条目）
+            send("prepare_source_item", args=[item_id])
     logger.info(
-        "discover_ok", account_id=account_id, discovered=len(items), created=len(created_ids)
+        "discover_ok",
+        account_id=account_id,
+        discovered=len(items),
+        created=len(created_ids),
+        backfill_scan=first_scan,
+        auto_prepare=auto_prepare,
     )
     return {
         "account_id": account_id,

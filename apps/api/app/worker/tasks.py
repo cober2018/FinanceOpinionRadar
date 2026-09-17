@@ -119,6 +119,9 @@ def prepare_source_item(item_id: int) -> dict:
 
 @celery_app.task(name="dispatch_pending_prepares")  # 注记②：周期补扫 discovered（G1 兜底）
 def dispatch_pending_prepares() -> int:
+    """注记②补扫：只接管"应自动转录"的 discovered 条目——账号开视频监控
+    （discovery_mode=auto_poll）且非 backfill 回溯标记（首扫采标题不转写）。"""
+    from app.db.models import SourceAccount
     from app.repositories.source_items import SourceItemRepository
 
     session = get_session_factory()()
@@ -126,10 +129,22 @@ def dispatch_pending_prepares() -> int:
         pending = SourceItemRepository(session).list_by_status(
             "discovered", limit=get_settings().prepare_sweep_batch_size
         )
+        account_ids = {i.source_account_id for i in pending}
+        accounts = {
+            a.id: a
+            for a in session.query(SourceAccount).filter(SourceAccount.id.in_(account_ids or [0]))
+        }
+        dispatched = 0
         for item in pending:
+            account = accounts.get(item.source_account_id)
+            if account is None or account.discovery_mode != "auto_poll":
+                continue
+            if (item.metadata_json or {}).get("backfill"):
+                continue
             celery_app.send_task("prepare_source_item", args=[item.id])
-        logger.info("dispatch_pending_prepares", dispatched=len(pending))
-        return len(pending)
+            dispatched += 1
+        logger.info("dispatch_pending_prepares", dispatched=dispatched)
+        return dispatched
     finally:
         session.close()
 

@@ -121,6 +121,10 @@ def test_discover_account_upserts_and_marks_success(db_session) -> None:
     account = _make_account(
         db_session, url="https://www.youtube.com/@x/videos", mode="auto_poll"
     )
+    from datetime import UTC, datetime, timedelta
+
+    account.last_success_at = datetime.now(UTC) - timedelta(hours=1)  # 非首扫：跟踪新视频
+    db_session.commit()
     items = [
         DiscoveredItem("v1", "一", "https://www.youtube.com/watch?v=v1", None, None, {}),
         DiscoveredItem("v2", "二", "https://www.youtube.com/watch?v=v2", None, None, {}),
