@@ -7,6 +7,11 @@ ARG PIP_INDEX_URL=""
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 
 # 层1：依赖（代码改动不失效）
+# ffmpeg：EPIC-03 音频标准化（normalize_audio）运行时依赖
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY apps/api/pyproject.toml ./
 RUN mkdir -p app && touch app/__init__.py \
     && pip install --no-cache-dir . "yt-dlp>=2026.3.17" \

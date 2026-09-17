@@ -435,6 +435,13 @@ discover_source_account(account_id)
 > 60s 超时→504（实测无数据污染）。EPIC-03 动 adapter 时顺带在 `_parse_resolved` 拒收
 > `_type='playlist'` 载荷，提前失败。
 
+> **落地记录（2026-09-17，Plan #3 `docs/superpowers/plans/2026-09-17-epic03-media-asr.md`）**：
+> 注记①→`prepare_source_item` 行锁+状态门槛幂等（82547fb）；注记②→beat 周期补扫
+> `dispatch_pending_prepares`（4e31dfa）；注记③→注册侧 `normalize_channel_url` + 存量
+> backfill 迁移（ca64e20）；注记④→`_parse_resolved` 拒收 playlist 载荷（ca64e20）。
+> RAD-030→302af99；RAD-031→cf5056b/7818638/82547fb；RAD-032→d8bc319；
+> RAD-033/035→5c732c2；RAD-034→e825418。
+
 ## RAD-030 Storage Service
 
 文件：
