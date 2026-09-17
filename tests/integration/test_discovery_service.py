@@ -85,7 +85,7 @@ def test_create_item_from_url_creates_creator_account_item(db_session) -> None:
     account = db_session.get(SourceAccount, item.source_account_id)
     assert account.platform == "youtube" and account.external_id == "ch_42"
     assert account.discovery_mode == "manual"
-    assert account.url == "https://www.youtube.com/@macro-diary"  # E3：channel_url 落账号
+    assert account.url == "https://www.youtube.com/@macro-diary/videos"  # E3 + 注记③：channel_url 规范化后落账号
     creator = db_session.get(Creator, account.creator_id)
     assert creator.display_name == "宏观日记"
 

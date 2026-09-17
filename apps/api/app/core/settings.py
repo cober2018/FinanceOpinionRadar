@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     asr_beam_size: int = 5
     enable_whisperx: bool = False  # RAD-035：默认关，V1 不依赖
     enable_diarization: bool = False
+    subtitle_lang_preference: tuple[str, ...] = ("zh-Hans", "zh", "en")  # 依次前缀匹配
+    subtitle_min_chars: int = 10  # 解析后总字符数低于此视为不可用 → 走 ASR
+    transcript_overlap_tolerance_ms: int = 2000  # RAD-034 重叠阈值
+    prepare_max_media_duration_sec: int = 14400  # CEO-2C：超限快速失败防 CPU 长期占用
 
     @field_validator("media_host_allowlist", mode="before")
     @classmethod
@@ -54,6 +58,14 @@ class Settings(BaseSettings):
         # 环境变量是 CSV（MEDIA_HOST_ALLOWLIST=youtube.com,bilibili.com），归一为小写 tuple
         if isinstance(v, str):
             return tuple(h.strip().lower() for h in v.split(",") if h.strip())
+        return v
+
+    @field_validator("subtitle_lang_preference", mode="before")
+    @classmethod
+    def _parse_lang_preference(cls, v: object) -> object:
+        # 同 CSV 模式（SUBTITLE_LANG_PREFERENCE=zh-Hans,zh,en）
+        if isinstance(v, str):
+            return tuple(p.strip() for p in v.split(",") if p.strip())
         return v
 
     @model_validator(mode="before")
