@@ -138,3 +138,20 @@ def dispatch_live_prepares() -> int:
     from app.services import live_ingest
 
     return live_ingest.dispatch_live_prepares()
+
+
+# --- Plan #4 Task 6：值守桥 ---
+
+
+@celery_app.task(name="sync_live_monitors")
+def sync_live_monitors() -> dict:
+    from app.repositories.source_accounts import SourceAccountRepository
+    from app.services import recorder_bridge
+
+    session = get_session_factory()()
+    try:
+        return recorder_bridge.sync_live_monitors(
+            session, SourceAccountRepository(session)
+        )
+    finally:
+        session.close()

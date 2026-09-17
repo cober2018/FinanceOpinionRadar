@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     live_min_segment_sec: int = 30  # 小于视为残片跳过（F5：不计入转写偏移）
     live_max_segments_per_session: int = 120  # 防失控（4h@2min 上限量级）
     live_segment_max_attempts: int = 3  # 同分片连续失败 N 次后跳过记账（F4）
+    # StreamCap recordings.json 在共享卷上的绝对路径；空 = 值守桥不启用
+    recorder_config_path: str = ""
+    recorder_container_name: str = "streamcap"  # 配置变更后 docker restart 的目标容器
     recorder_sync_interval_sec: int = 600  # beat：账号 → 录制器配置同步
     # --- EPIC-03 ASR（RAD-033/035） ---
     # medium：与 voice-pro 共用本地模型缓存（无 small），中文财经内容效果更好
