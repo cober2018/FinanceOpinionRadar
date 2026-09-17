@@ -15,6 +15,7 @@ dependencies = [
   "redis>=5.0",
   "httpx>=0.27",
   "structlog>=24.1",
+  "boto3>=1.34",
 ]
 
 [project.optional-dependencies]
@@ -44,5 +45,15 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # "x.*" 不匹配顶层模块本身，需同时列出（celery 装有包但无 py.typed，报 import-untyped）
-module = ["celery", "celery.*", "redis", "redis.*", "pydantic_settings"]
+module = [
+  "celery",
+  "celery.*",
+  "redis",
+  "redis.*",
+  "pydantic_settings",
+  "boto3",
+  "boto3.*",
+  "botocore",
+  "botocore.*",
+]
 ignore_missing_imports = true
