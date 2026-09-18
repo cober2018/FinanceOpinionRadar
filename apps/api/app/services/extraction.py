@@ -151,9 +151,13 @@ def extract_source_item(
             except Exception as exc:  # noqa: BLE001 chunk 级失败容忍（run 报告记账）
                 failed_chunks.append(f"{chunk.chunk_id}: {str(exc)[:120]}")
                 continue
-            # MiniMax-M3 等模型可能返回裸数组（schema 要求 {"viewpoints": [...]}）→ 归一
+            # 模型输出容错：裸数组 / 键名漂移（views/items）都归一到 viewpoints
             data = resp.data if isinstance(resp.data, dict) else {"viewpoints": resp.data or []}
-            raw_candidates = data.get("viewpoints", []) if isinstance(data, dict) else []
+            raw_candidates = data.get("viewpoints")
+            if raw_candidates is None:
+                raw_candidates = data.get("views") or data.get("items") or data.get("results") or []
+            if not isinstance(raw_candidates, list):
+                raw_candidates = []
             chunk_summaries.append(
                 {
                     "chunk": chunk.chunk_id,
