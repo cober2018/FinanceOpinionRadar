@@ -631,6 +631,19 @@ function LibraryPage() {
     }
   }
 
+  const extractPoints = async (id: number) => {
+    setBusyId(id)
+    setError(null)
+    try {
+      await api(`/source-items/${id}/extract`, { method: 'POST' })
+      setTimeout(reload, 2000)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const search = async () => {
     if (!query.trim()) {
       setHits(null)
@@ -746,7 +759,12 @@ function LibraryPage() {
                     {busyId === r.id ? '派发中…' : '转写'}
                   </button>
                 ) : r.status === 'transcribed' ? (
-                  <button className="ghost" onClick={() => setDrawer(r.id)}>正文</button>
+                  <>
+                    <button className="ghost" onClick={() => setDrawer(r.id)}>正文</button>
+                    <button disabled={busyId === r.id} onClick={() => extractPoints(r.id)}>
+                      {busyId === r.id ? '派发中…' : '抽取观点'}
+                    </button>
+                  </>
                 ) : (
                   '-'
                 )}
