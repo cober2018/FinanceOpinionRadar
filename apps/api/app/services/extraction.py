@@ -204,6 +204,11 @@ def extract_source_item(
 
         dedupe = dedupe_source_item_viewpoints(session, item_id)
 
+        # EPIC-05：规则 reviewer 批量复核 candidate（accept/reject/needs_review）
+        from app.services.reviewer import apply_review_to_candidates
+
+        review_counts = apply_review_to_candidates(session, item_id)
+
         # 原始 run 存档：object://llm-runs/{run_id}.json（D5）
         run_payload = {
             "run_id": run_id,
@@ -229,6 +234,7 @@ def extract_source_item(
                 "created": len(created_ids),
                 "rejected": len(rejected),
                 "failed_chunks": len(failed_chunks),
+                "review": review_counts,
                 "at": run_payload["at"],
             }
         )
@@ -253,6 +259,7 @@ def extract_source_item(
             "rejected": len(rejected),
             "failed_chunks": len(failed_chunks),
             "dedupe": dedupe,
+            "review": review_counts,
             "run_uri": run_uri,
         }
     finally:

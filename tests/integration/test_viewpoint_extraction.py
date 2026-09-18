@@ -61,7 +61,12 @@ def tracked_transcribed_item(db_session):
     db_session.add(item)
     db_session.flush()
     for i, text in enumerate(
-        ["我认为美联储九月必然降息。", "利好黄金，看涨到年底。", "这就是我的判断。"], start=1
+        [
+            "我认为美联储九月必然降息几乎是确定的事情，这是当前市场最大的宏观主线。",
+            "利好黄金，避险需求会推动金价看涨到年底，这个逻辑非常清晰值得认真对待。",
+            "以上就是我的全部判断。",
+        ],
+        start=1,
     ):
         db_session.add(
             TranscriptSegment(
@@ -97,13 +102,18 @@ def test_extraction_happy_path(db_session, tracked_transcribed_item):
     assert out["created"] == 1 and out["rejected"] == 0
 
     vp = db_session.query(Viewpoint).filter(Viewpoint.source_item_id == item_id).one()
-    assert vp.stance == "bullish" and vp.verification_status == "candidate"
+    # EPIC-05 reviewer：证据充分（67 字 ≥ 50）+ 置信 0.9 → accept → confirmed
+    assert vp.stance == "bullish" and vp.verification_status == "confirmed"
+    assert out["review"]["confirmed"] == 1
     assert vp.extractor_version == "v1" and vp.prompt_version == "extraction@v1"
     assert vp.as_of_date == datetime(2026, 9, 17, tzinfo=UTC).date()
     # 证据绑定：2 条、文本来自转录段
     evs = db_session.query(ViewpointEvidence).filter_by(viewpoint_id=vp.id).all()
     assert len(evs) == 2
-    assert {ev.evidence_text for ev in evs} == {"我认为美联储九月必然降息。", "利好黄金，看涨到年底。"}
+    assert {ev.evidence_text for ev in evs} == {
+        "我认为美联储九月必然降息几乎是确定的事情，这是当前市场最大的宏观主线。",
+        "利好黄金，避险需求会推动金价看涨到年底，这个逻辑非常清晰值得认真对待。",
+    }
     # 实体归一：黄金不在词典 → entity_candidate
     assert vp.entity_id is None
     cand = db_session.query(EntityCandidate).filter_by(raw_name="黄金").one()
@@ -152,7 +162,7 @@ def test_dedupe_merges_similar_same_stance(db_session, tracked_transcribed_item)
     evs = db_session.query(ViewpointEvidence).filter_by(viewpoint_id=vps[0].id).all()
     all_text = " ".join(ev.evidence_text for ev in evs)
     assert "美联储九月必然降息" in all_text
-    assert "这就是我的判断" in all_text
+    assert "以上就是我的全部判断" in all_text
 
 
 def test_extraction_non_auto_account_not_dispatched_is_orthogonal(db_session, tracked_transcribed_item):

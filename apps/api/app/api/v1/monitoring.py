@@ -5,6 +5,7 @@ from typing import Annotated
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
@@ -80,4 +81,122 @@ def get_system_status(session: DbDep):
             "container": s.recorder_container_name,
             "synced_monitors": synced,
         },
+    }
+
+
+@router.get("/dashboard")
+def get_dashboard(
+    session: Annotated[Session, Depends(get_db)],
+    date: str | None = None,  # noqa: A002 与 PRD 参数名一致
+):
+    """RAD-071：单请求聚合 Dashboard payload（统计卡/共识/直播间/最近观点）。"""
+    from datetime import date as date_cls
+    from datetime import timedelta
+
+    from app.db.models import Creator, Topic, TopicConsensusDaily, Viewpoint
+    from app.services.extraction import EXTRACTOR_VERSION, PROMPT_VERSION
+
+    day = date_cls.fromisoformat(date) if date else date_cls.today()
+    week_ago = day - timedelta(days=7)
+
+    monitors = live_status.build_live_monitors(session)
+    live_count = sum(1 for m in monitors if m["is_live"] is True)
+    watching = sum(1 for m in monitors if m["live_monitor_enabled"])
+    total_segments = sum(m["transcript_count"] for m in monitors)
+
+    recent_vps = (
+        session.query(
+            Viewpoint.id,
+            Viewpoint.claim,
+            Viewpoint.stance,
+            Viewpoint.confidence,
+            Viewpoint.verification_status,
+            Viewpoint.as_of_date,
+            Creator.display_name.label("creator_name"),
+            Topic.canonical_name.label("topic_name"),
+        )
+        .join(Creator, Creator.id == Viewpoint.creator_id)
+        .outerjoin(Topic, Topic.id == Viewpoint.topic_id)
+        .order_by(Viewpoint.id.desc())
+        .limit(12)
+        .all()
+    )
+    consensus = (
+        session.query(
+            TopicConsensusDaily,
+            Topic.canonical_name.label("topic_name"),
+        )
+        .join(Topic, Topic.id == TopicConsensusDaily.topic_id)
+        .filter(TopicConsensusDaily.trade_date == day)
+        .all()
+    )
+    new_vp_7d = (
+        session.query(func.count(Viewpoint.id))
+        .filter(Viewpoint.created_at >= week_ago)
+        .scalar()
+    )
+    pending_review = (
+        session.query(func.count(Viewpoint.id))
+        .filter(Viewpoint.verification_status.in_(["candidate", "needs_review"]))
+        .scalar()
+    )
+
+    return {
+        "date": day.isoformat(),
+        "stats": {
+            "monitors": len(monitors),
+            "live_watching": watching,
+            "is_live": live_count,
+            "live_segments": total_segments,
+            "new_viewpoints_7d": new_vp_7d,
+            "pending_review": pending_review,
+            "extraction": {
+                "prompt_version": PROMPT_VERSION,
+                "extractor_version": EXTRACTOR_VERSION,
+            },
+        },
+        "consensus": [
+            {
+                "topic_id": c.topic_id,
+                "topic_name": tname,
+                "trade_date": c.trade_date.isoformat(),
+                "creator_count": c.creator_count,
+                "bullish": c.bullish_count,
+                "neutral": c.neutral_count,
+                "bearish": c.bearish_count,
+                "net_stance_score": (
+                    float(c.net_stance_score) if c.net_stance_score is not None else None
+                ),
+                "disagreement_score": (
+                    float(c.disagreement_score) if c.disagreement_score is not None else None
+                ),
+            }
+            for c, tname in consensus
+        ],
+        "live_rooms": [
+            {
+                "account_id": m["account_id"],
+                "display_name": m["display_name"],
+                "room_id": m["room_id"],
+                "is_live": m["is_live"],
+                "session_status": m["session_status"],
+                "segment_count": m["segment_count"],
+                "transcript_count": m["transcript_count"],
+            }
+            for m in monitors
+            if m["live_monitor_enabled"]
+        ],
+        "recent_viewpoints": [
+            {
+                "id": r.id,
+                "claim": r.claim,
+                "stance": r.stance,
+                "confidence": float(r.confidence or 0.5),
+                "status": r.verification_status,
+                "creator_name": r.creator_name,
+                "topic_name": r.topic_name,
+                "as_of_date": r.as_of_date.isoformat() if r.as_of_date else None,
+            }
+            for r in recent_vps
+        ],
     }
