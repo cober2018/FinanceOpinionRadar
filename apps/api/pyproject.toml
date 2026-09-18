@@ -14,6 +14,7 @@ dependencies = [
   "celery[redis]>=5.4",
   "redis>=5.0",
   "curl_cffi>=0.16",
+  "websocket-client>=1.8",
     "httpx>=0.27",
   "structlog>=24.1",
   "boto3>=1.34",

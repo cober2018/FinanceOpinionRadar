@@ -2,6 +2,7 @@
 
 from app.db.models.consensus import CreatorTopicSnapshot, TopicConsensusDaily
 from app.db.models.creator import Creator
+from app.db.models.interaction import LiveChatMessage
 from app.db.models.media import MediaAsset, TranscriptSegment
 from app.db.models.source import DeletedItemRef, SourceAccount, SourceItem
 from app.db.models.system import AppSetting, AuditLog, JobRun, PromptVersion
@@ -17,6 +18,7 @@ __all__ = [
     "CreatorTopicSnapshot",
     "Entity",
     "JobRun",
+    "LiveChatMessage",
     "MediaAsset",
     "PromptVersion",
     "SourceAccount",

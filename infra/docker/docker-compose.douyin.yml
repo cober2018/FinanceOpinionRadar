@@ -109,6 +109,15 @@ services:
       - "${DOUYIN_STATE_DIR:-../../data/douyin}/live_segments:/app/downloads"
     restart: unless-stopped
 
+  # Plan #5 直播弹幕采集：jwwsjlm/douyinLive v2.2.1（本地 a_bogus 签名，免浏览器）。
+  # radar 通过 ws://127.0.0.1:1088/ws/<room_id> 订阅弹幕流（.env: DANMAKU_WS_BASE_URL），
+  # 通过 /api/v1/rooms/{id}/status 查询房间状态。上游断线重连/未开播轮询由其内部处理。
+  douyinlive:
+    image: ghcr.io/jwwsjlm/douyinlive:v2.2.1
+    container_name: douyinlive
+    ports: ["127.0.0.1:${DOUYINLIVE_PORT:-1088}:1088"]
+    restart: unless-stopped
+
 volumes:
   dtk_pgdata:
 

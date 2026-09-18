@@ -1,0 +1,9 @@
+{
+  "common": {"msgId": "7299483746218392832", "roomId": "330698468897", "createTime": "1726660425000", "describe": "小散一枚:主播怎么看明天的大盘？"},
+  "user": {"id": "4455667788", "shortId": "12345678", "nickname": "小散一枚"},
+  "content": "主播怎么看明天的大盘？",
+  "method": "WebcastChatMessage",
+  "livename": "大潘说股",
+  "title": "盘后复盘",
+  "avatarThumb": ""
+}

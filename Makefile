@@ -75,8 +75,8 @@ migrate: ## 执行数据库迁移至最新版本
 worker: ## 启动 Celery worker
 	$(PYTHON) -m celery -A app.worker.celery_app worker --loglevel=info
 
-worker-beat: ## 启动 Celery worker + beat（dev：全队列消费 default/media/llm）
-	$(PYTHON) -m celery -A app.worker.celery_app worker --beat -Q default,media,llm --loglevel=info
+worker-beat: ## 启动 Celery worker + beat（dev：全队列消费 default/media/llm/danmaku）
+	$(PYTHON) -m celery -A app.worker.celery_app worker --beat -Q default,media,llm,danmaku --loglevel=info
 
 live-status: ## 直播值守看板（每个值守直播间一行：在播/同步/会话/转录）
 	$(PYTHON) scripts/live_dashboard.py

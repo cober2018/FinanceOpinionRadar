@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     recorder_config_path: str = ""
     recorder_container_name: str = "streamcap"  # 配置变更后 docker restart 的目标容器
     recorder_sync_interval_sec: int = 600  # beat：账号 → 录制器配置同步
+    # --- Plan #5 直播弹幕采集（外部 jwwsjlm/douyinLive 服务，见 docker-compose.douyin.yml）---
+    # douyinLive WS 代理地址（ws://127.0.0.1:1088）；空 = 弹幕派发/采集/ingest 全链不启用
+    danmaku_ws_base_url: str = ""
+    # jsonl 落盘根目录（建议与 live_segments 同级：<dir>/<日期>/<item_id>.jsonl）
+    danmaku_sink_dir: str = ""
+    danmaku_dispatch_interval_sec: int = 60  # beat：派发器
+    danmaku_ingest_interval_sec: int = 120  # beat：jsonl → 入库扫描
+    danmaku_collector_max_duration_sec: int = 43200  # 单采集任务寿命上限（12h）
+    danmaku_heartbeat_stale_sec: int = 120  # sink 文件 mtime 超过此值视为采集器不在
+    danmaku_max_collectors: int = 4  # 并发采集任务上限
     # --- EPIC-03 ASR（RAD-033/035） ---
     asr_provider: str = "faster_whisper"  # faster_whisper | mlx（Apple Silicon Metal）
     asr_mlx_python: str = ""  # venv_arm64 python 路径（voice-pro，见 README「ASR 引擎」）

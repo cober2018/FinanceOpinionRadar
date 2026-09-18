@@ -1,0 +1,9 @@
+{
+  "common": {"msgId": "7299483746218393100", "roomId": "330698468897", "createTime": "1726660435000"},
+  "user": {"id": "111", "nickname": "路人甲"},
+  "count": "2",
+  "total": "888",
+  "method": "WebcastLikeMessage",
+  "livename": "大潘说股",
+  "title": "盘后复盘"
+}

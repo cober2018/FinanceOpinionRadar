@@ -1,0 +1,10 @@
+{
+  "common": {"msgId": "7299483746218392999", "roomId": "330698468897", "createTime": "1726660430000"},
+  "user": {"id": "9988776655", "nickname": "老王"},
+  "gift": {"name": "粉丝团灯牌"},
+  "repeatCount": "1",
+  "count": "1",
+  "method": "WebcastGiftMessage",
+  "livename": "大潘说股",
+  "title": "盘后复盘"
+}

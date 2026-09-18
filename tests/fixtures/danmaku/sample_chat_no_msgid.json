@@ -1,0 +1,8 @@
+{
+  "common": {"roomId": "330698468897", "createTime": "1726660425000"},
+  "user": {"id": "4455667788", "nickname": "小散一枚"},
+  "content": "重复内容测试",
+  "method": "WebcastChatMessage",
+  "livename": "大潘说股",
+  "title": "盘后复盘"
+}
