@@ -221,6 +221,7 @@ docker compose -f infra/docker/docker-compose.douyin.yml up -d   # 3) 重启生�
 
 ### 运维注记
 
+- **观点抽取需要 LLM**：`.env` 配 `LLM_API_KEY`+`LLM_BASE_URL`（OpenAI 兼容）后自动抽取产出真实观点；留空 = Mock 模式（链路通、产出空），视频库手动「抽取观点」按钮同样可验证链路。抽取语义：新视频转写完成后自动抽取；历史视频（backfill）只采标题，需手动。
 - **ASR 引擎（mlx，Apple Silicon）**：`.env` 设 `ASR_PROVIDER=mlx` + `ASR_MLX_PYTHON`/`ASR_MLX_WORKER` 指向 voice-pro 的 venv_arm64（Python 3.12 + mlx-metal + mlx-whisper），radar 以子进程桥接、零新依赖。基准：whisper-medium 转录 13.4min 中文音频 **59s vs CPU faster-whisper 56min（~57x）**，模型 `mlx-community/whisper-medium` 已在本机 HF 缓存。模型质量与 faster-whisper medium 同级。
 - **视频转录语义**：注册账号的首扫只采集历史视频**标题**（metadata `backfill` 标记），不自动转录；周期轮询发现的**新**视频仅当「视频监控」开（auto_poll）才自动转写；其余一律在监控台「视频库」手动点「转写」。
 
@@ -253,6 +254,7 @@ docs/adr/            架构决策记录
 - RAD-010~013：API 骨架与健康检查、领域枚举、Alembic + 14 张表迁移（含约束/级联/UTC 集成测试）、repository 层、开发种子数据
 - RAD-020~023：媒体 Adapter 契约（yt-dlp 子进程，ADR-0007）、URL 白名单闸、手工解析/创建 API、Celery 账号发现 + beat 到期派发
 - RAD-030~035：MinIO 存储服务、prepare 编排（字幕优先 + ASR 兜底，幂等行锁 + discovered 周期补扫）、ffmpeg 音频标准化、faster-whisper 转录（WhisperX flag 默认关）、transcript 持久化
+- RAD-040~045（EPIC-04）：转录分段器（5-10min/不切段/overlap 标记）、prompt 版本注册表、LLM Provider（OpenAI 兼容 + 无钥 Mock 兜底）、观点抽取全链（服务端全量校验/证据绑定/ADR-0004 幂等/advisory 单飞/原始 run 存 MinIO llm-runs/）、实体归一（确定性四阶 + entity_candidate）、规则去重（merge_reason）；状态机 transcribed→extracting→reviewing，beat 补扫 + 视频库手动「抽取观点」
 
 ## TODO
 

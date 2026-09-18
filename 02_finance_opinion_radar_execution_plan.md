@@ -550,6 +550,16 @@ ENABLE_WHISPERX=true
 
 # 7. EPIC-04：Chunk 与观点抽取
 
+> **落地记录（2026-09-18，Plan `docs/superpowers/plans/2026-09-18-epic04-viewpoint-extraction.md`）**：
+> RAD-040 chunker（5-10min/segment 边界/overlap 标记/超长段不切）；RAD-041 prompt 版本
+> 目录注册表（extraction@v1，只读不可变）；RAD-042 LLMProvider（OpenAI 兼容
+> json_object + 指数重试 + usage，无钥 Mock 兜底）；RAD-043 抽取编排（服务端全量校验/
+> 证据绑定/ADR-0004 幂等/advisory 单飞/run 存 MinIO llm-runs/，chunk 级失败容忍记账）；
+> RAD-044 实体归一（canonical→alias→symbol→唯一 fuzzy，失败入 entity_candidate，
+> 不自动建正式实体）；RAD-045 规则去重（entity+stance+claim 相似度 ≥0.85 合并，
+> merge_reason 落库）。状态机 transcribed→extracting→reviewing 全通，真实视频
+> 抽取冒烟通过（run 存档验证）。LLM reviewer 消歧/审核流留 EPIC-05。
+
 ## RAD-040 Chunk Builder
 
 文件：
