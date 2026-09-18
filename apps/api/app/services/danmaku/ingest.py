@@ -6,6 +6,7 @@
 """
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import structlog
@@ -24,7 +25,12 @@ _DATE_DIR_LEN = 10  # YYYY-MM-DD
 
 
 def parse_envelope_line(line: str):
-    """jsonl 档案行 → DanmakuRecord；坏行/半行/不支持类型 → None（仅计数）。"""
+    """jsonl 档案行 → DanmakuRecord；坏行/半行/不支持类型 → None（仅计数）。
+
+    真栈实录（2026-09-19 西楚老温房间）：web 画像的 protojson 省略零值 common.createTime
+    → published_at 缺失时用采集接收时间（envelope received_at，秒级）兜底，保证
+    舆论分析的时间分桶有可用时间轴。
+    """
     line = line.strip()
     if not line:
         return None
@@ -39,7 +45,15 @@ def parse_envelope_line(line: str):
         doc = loads_line(envelope["raw"])  # 采集期坏 JSON 的原文补偿解析
     if not isinstance(doc, dict):
         return None
-    return parse_business(doc)
+    record = parse_business(doc)
+    if record is None:
+        return None
+    if record.published_at is None and isinstance(envelope.get("received_at"), str):
+        try:
+            record.published_at = datetime.fromisoformat(envelope["received_at"])
+        except ValueError:
+            pass
+    return record
 
 
 def ingest_danmaku_files(session, *, repo=None, settings=None) -> dict:

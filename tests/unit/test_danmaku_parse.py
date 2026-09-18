@@ -130,3 +130,36 @@ def test_chaos_dirty_docs_never_raise(doc):
             "WebcastMemberMessage",
             "WebcastSocialMessage",
         )
+
+
+# --- 真栈实录校准（2026-09-19 西楚老温房间） ---
+
+
+def test_envelope_line_received_at_fallback():
+    """web 画像 protojson 省略零值 createTime → published_at 用采集接收时间兜底。"""
+    from app.services.danmaku.ingest import parse_envelope_line
+
+    envelope = {
+        "v": 1,
+        "received_at": "2026-09-18T16:39:00+00:00",
+        "msg": {
+            "method": "WebcastChatMessage",
+            "common": {"msgId": "7686915575604024363"},  # 无 createTime（实录形态）
+            "user": {"id": "1111111111111111111", "nickname": "心***"},
+            "content": "消费",
+        },
+    }
+    record = parse_envelope_line(json.dumps(envelope))
+    assert record is not None
+    assert record.published_at == datetime.fromisoformat("2026-09-18T16:39:00+00:00")
+
+
+def test_user_name_falls_back_to_desensitized_nickname():
+    record = parse_business({
+        "method": "WebcastChatMessage",
+        "common": {"msgId": "1"},
+        "user": {"id": "1111", "desensitizedNickname": "心***"},
+        "content": "光模块",
+    })
+    assert record is not None
+    assert record.user_name == "心***"

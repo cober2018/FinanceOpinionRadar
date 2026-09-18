@@ -122,7 +122,8 @@ def parse_business(doc: dict) -> DanmakuRecord | None:
         msg_type=method,
         external_msg_id=msg_id or _synthetic_msg_id(doc),
         user_id=_as_str(user.get("id")),
-        user_name=_as_str(user.get("nickname")),
+        user_name=_as_str(user.get("nickname"))
+        or _as_str(user.get("desensitizedNickname")),  # 匿名 web 会话昵称脱敏（真栈实录）
         published_at=_parse_create_time(common.get("createTime")),
     )
     if method == "WebcastChatMessage":
