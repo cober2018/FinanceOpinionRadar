@@ -684,6 +684,12 @@ V1 可先规则 + LLM reviewer。
 
 # 8. EPIC-05：Evidence Reviewer 与人工复核
 
+> **落地记录（2026-09-18）**：RAD-050 reviewer V1=规则 agent（证据充分性/转述启发式/
+> 置信与立场闸，accept/reject/needs_review，抽取完成即批量复核）；RAD-051 阈值可配置
+> （review_confidence_threshold=0.75 / review_min_evidence_chars=50）；RAD-052
+> confirm/reject/PATCH 全量写 audit_log（actor/before/after/reason），item 无剩余待审
+> 自动 reviewing→ready。LLM reviewer 接入点已预留（provider 就绪）。
+
 ## RAD-050 Reviewer Agent
 
 输入：
@@ -745,6 +751,12 @@ PATCH /viewpoints/{id}
 
 # 9. EPIC-06：观点历史与共识
 
+> **落地记录（2026-09-18）**：RAD-060 change_type 规则全单测（含基准方向比较——
+> bullish→strong_bullish=strengthening 而非 flip，PRD 示例语义）；RAD-061 共识按
+> creator 去重取最新 confirmed 非 unclear 非过期视角，net=(bull-bear)/total、
+> disagreement=1-|net|，CONSENSUS_RULE_VERSION=v1；RAD-062 horizon→有效期映射
+> （intraday 1/1-3D 3/1-4W 28/1-3M 90/3M+ 180），过期 snapshot 标 expired 不删数据。
+
 ## RAD-060 Snapshot Builder
 
 当 viewpoint confirmed：
@@ -799,6 +811,12 @@ intraday: 1 day
 
 # 10. EPIC-07：API
 
+> **落地记录（2026-09-18）**：RAD-071 `GET /dashboard?date=` 单请求聚合（统计/共识/
+> 直播间/最近观点/待审数）；RAD-072 `GET /viewpoints` 统一过滤分页（page/page_size/
+> sort/date/creator/topic/stance/confidence_min/status → items/total/page/page_size）；
+> RAD-070 Pydantic schema 全端点覆盖 + `make api-types` 生成前端 TS 类型
+> （apps/web/src/api-types.ts）。另补 /viewpoints/{id}/evidence、GET /jobs。
+
 ## RAD-070 OpenAPI Contract
 
 所有 endpoint 先定义 Pydantic Schema。
@@ -840,6 +858,14 @@ status
 ---
 
 # 11. EPIC-08：前端原型落地
+
+> **落地记录（2026-09-18）**：形态为「监控台」四页+新增三页（V1 内部工具裁剪，非 PRD
+> 全量原型）：RAD-080 tokens 迁移 styles/tokens.css；RAD-081 侧边栏外壳+错误横幅+
+> 空态；RAD-082 总览页（统计卡/直播间状态/引擎状态/最近转写，真实数据）；RAD-083
+> 视频库+观点 DataTable（筛选/排序/分页/URL query）；RAD-084 证据抽屉（时间戳分段/
+> 原视频链接/复核动作）；RAD-087 来源中心（账号 CRUD+添加弹窗+开关）；RAD-088 复核
+> 队列（键盘 A/R/E、reject 二次确认）；RAD-089 任务中心（job_run 记录抽取任务）。
+> RAD-085/086 人物/主题详情页以总览共识表+观点过滤覆盖，独立详情页留 EPIC-11 前端迭代。
 
 ## RAD-080 Design Tokens
 
@@ -960,6 +986,12 @@ CRUD + test discover。
 
 # 12. EPIC-09：质量评估
 
+> **落地记录（2026-09-18）**：RAD-091 `scripts/evaluate_viewpoints.py` 六指标 CLI
+> （JSON+Markdown 报告）已就绪并用 2 条真实样例跑通；RAD-090 golden 目录脚手架+
+> 样例标注已入库，**完整 20 条人工标注需人工执行**（README/tests/golden/README 有
+> 格式与流程）；RAD-092 thresholds.json 门限 + --baseline 回归对比（退化/低于门限
+> 退出码 1）。
+
 ## RAD-090 Golden Dataset
 
 目录：
@@ -1013,6 +1045,13 @@ Prompt/model 改动 PR 必须附：
 ---
 
 # 13. EPIC-10：运维与部署
+
+> **落地记录（2026-09-18）**：RAD-100 `infra/docker/docker-compose.prod.yml`（pg/redis/
+> minio/api/worker 按队列分进程）；RAD-101 task_routes 队列拆分 default|media|llm
+> （dev make worker-beat 全队列消费）；RAD-102 重试策略集中于 provider（LLM 指数退避）
+> 与任务层（风控/认证类不盲目重试，failed 重驱）；RAD-103 structlog 结构化日志已全线
+> （trace_id 记于 job_run）；RAD-104 `scripts/backup_db.sh`（pg_dump -Fc）+ 恢复演练
+> 指引；RAD-105 `docs/runbook/` 7 篇（现象/诊断/恢复/重复数据/重跑）。
 
 ## RAD-100 Production Compose/Helm
 

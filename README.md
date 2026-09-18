@@ -254,6 +254,7 @@ docs/adr/            架构决策记录
 - RAD-010~013：API 骨架与健康检查、领域枚举、Alembic + 14 张表迁移（含约束/级联/UTC 集成测试）、repository 层、开发种子数据
 - RAD-020~023：媒体 Adapter 契约（yt-dlp 子进程，ADR-0007）、URL 白名单闸、手工解析/创建 API、Celery 账号发现 + beat 到期派发
 - RAD-030~035：MinIO 存储服务、prepare 编排（字幕优先 + ASR 兜底，幂等行锁 + discovered 周期补扫）、ffmpeg 音频标准化、faster-whisper 转录（WhisperX flag 默认关）、transcript 持久化
+- EPIC-05~10（RAD-050~105）：审核流（规则 reviewer + confirm/reject/PATCH 全审计）、观点历史快照与 change_type、主题共识与过期、Dashboard 单请求聚合 API、观点过滤列表、监控台观点/复核队列（键盘操作）/任务中心三页、六指标评估 CLI + golden 门禁、prod compose 队列分 worker、7 篇 runbook、数据库备份脚本
 - RAD-040~045（EPIC-04）：转录分段器（5-10min/不切段/overlap 标记）、prompt 版本注册表、LLM Provider（OpenAI 兼容 + 无钥 Mock 兜底）、观点抽取全链（服务端全量校验/证据绑定/ADR-0004 幂等/advisory 单飞/原始 run 存 MinIO llm-runs/）、实体归一（确定性四阶 + entity_candidate）、规则去重（merge_reason）；状态机 transcribed→extracting→reviewing，beat 补扫 + 视频库手动「抽取观点」
 
 ## TODO
