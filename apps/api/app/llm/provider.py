@@ -27,6 +27,7 @@ class LLMResponse:
     usage: dict[str, int]
     provider: str
     model: str
+    raw_head: str = ""  # 原始 content 头部（空返回诊断用）
 
 
 class LLMProvider(Protocol):
@@ -158,5 +159,6 @@ class OpenAICompatProvider:
                 },
                 provider="openai-compat",
                 model=str(payload["model"]),
+                raw_head=content[:120],
             )
         raise LLMError(f"LLM 请求失败（重试 {self._max_retries} 次后）: {last_err}")

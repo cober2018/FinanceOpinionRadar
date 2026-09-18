@@ -138,6 +138,7 @@ def extract_source_item(
         created_ids: list[int] = []
         rejected: list[dict] = []
         failed_chunks: list[str] = []
+        chunk_summaries: list[dict] = []
         for chunk in chunks:
             # 模板含 JSON 花括号示例，不能用 str.format——用显式占位符替换
             user_prompt = pack.user_template.replace(
@@ -152,8 +153,16 @@ def extract_source_item(
                 continue
             # MiniMax-M3 等模型可能返回裸数组（schema 要求 {"viewpoints": [...]}）→ 归一
             data = resp.data if isinstance(resp.data, dict) else {"viewpoints": resp.data or []}
+            raw_candidates = data.get("viewpoints", []) if isinstance(data, dict) else []
+            chunk_summaries.append(
+                {
+                    "chunk": chunk.chunk_id,
+                    "candidates": len(raw_candidates),
+                    **({"raw_head": getattr(resp, "raw_head", "")} if not raw_candidates else {}),
+                }
+            )
             chunk_ids = set(chunk.segment_ids)
-            for cand in data.get("viewpoints", []):
+            for cand in raw_candidates:
                 err, stance = _validate_candidate(cand, chunk_ids)
                 if err:
                     rejected.append({"chunk": chunk.chunk_id, "reason": err})
@@ -219,6 +228,7 @@ def extract_source_item(
             "item_id": item_id,
             "prompt_version": prompt_version,
             "extractor_version": extractor_version,
+            "chunk_summaries": chunk_summaries,
             "provider": type(provider).__name__,
             "chunks": len(chunks),
             "failed_chunks": failed_chunks,

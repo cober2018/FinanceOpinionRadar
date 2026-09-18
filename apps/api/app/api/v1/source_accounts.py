@@ -219,3 +219,15 @@ def delete_source_account(
     session.delete(account)  # FK CASCADE：source_item → transcript/viewpoint/asset
     session.commit()
     return {"deleted": account_id}
+
+
+@router.post("/{account_id}/scan", status_code=202)
+def scan_account_now(account_id: int, session: DbDep):
+    """立即扫描该主播的新视频（不等 beat 轮询）。幂等：discover 内部按条目去重。"""
+    account = session.get(SourceAccount, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail=f"source_account {account_id} 不存在")
+    from app.worker.celery_app import celery_app
+
+    celery_app.send_task("discover_source_account", args=[account_id])
+    return {"account_id": account_id, "scan_dispatched": True}

@@ -93,11 +93,38 @@ def dispatch_due_discoveries() -> int:
 
 @celery_app.task(name="prepare_source_item")  # 注记①：幂等在编排层（行锁+状态门槛），重复投递安全
 def prepare_source_item(item_id: int) -> dict:
+    from datetime import UTC, datetime
+
+    from app.db.models import JobRun
     from app.services.preparation import prepare_source_item as run_prepare
     from app.services.storage import get_storage
     from app.services.transcription import get_transcription_provider
 
-    session = get_session_factory()()
+    factory = get_session_factory()
+    s = factory()
+    run = JobRun(job_type="prepare_media", source_item_id=item_id, status="running")
+    s.add(run)
+    s.commit()
+    run_id = run.id
+    s.close()
+
+    def _finish(status: str, error: str | None = None, payload: dict | None = None) -> None:
+        s2 = factory()
+        try:
+            r = s2.get(JobRun, run_id)
+            if r is not None:
+                r.status = status
+                r.finished_at = datetime.now(UTC)
+                if error:
+                    r.error_code = "PREPARE_FAILED"
+                    r.error_message = error[:500]
+                if payload:
+                    r.payload_json = payload
+                s2.commit()
+        finally:
+            s2.close()
+
+    session = factory()
     try:
         try:
             adapter = build_adapter(_item_platform(session, item_id))
@@ -105,14 +132,24 @@ def prepare_source_item(item_id: int) -> dict:
             # douyin 未配置等构造期失败：与其他 prepare 失败同语义落 last_error（F8）
             from app.services.preparation import record_stage_failure
 
-            return record_stage_failure(session, item_id, "resolve", exc)
-        return run_prepare(
+            out = record_stage_failure(session, item_id, "resolve", exc)
+            _finish("failed", error=str(exc))
+            return out
+        out = run_prepare(
             item_id,
             session,
             adapter,
             get_storage(),
             get_transcription_provider(),
         )
+        _finish(
+            "success",
+            payload={"status": out.get("status"), "segments": out.get("segments")},
+        )
+        return out
+    except Exception as exc:
+        _finish("failed", error=str(exc))
+        raise
     finally:
         session.close()
 

@@ -318,6 +318,20 @@ function AccountsPage() {
     }
   }
 
+  const scanNow = async (r: LiveMonitor) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api(`/source-accounts/${r.account_id}/scan`, { method: 'POST' })
+      setError(null)
+      setTimeout(reload, 4000)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const removeAccount = async (r: LiveMonitor) => {
     const n = window.confirm(
       `确定删除主播「${r.display_name}」？\n其全部内容（视频/直播转录/观点）将一并物理删除，不可恢复。`,
@@ -460,6 +474,7 @@ function AccountsPage() {
                   />
                 ) : (
                   <>
+                    <button className="ghost" onClick={() => scanNow(r)}>扫描</button>{' '}
                     <button className="ghost" onClick={() => startEdit(r)}>编辑</button>{' '}
                     <button className="ghost danger" onClick={() => removeAccount(r)}>删除</button>
                   </>
