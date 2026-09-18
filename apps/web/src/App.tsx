@@ -1096,6 +1096,9 @@ function DanmakuDrawer(props: { itemId: number; onClose: () => void }) {
           {data && data.messages.length === 0 && (
             <p className="muted pad">该会话暂无弹幕入库（采集窗口或未开播）</p>
           )}
+          {data && data.messages.length < data.total && (
+            <p className="muted pad">仅显示最早 {data.messages.length} 条，共 {data.total} 条入库</p>
+          )}
         </div>
       </div>
     </div>

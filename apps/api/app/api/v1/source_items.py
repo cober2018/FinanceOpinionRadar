@@ -234,13 +234,21 @@ def get_transcript(item_id: int, session: DbDep):
 
 
 @router.get("/{item_id}/chat-messages")
-def get_chat_messages(item_id: int, session: DbDep, limit: int = 500):
-    """直播弹幕详情（视频库抽屉，Plan #5）：观众发言正文，时间升序。"""
+def get_chat_messages(item_id: int, session: DbDep, limit: int = 10):
+    """直播弹幕详情（视频库抽屉，Plan #5）：只返回前 N 条（默认 10，用户裁决：
+    全量展示无意义），total 恒为该会话入库总数。"""
+    from sqlalchemy import func
+
     from app.db.models import LiveChatMessage, SourceItem
 
     item = session.get(SourceItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    total = (
+        session.query(func.count(LiveChatMessage.id))
+        .filter(LiveChatMessage.source_item_id == item_id)
+        .scalar()
+    )
     rows = (
         session.query(
             LiveChatMessage.user_name,
@@ -255,7 +263,7 @@ def get_chat_messages(item_id: int, session: DbDep, limit: int = 500):
     return {
         "item_id": item_id,
         "title": item.title,
-        "total": len(rows),
+        "total": total,
         "messages": [
             {"user_name": u, "text": t, "published_at": p} for u, t, p in rows
         ],

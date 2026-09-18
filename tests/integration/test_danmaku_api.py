@@ -84,6 +84,28 @@ def test_chat_messages_404(client):
     assert resp.status_code == 404
 
 
+def test_chat_messages_truncated_to_first_10(db_session, client):
+    """用户裁决（2026-09-19）：抽屉只显示前 10 条，total 仍为全量计数。"""
+    item = _make_session_with_chats(db_session)
+    for i in range(12):
+        db_session.add(
+            LiveChatMessage(
+                source_item_id=item.id,
+                platform="douyin",
+                msg_type="WebcastChatMessage",
+                external_msg_id=f"extra{i}",
+                user_name=f"用户{i}",
+                text=f"消息{i}",
+            )
+        )
+    db_session.commit()
+    resp = client.get(f"/api/v1/source-items/{item.id}/chat-messages")
+    body = resp.json()
+    assert body["total"] == 15  # 3 + 12
+    assert len(body["messages"]) == 10  # 只返回前 10 条
+    assert body["messages"][0]["text"] == "消费"  # 最早的在前
+
+
 def test_library_list_includes_chat_count(db_session, client):
     item = _make_session_with_chats(db_session)
     _make_session_with_chats(db_session, external_id="MS4wLjABdmapi2", chats=False)  # 无弹幕对照
