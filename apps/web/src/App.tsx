@@ -137,6 +137,9 @@ const STATUS_CN: Record<string, string> = {
   media_ready: '媒体就绪',
   transcribing: '转写中',
   transcribed: '已转写',
+  extracting: '抽取观点中',
+  reviewing: '待审核',
+  ready: '已就绪',
   failed: '失败',
 }
 
@@ -1150,7 +1153,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
-  const [drawer, setDrawer] = useState<{ id: number; sourceUrl: string | null } | null>(null)
+  const [drawer, setDrawer] = useState<{ viewpointId: number; sourceItemId: number } | null>(null)
 
   const pageSize = 20
 
@@ -1186,7 +1189,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
       if ((e.key === 'a' || e.key === 'A') && reviewable) review(selected, 'confirm')
       if ((e.key === 'r' || e.key === 'R') && reviewable) doReject(selected)
       if (e.key === 'e' || e.key === 'E')
-        setDrawer({ id: row.id, sourceUrl: row.source_item_id ? `/console/` : null })
+        setDrawer({ viewpointId: row.id, sourceItemId: row.source_item_id })
       if (e.key === 'Escape') setSelected(null)
     }
     window.addEventListener('keydown', handler)
@@ -1288,9 +1291,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
                 )}
                 <button
                   className="ghost"
-                  onClick={() =>
-                    setDrawer({ id: r.id, sourceUrl: null })
-                  }
+                  onClick={() => setDrawer({ viewpointId: r.id, sourceItemId: r.source_item_id })}
                 >
                   证据
                 </button>
@@ -1317,14 +1318,20 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
         复核操作：点击行选中后按 <b>A</b> 通过 / <b>R</b> 驳回（驳回必填原因）/ <b>E</b> 查证据，ESC 取消选中。
       </p>
       {drawer !== null && (
-        <ViewpointEvidenceDrawer itemId={drawer.id} onClose={() => setDrawer(null)} onReviewed={reload} />
+        <ViewpointEvidenceDrawer
+          viewpointId={drawer.viewpointId}
+          sourceItemId={drawer.sourceItemId}
+          onClose={() => setDrawer(null)}
+          onReviewed={reload}
+        />
       )}
     </div>
   )
 }
 
 function ViewpointEvidenceDrawer(props: {
-  itemId: number
+  viewpointId: number
+  sourceItemId: number
   onClose: () => void
   onReviewed: () => void
 }) {
@@ -1339,21 +1346,22 @@ function ViewpointEvidenceDrawer(props: {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // 正文与证据按 source_item_id 取；复核动作按 viewpoint_id——两个 id 不能混
     api<{ title: string | null; display_name: string; segments: { sequence_no: number; start_ms: number; end_ms: number; text: string }[] }>(
-      `/source-items/${props.itemId}/transcript`,
+      `/source-items/${props.sourceItemId}/transcript`,
     )
       .then(setData)
       .catch((e: Error) => setError(e.message))
     api<{ viewpoint_id: number; claim: string; stance: string; verification_status: string; evidences: { segment_id: number; start_ms: number; end_ms: number; text: string }[] }[]>(
-      `/source-items/${props.itemId}/viewpoint-evidence`,
+      `/source-items/${props.sourceItemId}/viewpoint-evidence`,
     )
-      .then(setVpRows)
+      .then((all) => setVpRows(all.filter((v) => v.viewpoint_id === props.viewpointId)))
       .catch(() => {})
-  }, [props.itemId])
+  }, [props.viewpointId, props.sourceItemId])
 
   const review = async (action: 'confirm' | 'reject') => {
     try {
-      await api(`/viewpoints/${props.itemId}/${action}`, { method: 'POST' })
+      await api(`/viewpoints/${props.viewpointId}/${action}`, { method: 'POST' })
       props.onClose()
       props.onReviewed()
     } catch (e) {
@@ -1366,7 +1374,7 @@ function ViewpointEvidenceDrawer(props: {
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head">
           <div>
-            <div className="drawer-title">{data?.title ?? `内容 #${props.itemId}`}</div>
+            <div className="drawer-title">{data?.title ?? `观点 #${props.viewpointId}`}</div>
             <div className="muted">{data?.display_name} · {data?.segments.length ?? 0} 段</div>
           </div>
           <button className="ghost" onClick={props.onClose}>关闭</button>
