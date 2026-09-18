@@ -58,6 +58,25 @@ type SecuritySettings = {
   effective: { discover_dispatch_stagger_max_sec: number; douyin_discover_max_pages: number }
 }
 
+type LLMTemplate = {
+  key: string
+  label: string
+  base_url: string
+  models: string[]
+  chat_path: string
+  note: string
+}
+
+type LLMSettings = {
+  templates: LLMTemplate[]
+  template: string
+  base_url: string
+  api_key: string
+  model: string
+  chat_path: string
+  effective: { base_url: string; model: string; timeout_sec: number; max_retries: number; key_set: boolean }
+}
+
 type SystemStatus = {
   asr_provider: string
   asr_model: string
@@ -821,6 +840,140 @@ function TranscriptDrawer(props: { itemId: number; onClose: () => void }) {
 
 /* ---------------- 设置 ---------------- */
 
+function LLMSettingsCard() {
+  const [templates, setTemplates] = useState<LLMTemplate[]>([])
+  const [template, setTemplate] = useState('custom')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [apiKeySet, setApiKeySet] = useState(false)
+  const [model, setModel] = useState('')
+  const [chatPath, setChatPath] = useState('/chat/completions')
+  const [effective, setEffective] = useState<LLMSettings['effective'] | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(() => {
+    api<LLMSettings>('/settings/llm')
+      .then((s) => {
+        setTemplates(s.templates)
+        setTemplate(s.template)
+        setBaseUrl(s.base_url)
+        setApiKeySet(s.effective.key_set)
+        setModel(s.model)
+        setChatPath(s.chat_path)
+        setEffective(s.effective)
+      })
+      .catch((e: Error) => setError(e.message))
+  }, [])
+
+  useEffect(reload, [reload])
+
+  const applyTemplate = (key: string) => {
+    setTemplate(key)
+    const t = templates.find((x) => x.key === key)
+    if (t) {
+      setBaseUrl(t.base_url)
+      setModel(t.models[0] ?? '')
+      setChatPath(t.chat_path)
+    }
+  }
+
+  const save = async () => {
+    setError(null)
+    setMsg(null)
+    try {
+      await api('/settings/llm', {
+        method: 'PUT',
+        body: JSON.stringify({
+          template,
+          base_url: baseUrl,
+          api_key: apiKey,
+          model,
+          chat_path: chatPath,
+        }),
+      })
+      setMsg('已保存')
+      setApiKey('')
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const testConn = async () => {
+    setTestResult('测试中…')
+    try {
+      const r = await api<{ ok: boolean; latency_ms?: number; model?: string; error?: string }>(
+        '/settings/llm/test',
+        { method: 'POST' },
+      )
+      setTestResult(
+        r.ok
+          ? `✅ 连通（${r.latency_ms}ms，模型 ${r.model}）`
+          : `❌ ${r.error ?? '失败'}`,
+      )
+    } catch (e) {
+      setTestResult(`❌ ${(e as Error).message}`)
+    }
+  }
+
+  const current = templates.find((t) => t.key === template)
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>大模型（观点抽取）</h3>
+      </div>
+      <div className="stack">
+        {error && <p className="error">{error}</p>}
+        {msg && <p className="ok">{msg}</p>}
+        <label className="field">
+          服务商模板：选中后自动填地址与模型，可再手动改
+          <select
+            value={template}
+            onChange={(e) => applyTemplate(e.target.value)}
+          >
+            {templates.map((t) => (
+              <option key={t.key} value={t.key}>{t.label}</option>
+            ))}
+          </select>
+          {current?.note && <span className="muted">{current.note}</span>}
+        </label>
+        <label className="field">
+          Base URL
+          <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com/v1" />
+          {effective && <span className="muted">当前生效：{effective.base_url || '（未配置，Mock 模式）'}</span>}
+        </label>
+        <label className="field">
+          API Key {apiKeySet && <span className="muted">（已设置，留空保持不变）</span>}
+          <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={apiKeySet ? '••••••••' : 'sk-…'} />
+        </label>
+        <label className="field">
+          模型（可下拉选或手输）
+          <input value={model} onChange={(e) => setModel(e.target.value)} list="llm-models" placeholder="deepseek-chat" />
+          <datalist id="llm-models">
+            {(current?.models ?? []).map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+          {effective && <span className="muted">当前生效：{effective.model}</span>}
+        </label>
+        <label className="field">
+          Chat 路径（一般不动；MiniMax 为 /text/chatcompletion_v2）
+          <input value={chatPath} onChange={(e) => setChatPath(e.target.value)} />
+        </label>
+        <div className="form-actions">
+          <button className="primary" onClick={save}>保存配置</button>
+          <button onClick={testConn}>测试连接</button>
+        </div>
+        {testResult && <p className="muted">{testResult}</p>}
+        <p className="hint">全部走 OpenAI 兼容协议；中转/聚合网关选「自定义」手填。配置存库即时生效，下一次观点抽取即使用新配置。</p>
+      </div>
+    </div>
+  )
+}
+
 function SettingsPage() {
   const [stagger, setStagger] = useState('')
   const [pages, setPages] = useState('')
@@ -862,7 +1015,8 @@ function SettingsPage() {
   }
 
   return (
-    <div className="settings-grid">
+    <div className="settings-grid stack">
+      <LLMSettingsCard />
       <div className="panel">
         <div className="panel-head">
           <h3>安全（防风控）</h3>

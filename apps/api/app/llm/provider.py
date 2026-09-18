@@ -63,6 +63,7 @@ class OpenAICompatProvider:
         model: str,
         timeout_sec: int = 120,
         max_retries: int = 2,
+        chat_path: str = "/chat/completions",
     ) -> None:
         if not base_url or not api_key:
             raise LLMError(
@@ -73,10 +74,12 @@ class OpenAICompatProvider:
         self._model = model
         self._timeout = timeout_sec
         self._max_retries = max_retries
+        # 个别服务路径不同（MiniMax: /text/chatcompletion_v2）
+        self._chat_path = chat_path or "/chat/completions"
 
     def _post(self, payload: dict) -> httpx.Response:
         return httpx.post(
-            f"{self._base}/chat/completions",
+            f"{self._base}{self._chat_path}",
             headers={"Authorization": f"Bearer {self._key}"},
             json=payload,
             timeout=self._timeout,

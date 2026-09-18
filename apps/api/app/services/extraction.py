@@ -16,12 +16,10 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.settings import get_settings
 from app.db.models import SourceAccount, SourceItem, TranscriptSegment, Viewpoint, ViewpointEvidence
 from app.domain.enums import Horizon, Stance
 from app.domain.pipeline_states import ensure_transition
 from app.domain.transcript.chunker import chunk_transcript
-from app.llm.provider import MockLLMProvider
 from app.services.entity_normalizer import (
     dedupe_source_item_viewpoints,
     normalize_entity,
@@ -119,7 +117,7 @@ def extract_source_item(
 
         registry = get_prompt_registry()
         pack = registry.get(prompt_version)
-        provider = provider or _default_provider()
+        provider = provider or _default_provider(session)
 
         # 状态推进：transcribed → extracting
         ensure_transition(item.status, "extracting")
@@ -272,19 +270,11 @@ def flag_modified(item):
     flag_modified(item, "metadata_json")
 
 
-def _default_provider():
-    from app.llm.provider import OpenAICompatProvider
+def _default_provider(session: Session):
+    # EPIC-04+：LLM 配置从设置页（app_setting）读取，模板支持 DeepSeek/GLM/MiniMax 等
+    from app.services.llm_config import build_llm_provider
 
-    s = get_settings()
-    if not s.llm_api_key or not s.llm_base_url:
-        return MockLLMProvider()
-    return OpenAICompatProvider(
-        base_url=s.llm_base_url,
-        api_key=s.llm_api_key,
-        model=s.llm_model,
-        timeout_sec=s.llm_timeout_sec,
-        max_retries=s.llm_max_retries,
-    )
+    return build_llm_provider(session)
 
 
 def _store_run(session: Session, run_id: str, payload: dict) -> str:

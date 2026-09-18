@@ -1,5 +1,6 @@
 """监控看板与安全设置 API（Plan #4 后续：前端"监控/安全"页数据面）。"""
 
+import json
 from typing import Annotated
 
 import structlog
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
 from app.db.session import get_db
-from app.services import live_status
+from app.services import live_status, llm_config
 
 router = APIRouter(tags=["monitoring"])
 
@@ -237,3 +238,52 @@ def list_jobs(
         }
         for r in rows
     ]
+
+
+class LLMSettingsPayload(BaseModel):
+    template: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    chat_path: str | None = None
+
+
+@router.get("/settings/llm")
+def get_llm_settings(session: Annotated[Session, Depends(get_db)]):
+    """RAD-041+：大模型配置读取（模板列表 + 当前值 + 生效值；key 只回是否已设置）。"""
+    return llm_config.get_llm_settings(session)
+
+
+@router.put("/settings/llm")
+def put_llm_settings(body: LLMSettingsPayload, session: Annotated[Session, Depends(get_db)]):
+    try:
+        return llm_config.put_llm_settings(session, body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/settings/llm/test")
+def test_llm_settings(session: Annotated[Session, Depends(get_db)]):
+    """连接测试：按当前配置跑一次最小 generate_json，返回时延与样例。"""
+    import time
+
+    cfg = llm_config.get_llm_settings(session)
+    provider = llm_config.build_llm_provider(session)
+    if not cfg["effective"]["key_set"] or not cfg["effective"]["base_url"]:
+        return {"ok": False, "error": "未配置完整（base_url/api_key 缺失），当前为 Mock 模式"}
+    t0 = time.time()
+    try:
+        resp = provider.generate_json(
+            "你是连通性测试助手。",
+            "回复 JSON：{\"ok\": true}",
+            {"type": "object", "properties": {"ok": {"type": "boolean"}}},
+            temperature=0.0,
+        )
+        return {
+            "ok": True,
+            "latency_ms": int((time.time() - t0) * 1000),
+            "model": resp.model,
+            "sample": json.dumps(resp.data, ensure_ascii=False)[:120],
+        }
+    except Exception as exc:  # noqa: BLE001 测试端点把上游错误原样带回
+        return {"ok": False, "latency_ms": int((time.time() - t0) * 1000), "error": str(exc)[:300]}
