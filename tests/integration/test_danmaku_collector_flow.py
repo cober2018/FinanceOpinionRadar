@@ -324,3 +324,49 @@ def test_sink_rows_parse_and_dedupe(migrated_db, db_session, tmp_path):
     second = danmaku_ingest.ingest_danmaku_files(db_session, settings=s)
     assert second["messages_inserted"] == 0
     assert db_session.query(LiveChatMessage).count() == 1
+
+
+def test_collect_busy_room_housekeeping_on_wall_clock(migrated_db, db_session, tmp_path):
+    """忙房间回归（真栈实录：西楚老温房间，2026-09-19）：消息流恒不断 → recv 永不超时，
+    housekeeping 必须按壁钟触发——修复前 ping 缺失 + 会话收尾观察不到 = 采集器永不退出。"""
+    item = _make_item(db_session)
+    s = _settings(tmp_path)
+    clock = FakeClock()
+
+    class BusyWS:
+        def __init__(self):
+            self.sent: list[str] = []
+            self.closed = False
+            self.calls = 0
+
+        def settimeout(self, t):
+            pass
+
+        def send(self, msg):
+            self.sent.append(msg)
+
+        def recv(self):
+            self.calls += 1
+            clock.t += 10  # 每条消息 10s 虚拟间隔；恒有消息 = recv 永不超时
+            if self.calls >= 3:  # housekeeping 观察前先翻转状态（模拟 live_ingest 收尾）
+                _flip_status(migrated_db, item.id, "transcribed")
+            return CHAT
+
+        def close(self):
+            self.closed = True
+
+    ws = BusyWS()
+    out = collector.collect_danmaku(
+        item.id,
+        "2040437791",
+        ws_factory=lambda url: ws,
+        session_factory=_make_session_factory(migrated_db),
+        settings=s,
+        sleep=lambda sec: setattr(clock, "t", clock.t + 1),
+        clock=clock,
+    )
+    assert out["exit_reason"] == "session_closed"
+    assert out["connects"] == 1
+    # 第 3 条消息触发壁钟 housekeeping：观察到收尾即退出（退出优先于该消息落盘）
+    assert out["collected"] == 2
+    assert "ping" in ws.sent  # 忙房间也必须有 ping（否则被服务端断连）

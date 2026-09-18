@@ -26,7 +26,8 @@ logger = structlog.get_logger(__name__)
 
 _ADVISORY_LOCK_BASE = 907_300_000  # danmaku collector 键空间（+ item_id）
 _RECV_TIMEOUT_SEC = 5  # recv 超时即回到 housekeeping 节拍
-_HOUSEKEEPING_TICKS = 6  # ~30s（6 × 5s recv 超时）：ping + 状态轮询 + 心跳 touch
+_HOUSEKEEPING_TICKS = 6  # 静默路径：~30s（6 × 5s recv 超时）
+_HOUSEKEEPING_SEC = 30  # 忙路径：消息流持续 → recv 恒不超时，按壁钟强制触发
 _RECONNECT_SEC = 15
 _SINK_VERSION = 1
 
@@ -170,18 +171,27 @@ def _collect_loop(
 
 
 def _pump(ws, fh, sink: Path, session, item_id: int, clock, started: float, s) -> tuple[str, int]:
-    """单连接收流循环。返回 (outcome, 本连接消息数)：disconnect 回外层重连，其余退出。"""
+    """单连接收流循环。返回 (outcome, 本连接消息数)：disconnect 回外层重连，其余退出。
+
+    housekeeping（ping + 会话状态轮询 + 心跳 touch）双触发：静默房间靠 recv 超时
+    tick 计数；忙房间消息流恒不断流，靠壁钟 30s 强制触发——否则 ping 缺失会被
+    douyinLive/上游断连，且会话收尾永远观察不到（真栈实测西楚老温房间抓到）。
+    """
     ws.settimeout(_RECV_TIMEOUT_SEC)
     stale_ticks = 0
+    last_housekeeping = clock()
     count = 0
     while True:
+        raw = None
         try:
             raw = ws.recv()
         except WebSocketTimeoutException:
             stale_ticks += 1
-            if stale_ticks < _HOUSEKEEPING_TICKS:
-                continue
+        except (WebSocketException, OSError):
+            return "disconnect", count
+        if stale_ticks >= _HOUSEKEEPING_TICKS or clock() - last_housekeeping >= _HOUSEKEEPING_SEC:
             stale_ticks = 0
+            last_housekeeping = clock()
             try:
                 ws.send("ping")  # douyinLive 客户端保活约定（30s 文本 ping）
             except Exception:  # noqa: BLE001
@@ -191,9 +201,6 @@ def _pump(ws, fh, sink: Path, session, item_id: int, clock, started: float, s) -
             if clock() - started >= s.danmaku_collector_max_duration_sec:
                 return "max_duration", count
             _heartbeat(sink)
-            continue
-        except (WebSocketException, OSError):
-            return "disconnect", count
         if not isinstance(raw, str) or not raw:
             continue
         fh.write(build_envelope(raw) + "\n")
