@@ -4,6 +4,7 @@ fixture: tests/fixtures/media/douyin_post_sample.json（Task 1 spike 实录，�
 """
 
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
@@ -222,6 +223,12 @@ def test_discover_without_sec_uid_raises_adapter_error() -> None:
 # --- download_media ---
 
 
+@pytest.fixture(autouse=True)
+def _no_curl_cffi(monkeypatch: pytest.MonkeyPatch):
+    """下载单测走 httpx 桩路径：屏蔽 curl_cffi（真包会发起真实网络请求）。"""
+    monkeypatch.setitem(sys.modules, "curl_cffi.requests", None)
+
+
 def test_download_media_streams_to_workdir(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"fake-mp4-bytes")
@@ -246,7 +253,9 @@ def test_download_media_rejects_non_cdn_host(tmp_path: Path) -> None:
         )
 
 
-def test_download_media_cdn_http_error_raises_process_error(tmp_path: Path) -> None:
+def test_download_media_cdn_http_error_raises_process_error(
+    tmp_path: Path,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(403, text="forbidden")
 

@@ -106,10 +106,40 @@ class DouyinAdapter:
     ) -> SubtitleResult | None:
         return None  # 抖音 VOD 无字幕轨（prepare 编排自动走 ASR 兜底）
 
-    def _download_client(self, proxy: str | None) -> httpx.Client:
-        if not proxy:
-            return self._http
-        return httpx.Client(proxy=proxy, timeout=300, follow_redirects=True)
+    def _download(self, url: str, target: Path, proxy: str | None) -> None:
+        """优先 curl_cffi（Chrome TLS 指纹伪装）：CDN 风控识别 JA3，裸 httpx
+        一眼非浏览器；伪装后等同 Chrome 用户直连。未安装则回落 httpx。"""
+        curl_requests = None  # curl_cffi 缺席时回落 httpx（Chrome 指纹伪装不可用）
+        try:
+            from curl_cffi import requests as _cr
+
+            curl_requests = _cr
+        except ImportError:
+            pass
+
+        if curl_requests is not None:
+            with curl_requests.Session(impersonate="chrome", proxy=proxy or None, timeout=300) as s:
+                resp = s.get(url, stream=True)
+                if resp.status_code != 200:
+                    raise AdapterProcessError(
+                        f"dtk CDN HTTP {resp.status_code}: 下载失败"
+                    )
+                with target.open("wb") as f:
+                    for chunk in resp.iter_content():
+                        f.write(chunk)
+            return
+
+        client = (
+            self._http
+            if not proxy
+            else httpx.Client(proxy=proxy, timeout=300, follow_redirects=True)
+        )
+        with client.stream("GET", url) as resp:
+            if resp.status_code != 200:
+                raise AdapterProcessError(f"dtk CDN HTTP {resp.status_code}: 下载失败")
+            with target.open("wb") as f:
+                for chunk in resp.iter_bytes():
+                    f.write(chunk)
 
     def download_media(self, item: ItemRef, workdir: str | Path) -> DownloadResult:
         data = self._client.fetch_one_video(item.external_item_id)
@@ -127,17 +157,14 @@ class DouyinAdapter:
         pool = get_proxy_pool()
         proxy = self._proxy
         try:
-            with self._download_client(proxy).stream("GET", url) as resp:
-                if resp.status_code != 200:
-                    pool.report_failure(proxy, f"HTTP {resp.status_code}")
-                    raise AdapterProcessError(f"dtk CDN HTTP {resp.status_code}: 下载失败")
-                with target.open("wb") as f:
-                    for chunk in resp.iter_bytes():
-                        f.write(chunk)
+            self._download(url, target, proxy)
             pool.report_success(proxy)
         except httpx.HTTPError as exc:
             pool.report_failure(proxy, str(exc))
             raise AdapterProcessError(f"dtk CDN 下载失败: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 curl_cffi 异常族与 httpx 不同，统一记账
+            pool.report_failure(proxy, str(exc))
+            raise
         return DownloadResult(local_path=str(target), size_bytes=target.stat().st_size)
 
     # --- 内部 ---
