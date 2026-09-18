@@ -1,27 +1,27 @@
-/* 财经观点雷达 设计基座（原创）——全局 reset 与设计 token */
+/* 财经观点雷达 设计基座——暗色主题（与落地页同一基调：近黑底、白字、蓝强调） */
 :root {
-  --ink-900: #0b1526;
-  --ink-800: #101d33;
-  --ink-700: #16263f;
-  --ink-500: #33465f;
-  --ink-400: #5b6b80;
-  --ink-300: #8a97a8;
-  --line: #dde3ea;
-  --line-soft: #eaeef3;
-  --bg: #f4f6f9;
-  --card: #ffffff;
-  --accent: #1f5fd0;
-  --accent-soft: #e8f0fd;
-  --accent-deep: #174aa2;
-  --live: #d8392b;
-  --live-soft: #fdecea;
-  --ok: #0c7a4d;
-  --ok-soft: #e6f4ec;
-  --warn: #b25e02;
-  --warn-soft: #fdf1e2;
+  --bg: #060708;
+  --card: #121419;
+  --card-2: #171a20;
+  --line: #262b33;
+  --line-soft: #1c2128;
+  --ink-900: #f0f3f7; /* 标题/强调文字 */
+  --ink-700: #d2d7de; /* 正文 */
+  --ink-500: #a6adba; /* 次级 */
+  --ink-400: #8b929e; /* 提示 */
+  --ink-300: #667080; /* 最弱 */
+  --accent: #6ea0ff;
+  --accent-soft: rgba(110, 160, 255, 0.14);
+  --accent-deep: #8db2ff;
+  --live: #ff5c4d;
+  --live-soft: rgba(255, 92, 77, 0.13);
+  --ok: #3dcd8f;
+  --ok-soft: rgba(61, 205, 143, 0.13);
+  --warn: #e8a33d;
+  --warn-soft: rgba(232, 163, 61, 0.13);
   --radius: 10px;
   --radius-sm: 6px;
-  --shadow: 0 1px 2px rgba(11, 21, 38, 0.05), 0 4px 16px rgba(11, 21, 38, 0.06);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.35);
   --font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }

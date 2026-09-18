@@ -7,6 +7,7 @@ const apiTarget = `http://localhost:${process.env.API_PORT ?? 8000}`
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/console/',
   plugins: [react()],
   server: {
     proxy: {

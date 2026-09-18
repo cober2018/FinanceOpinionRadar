@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>财经观点雷达 · Finance Opinion Radar</title>
+    <meta name="description" content="多源财经内容自动转写、观点抽取与多空情绪监测" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://db.onlinewebfonts.com/c/8cb707a9b8a73f8a7403336b861c3074?family=BubbledotICG-FinePos"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg">
+      <video class="bg-video" autoplay muted loop playsinline>
+        <source
+          src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260809_012548_ef22562c-c0ae-4816-ad9d-f8922af4e6a7.mp4"
+          type="video/mp4"
+        />
+      </video>
+    </div>
+
+    <div class="page">
+      <header class="header anim" style="--d: 0s">
+        <a class="logo" href="/" aria-label="财经观点雷达">
+          <svg viewBox="0 0 32 32" width="52" height="52" aria-hidden="true">
+            <circle cx="16" cy="16" r="11" fill="none" stroke="#22406b" stroke-width="1.4" />
+            <circle cx="16" cy="16" r="7" fill="none" stroke="#4f83c9" stroke-width="1.2" />
+            <circle cx="16" cy="16" r="1.4" fill="#7fb0ec" />
+            <path d="M16 16 L26 8" stroke="#e0442f" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+        </a>
+        <div class="brand-pill">财经观点雷达 · Finance Opinion Radar</div>
+      </header>
+
+      <section class="hero">
+        <div class="headline anim" style="--d: 0.12s">
+          <span class="line">Finance Opinion</span>
+          <span class="line l2">Radar</span>
+        </div>
+        <p class="subhead anim" style="--d: 0.28s">
+          聚合抖音短视频与直播、YouTube、B 站等多源财经内容，自动转写、抽取观点、追踪多空立场——内部监控台，点击即用。
+        </p>
+        <a class="cta anim" href="/console/" style="--d: 0.4s">进入监控台</a>
+      </section>
+
+      <footer class="stats anim" style="--d: 0.5s">
+        <div class="stat">
+          <span class="stat-icon">&lt;</span>
+          <span class="stat-value" id="st-creators" data-target="0" data-decimals="0">0</span>
+          <span class="stat-label">监控主播</span>
+        </div>
+        <div class="stat">
+          <span class="stat-icon">%</span>
+          <span class="stat-value" id="st-live" data-target="0" data-decimals="0">0</span>
+          <span class="stat-label">正在直播</span>
+        </div>
+        <div class="stat">
+          <span class="stat-icon">*</span>
+          <span class="stat-value" id="st-items" data-target="0" data-decimals="0">0</span>
+          <span class="stat-label">已转写内容</span>
+        </div>
+        <div class="stat">
+          <span class="stat-icon">#</span>
+          <span class="stat-value" id="st-segments" data-target="0" data-decimals="1">0</span>
+          <span class="stat-suffix">K</span>
+          <span class="stat-label">转录段落</span>
+        </div>
+      </footer>
+    </div>
+
+    <script src="main.js"></script>
+  </body>
+</html>

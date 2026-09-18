@@ -14,8 +14,15 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# 单入口：web 构建产物（apps/web/dist，make build-web 生成）由 API 直接托管——
-# 一个端口同时服务页面与 /api/*；未构建时不挂载（纯 API / 前端 dev server 模式）。
-_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
+# 单入口：一个端口服务全部——
+#   /            落地页（apps/web/landing，静态原生 HTML/CSS/JS，Get Started → /console/）
+#   /console/*   监控台 SPA（apps/web/dist，make build-web 产物，base=/console/）
+#   /api/*       接口
+# dist 未构建时只挂落地页与 API（前端 dev server 模式走 make web 的 Vite）。
+_web_root = Path(__file__).resolve().parents[2] / "web"
+_dist = _web_root / "dist"
 if _dist.is_dir() and (_dist / "index.html").exists():
-    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="web")
+    app.mount("/console", StaticFiles(directory=str(_dist), html=True), name="console")
+_landing = _web_root / "landing"
+if _landing.is_dir():
+    app.mount("/", StaticFiles(directory=str(_landing), html=True), name="landing")
