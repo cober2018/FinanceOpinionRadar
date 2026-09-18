@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     danmaku_collector_max_duration_sec: int = 43200  # 单采集任务寿命上限（12h）
     danmaku_heartbeat_stale_sec: int = 120  # sink 文件 mtime 超过此值视为采集器不在
     danmaku_max_collectors: int = 4  # 并发采集任务上限
+    # --- Plan #6 内容生命周期 ---
+    # 非精华条目保留天数（自 created_at 起算），到期物理删除、只留结论快照；0 = 禁用清理
+    content_retention_days: int = 30
+    retention_sweep_interval_sec: int = 86400  # beat：每日清理一轮
     # --- EPIC-03 ASR（RAD-033/035） ---
     asr_provider: str = "faster_whisper"  # faster_whisper | mlx（Apple Silicon Metal）
     asr_mlx_python: str = ""  # venv_arm64 python 路径（voice-pro，见 README「ASR 引擎」）

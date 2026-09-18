@@ -62,4 +62,9 @@ celery_app.conf.beat_schedule = {
         "task": "ingest_danmaku_files",
         "schedule": get_settings().danmaku_ingest_interval_sec,
     },
+    # Plan #6：内容生命周期——非精华条目到期物理删除（content_retention_days=0 禁用）
+    "retention-sweep": {
+        "task": "sweep_content_retention",
+        "schedule": get_settings().retention_sweep_interval_sec,
+    },
 }

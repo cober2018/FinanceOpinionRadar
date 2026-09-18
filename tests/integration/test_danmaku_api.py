@@ -1,7 +1,13 @@
 """观众互动 API 集成测试（2026-09-19）：/danmaku/stats + 弹幕详情 + 列表 chat_count。"""
 
 import pytest
-from app.db.models import Creator, LiveChatMessage, SourceAccount, SourceItem
+from app.db.models import (
+    ContentSummary,
+    Creator,
+    LiveChatMessage,
+    SourceAccount,
+    SourceItem,
+)
 from app.db.session import get_db
 from app.main import app
 from fastapi.testclient import TestClient
@@ -117,3 +123,65 @@ def test_library_list_includes_chat_count(db_session, client):
     assert row["chat_count"] == 3
     other = next(r for r in body if r["id"] != item.id)
     assert other["chat_count"] == 0
+
+
+# --- Plan #6：精华资产与 retention API ---
+
+
+def test_toggle_asset_marks_and_unmarks(db_session, client):
+    item = _make_session_with_chats(db_session)
+    resp = client.post(f"/api/v1/source-items/{item.id}/asset")
+    assert resp.status_code == 200 and resp.json()["is_asset"] is True
+    assert db_session.get(SourceItem, item.id).asset_at is not None
+    # 幂等显式取消
+    resp = client.post(f"/api/v1/source-items/{item.id}/asset?is_asset=false")
+    assert resp.json()["is_asset"] is False
+    assert db_session.get(SourceItem, item.id).asset_at is None
+
+
+def test_toggle_asset_404(client):
+    assert client.post("/api/v1/source-items/987654/asset").status_code == 404
+
+
+def test_list_filters_by_asset(db_session, client):
+    item = _make_session_with_chats(db_session)
+    other = _make_session_with_chats(db_session, external_id="MS4wLjABdmapi3", chats=False)
+    client.post(f"/api/v1/source-items/{item.id}/asset?is_asset=true")
+    resp = client.get("/api/v1/source-items?asset=true")
+    ids = [r["id"] for r in resp.json()]
+    assert item.id in ids and other.id not in ids
+    row = next(r for r in resp.json() if r["id"] == item.id)
+    assert row["is_asset"] is True and row["expires_at"] is None  # 精华永不过期
+
+
+def test_retention_sweep_endpoint_dry_run(db_session, client):
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models import Creator, SourceAccount, SourceItem
+
+    creator = Creator(display_name="c_retdry", status="active")
+    db_session.add(creator)
+    db_session.flush()
+    account = SourceAccount(
+        creator_id=creator.id, platform="douyin", external_id="MS4wLjABretdry",
+        discovery_mode="manual", poll_interval_sec=3600,
+    )
+    db_session.add(account)
+    db_session.flush()
+    db_session.add(
+        SourceItem(
+            source_account_id=account.id,
+            external_item_id="vod:MS4wLjABretdry:2026-09-19",
+            title="过期条目",
+            status="transcribed",
+            created_at=datetime.now(UTC) - timedelta(days=60),
+        )
+    )
+    db_session.commit()
+    resp = client.post("/api/v1/retention/sweep?dry_run=true")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["expired"] >= 1 and body["swept"] == 0
+    resp = client.post("/api/v1/retention/sweep")
+    assert resp.json()["swept"] >= 1
+    assert db_session.query(ContentSummary).count() >= 1

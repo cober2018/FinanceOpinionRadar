@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IdMixin, TimestampMixin
@@ -56,4 +57,26 @@ class LiveChatMessage(TimestampMixin, IdMixin, Base):
     )
 
 
-__all__ = ["LiveChatMessage"]
+class ContentSummary(TimestampMixin, IdMixin, Base):
+    """结论快照（Plan #6）：item 到期物理删除前，把其观点结论打包留存。
+
+    内容中心生成文章的数据源之一：按 creator_name + item_created_at 时间轴消费。
+    不挂 source_item FK（item 已删，快照独立存活）；viewpoints=[] 表示该条目
+    处理过但无有效观点。
+    """
+
+    __tablename__ = "content_summary"
+    __table_args__ = (
+        Index("ix_content_summary_creator_time", "creator_name", "item_created_at"),
+    )
+
+    platform: Mapped[str] = mapped_column(String(30), nullable=False, default="douyin")
+    creator_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    item_title: Mapped[str | None] = mapped_column(Text)
+    item_type: Mapped[str] = mapped_column(String(20), nullable=False, default="vod")
+    item_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    item_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    viewpoints: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+
+__all__ = ["ContentSummary", "LiveChatMessage"]

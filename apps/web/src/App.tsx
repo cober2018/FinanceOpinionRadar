@@ -39,6 +39,8 @@ type LibraryItem = {
   backfill: boolean
   progress: { phase: string; detail: string; at: string } | null
   chat_count: number
+  is_asset: boolean
+  expires_at: string | null
 }
 
 type DanmakuStats = { total: number; sessions: number; latest_message_at: string | null }
@@ -703,6 +705,7 @@ function LibraryPage() {
   const [monitors, setMonitors] = useState<LiveMonitor[]>([])
   const [accountFilter, setAccountFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [assetFilter, setAssetFilter] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [query, setQuery] = useState('')
@@ -748,11 +751,12 @@ function LibraryPage() {
       if (accountFilter) params.set('account_id', accountFilter)
       if (statusFilter) params.set('status', statusFilter)
     }
+    if (assetFilter !== '') params.set('asset', assetFilter)
     params.set('limit', '200')
     api<LibraryItem[]>(`/source-items?${params}`)
       .then(setRows)
       .catch((e: Error) => setError(e.message))
-  }, [accountFilter, statusFilter, drillAccount])
+  }, [accountFilter, statusFilter, drillAccount, assetFilter])
 
   useEffect(() => {
     reload()
@@ -772,6 +776,16 @@ function LibraryPage() {
       setError((e as Error).message)
     } finally {
       setBusyId(null)
+    }
+  }
+
+  const toggleAsset = async (id: number) => {
+    setError(null)
+    try {
+      await api(`/source-items/${id}/asset`, { method: 'POST' })
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
     }
   }
 
@@ -922,6 +936,11 @@ function LibraryPage() {
             <option key={v} value={v}>{cn}</option>
           ))}
         </select>
+        <select value={assetFilter} onChange={(e) => setAssetFilter(e.target.value)}>
+          <option value="">全部内容</option>
+          <option value="true">⭐ 精华资产</option>
+          <option value="false">普通内容</option>
+        </select>
         <button className="ghost" onClick={reload}>刷新</button>
         {selectedIds.size > 0 && (
           <button className="danger" onClick={batchDelete}>
@@ -974,6 +993,13 @@ function LibraryPage() {
               <td>
                 {statusBadgeWithProgress(r.status, r.progress)}
                 {r.backfill && r.status === 'discovered' && <span className="muted">（旧）</span>}
+                <div className="muted" style={{ fontSize: 11 }}>
+                  {r.is_asset
+                    ? '⭐ 精华 · 永久保留'
+                    : r.expires_at
+                      ? `${Math.max(0, Math.ceil((new Date(r.expires_at).getTime() - Date.now()) / 86400000))} 天后清理`
+                      : ''}
+                </div>
               </td>
               <td className="muted" style={{ fontSize: 11, maxWidth: 160 }}>
                 {r.progress?.detail ?? '-'}
@@ -981,6 +1007,9 @@ function LibraryPage() {
               <td>{r.duration_ms ? `${Math.round(r.duration_ms / 60000)} 分` : '-'}</td>
               <td>{r.published_at ? new Date(r.published_at).toLocaleDateString() : '-'}</td>
               <td onClick={(e) => e.stopPropagation()}>
+                <button className="ghost" title={r.is_asset ? '取消精华' : '标记精华（永久保留）'} onClick={() => toggleAsset(r.id)}>
+                  {r.is_asset ? '⭐' : '☆'}
+                </button>{' '}
                 {r.chat_count > 0 && (
                   <button className="ghost" onClick={() => setChatDrawer(r.id)}>
                     弹幕（{r.chat_count}）

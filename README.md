@@ -186,6 +186,25 @@ docker compose -f infra/docker/docker-compose.douyin.yml up -d   # 3) 重启生�
 
 监控台（单入口）：`make build-web` 后由 API 一个端口同时服务页面与接口（如 http://localhost:8000/）；开发模式用 `make web`（Vite 热更）。四个页面：「总览」统计卡/直播间状态/引擎状态；「主播」账号表格（添加主播、视频监控与直播值守开关、主页/直播间双路配置编辑）；「视频库」全文搜索、转录正文抽屉、旧视频手动转写；「设置」安全（防风控）参数。终端版看板：`make live-status`。StreamCap（:5001）与 dtk（:8080）的管理页是内部运维工具，不面向使用者，其状态已聚合进「总览」页。——每个值守直播间一行（主播/在播态/录制器同步/最近会话/分片与转录段数/最近活动），数据取自 DB + recordings.json + StreamCap 日志（零额外抖音请求）。
 
+### 内容生命周期与精华资产库（Plan #6）
+
+非精华内容到期**物理删除**（转录/媒体/弹幕/观点级联清空），删除前自动把该条目的观点结论快照进 `content_summary` 表——将来内容中心生成文章的数据源之一。标记为 **⭐ 精华资产** 的条目永久保留（视频库行星标按钮切换）。
+
+- **TTL**：`CONTENT_RETENTION_DAYS`（默认 30 天，自条目建立时间起算；0 = 禁用自动清理），beat 每日清理一轮 + 手动 API（见下）。
+- **清理范围**：`transcribed / failed / reviewing / ready` 且非精华且过期；`discovered/resolved`（待转写）、`transcribing`（直播进行中）、`extracting`（抽取进行中）跳过。
+- **墓碑**：清理与手工删除一样写 `deleted_item_ref`，discover 不会重导同一条视频。
+- **前端**：视频库行 ☆/⭐ 切换精华；筛选器「精华资产/普通内容」；状态列小字显示「N 天后清理 / 精华 · 永久保留」。
+- **StreamCap TS 分片**（磁盘大头）v1 不自动删，可手动清理已收尾会话的旧分片目录：`ls data/douyin/live_segments/douyin/` 自查后删除。
+
+```bash
+# 预览（不删除）：到期条目数
+curl -fsS -X POST 'localhost:8000/api/v1/retention/sweep?dry_run=true'
+# 执行一轮清理（返回 swept/snapshots/tombstones 计数）
+curl -fsS -X POST localhost:8000/api/v1/retention/sweep
+# 结论快照列表（内容中心数据源）
+curl -fsS 'localhost:8000/api/v1/retention/summaries?limit=20'
+```
+
 ### 直播弹幕采集（Plan #5）
 
 开播值守期间自动采集直播间观众侧语料（弹幕/礼物/点赞/进场/关注），落 `live_chat_message` 表——**与 transcript（主播语音）严格分离**，是后续观众情绪分析的输入。采集走第三个外部容器 [jwwsjlm/douyinLive](https://github.com/jwwsjlm/douyinLive)（本地 a_bogus 签名、免浏览器；上游断线重连/未开播轮询/验证码指纹轮换由其内部处理），radar 侧三个 beat 任务：`dispatch_danmaku_collectors`（找进行中的直播会话 → 派采集任务）→ `collect_danmaku`（WS 收流 → jsonl 落盘，≤12h 长任务走独立 `danmaku` 队列）→ `ingest_danmaku_files`（jsonl → 幂等入库）。

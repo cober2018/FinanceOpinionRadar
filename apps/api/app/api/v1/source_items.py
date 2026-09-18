@@ -116,11 +116,15 @@ def list_source_items(
     session: DbDep,
     account_id: int | None = None,
     status: str | None = None,
+    asset: bool | None = None,
     limit: int = 100,
 ):
-    """视频库列表（监控台"视频库"页）：按账号/状态过滤，id 倒序。"""
+    """视频库列表（监控台"视频库"页）：按账号/状态/精华过滤，id 倒序。"""
+    from datetime import timedelta
+
     from sqlalchemy import select
 
+    from app.core.settings import get_settings
     from app.db.models import Creator, SourceAccount, SourceItem
 
     stmt = (
@@ -134,6 +138,8 @@ def list_source_items(
         stmt = stmt.where(SourceItem.source_account_id == account_id)
     if status is not None:
         stmt = stmt.where(SourceItem.status == status)
+    if asset is not None:
+        stmt = stmt.where(SourceItem.is_asset.is_(asset))
     rows = session.execute(stmt).all()
 
     # 弹幕计数（Plan #5）：单条聚合查询，避免行级 N+1
@@ -151,6 +157,16 @@ def list_source_items(
         .group_by(LiveChatMessage.source_item_id)
         .all()
     }
+
+    # 生命周期展示（Plan #6 D7）：精华/非终态无到期；可清理条目 = created_at + TTL
+    retention_days = get_settings().content_retention_days
+    expiry_eligible = ("transcribed", "failed", "reviewing", "ready")
+
+    def _expires_at(item: SourceItem):
+        if item.is_asset or retention_days <= 0 or item.status not in expiry_eligible:
+            return None
+        return item.created_at + timedelta(days=retention_days)
+
     return [
         {
             "id": item.id,
@@ -166,6 +182,8 @@ def list_source_items(
             "backfill": bool((item.metadata_json or {}).get("backfill")),
             "progress": (item.metadata_json or {}).get("progress"),
             "chat_count": chat_counts.get(item.id, 0),
+            "is_asset": item.is_asset,
+            "expires_at": _expires_at(item),
         }
         for item, account, creator_name in rows
     ]
@@ -325,6 +343,22 @@ def get_viewpoint_evidence(item_id: int, session: DbDep):
             }
         )
     return out
+
+
+@router.post("/{item_id}/asset")
+def toggle_asset(item_id: int, session: DbDep, is_asset: bool | None = None):
+    """精华资产标记（Plan #6 D6）：is_asset 缺省 = 取反切换；标记后 retention 永不清。"""
+    from datetime import UTC, datetime
+
+    from app.db.models import SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    item.is_asset = (not item.is_asset) if is_asset is None else is_asset
+    item.asset_at = datetime.now(UTC) if item.is_asset else None
+    session.commit()
+    return {"item_id": item_id, "is_asset": item.is_asset}
 
 
 @router.delete("/{item_id}", status_code=200)

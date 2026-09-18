@@ -35,6 +35,15 @@ def test_worker_registry_contains_danmaku_tasks() -> None:
     assert celery_app.conf.task_routes["collect_danmaku"]["queue"] == "danmaku"
 
 
+def test_worker_registry_contains_retention_task() -> None:
+    # Plan #6：内容生命周期清理任务必须在注册表里
+    celery_app.loader.import_default_modules()
+    assert "sweep_content_retention" in celery_app.tasks
+    sched = celery_app.conf.beat_schedule.get("retention-sweep")
+    assert sched is not None and sched["task"] == "sweep_content_retention"
+    assert sched["schedule"] > 0
+
+
 def test_beat_schedule_wires_danmaku() -> None:
     for key, task in (
         ("dispatch-danmaku-collectors", "dispatch_danmaku_collectors"),

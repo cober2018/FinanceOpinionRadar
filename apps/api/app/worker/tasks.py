@@ -288,6 +288,21 @@ def ingest_danmaku_files() -> dict:
         session.close()
 
 
+# --- Plan #6：内容生命周期 ---
+
+
+@celery_app.task(name="sweep_content_retention")  # 单飞闸在编排内（pg advisory lock）
+def sweep_content_retention() -> dict:
+    from app.db.session import get_session_factory
+    from app.services.retention import sweep_expired_content
+
+    session = get_session_factory()()
+    try:
+        return sweep_expired_content(session)
+    finally:
+        session.close()
+
+
 @celery_app.task(name="housekeeping_stale_jobs")
 def housekeeping_stale_jobs() -> int:
     """僵尸清理：running 超 2 小时的任务标记 failed（进程被杀等场景的收尾）。"""
