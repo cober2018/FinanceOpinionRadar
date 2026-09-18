@@ -162,10 +162,8 @@ def patch_source_account(account_id: int, body: PatchSourceAccountRequest, sessi
     if account is None:
         raise HTTPException(status_code=404, detail=f"source_account {account_id} 不存在")
     for field, value in body.model_dump(exclude_unset=True).items():
-        # pydantic v2 model_dump() python 模式保留 HttpUrl 对象——先统一转 str
-        if isinstance(value, str) or value is None:
-            pass
-        else:
+        # pydantic v2 python 模式保留 HttpUrl 对象——URL 字段先转 str（bool/int 不动）
+        if field in ("url", "live_room_url") and value is not None and not isinstance(value, str):
             value = str(value)
         if field == "live_room_url" and value is not None:
             _ensure_live_room_url(value)
