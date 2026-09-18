@@ -95,7 +95,11 @@ def get_dashboard(
     from datetime import timedelta
 
     from app.db.models import Creator, Topic, TopicConsensusDaily, Viewpoint
+    from app.services import llm_config
     from app.services.extraction import EXTRACTOR_VERSION, PROMPT_VERSION
+
+    llm_cfg = llm_config.get_llm_settings(session)
+    llm_configured = llm_cfg["effective"]["key_set"] and bool(llm_cfg["effective"]["base_url"])
 
     day = date_cls.fromisoformat(date) if date else date_cls.today()
     week_ago = day - timedelta(days=7)
@@ -151,6 +155,7 @@ def get_dashboard(
             "live_segments": total_segments,
             "new_viewpoints_7d": new_vp_7d,
             "pending_review": pending_review,
+            "llm_configured": llm_configured,
             "extraction": {
                 "prompt_version": PROMPT_VERSION,
                 "extractor_version": EXTRACTOR_VERSION,
