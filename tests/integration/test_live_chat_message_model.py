@@ -3,9 +3,8 @@
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy.exc import IntegrityError
-
 from app.db.models import Creator, LiveChatMessage, SourceAccount, SourceItem
+from sqlalchemy.exc import IntegrityError
 
 
 def _make_item(session, *, external_id="MS4wLjABchat1") -> SourceItem:

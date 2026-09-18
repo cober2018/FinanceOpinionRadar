@@ -254,6 +254,40 @@ def sync_live_monitors() -> dict:
         session.close()
 
 
+# --- Plan #5：直播弹幕采集（danmaku 队列）---
+
+
+@celery_app.task(name="collect_danmaku")  # 单会话长任务（≤12h）；advisory lock 防重（F2）
+def collect_danmaku(item_id: int, room_id: str) -> dict:
+    from app.services.danmaku import collector
+
+    return collector.collect_danmaku(item_id, room_id)
+
+
+@celery_app.task(name="dispatch_danmaku_collectors")
+def dispatch_danmaku_collectors() -> dict:
+    from app.db.session import get_session_factory
+    from app.services.danmaku import dispatch
+
+    session = get_session_factory()()
+    try:
+        return dispatch.dispatch_danmaku_collectors(session)
+    finally:
+        session.close()
+
+
+@celery_app.task(name="ingest_danmaku_files")
+def ingest_danmaku_files() -> dict:
+    from app.db.session import get_session_factory
+    from app.services.danmaku import ingest
+
+    session = get_session_factory()()
+    try:
+        return ingest.ingest_danmaku_files(session)
+    finally:
+        session.close()
+
+
 @celery_app.task(name="retry_failed_prepares")
 def retry_failed_prepares() -> int:
     """失败转写自动重试（退避）：CDN 限速等运营性失败随时间自愈。

@@ -37,6 +37,7 @@ type LibraryItem = {
   duration_ms: number | null
   published_at: string | null
   backfill: boolean
+  progress: { phase: string; detail: string; at: string } | null
 }
 
 type TranscriptRow = { sequence_no: number; start_ms: number; end_ms: number; text: string }
@@ -125,6 +126,28 @@ const STATUS_CN: Record<string, string> = {
   transcribing: '转写中',
   transcribed: '已转写',
   failed: '失败',
+}
+
+function statusBadgeWithProgress(
+  status: string | null,
+  progress: { phase: string; detail: string } | null,
+) {
+  const base = statusBadge(status)
+  if (!progress || status !== 'transcribing') return base
+  const phaseCn: Record<string, string> = {
+    downloading: '下载视频',
+    downloaded: '已下载',
+    normalizing: '音频标准化',
+    asr_running: '语音识别中',
+    asr_done: '识别完成',
+  }
+  const label = phaseCn[progress.phase]
+  return (
+    <span>
+      {base}
+      {label && <div className="muted" style={{ fontSize: 11 }}>{label}</div>}
+    </span>
+  )
 }
 
 function statusBadge(status: string | null) {
@@ -900,6 +923,7 @@ function LibraryPage() {
             <th>标题</th>
             <th>类型</th>
             <th>状态</th>
+            <th>进度</th>
             <th>时长</th>
             <th>发布</th>
             <th>操作</th>
@@ -924,8 +948,11 @@ function LibraryPage() {
               <td className="title-cell">{r.title ?? '-'}</td>
               <td>{r.item_type === 'live' ? '直播' : '视频'}</td>
               <td>
-                {statusBadge(r.status)}
+                {statusBadgeWithProgress(r.status, r.progress)}
                 {r.backfill && r.status === 'discovered' && <span className="muted">（旧）</span>}
+              </td>
+              <td className="muted" style={{ fontSize: 11, maxWidth: 160 }}>
+                {r.progress?.detail ?? '-'}
               </td>
               <td>{r.duration_ms ? `${Math.round(r.duration_ms / 60000)} 分` : '-'}</td>
               <td>{r.published_at ? new Date(r.published_at).toLocaleDateString() : '-'}</td>

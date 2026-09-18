@@ -68,6 +68,16 @@ class PreparedSegment:
     speaker: str | None = None
 
 
+def _set_progress(item: SourceItem, phase: str, detail: str = "") -> None:
+    """真实进度：阶段变化即写库（metadata.progress），前端轮询列表即可见。"""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    meta = dict(item.metadata_json or {})
+    meta["progress"] = {"phase": phase, "detail": detail, "at": datetime.now(UTC).isoformat()}
+    item.metadata_json = meta
+    flag_modified(item, "metadata_json")
+
+
 def prepare_source_item(
     item_id: int,
     session: Session,
@@ -85,6 +95,9 @@ def prepare_source_item(
     stage = {"v": "resolve"}  # 可变盒：子阶段更新当前阶段供失败码映射
     try:
         media = _enrich(session, item, adapter)
+        dur = media.duration_ms // 1000 if media.duration_ms else "?"
+        _set_progress(item, "resolved", f"时长 {dur}s")
+        session.commit()
         with tempfile.TemporaryDirectory() as workdir:
             segs, origin, meta = _subtitle_or_asr(
                 session, item, adapter, storage, provider, media, Path(workdir), s, stage
@@ -217,7 +230,11 @@ def _subtitle_or_asr(
         raise MediaTooLongError(
             f"媒体时长 {media.duration_ms}ms 超过上限 {s.prepare_max_media_duration_sec}s"
         )
+    _set_progress(item, "downloading", "从平台拉取视频文件")
+    session.commit()
     downloaded = adapter.download_media(_item_ref(item), workdir)
+    _set_progress(item, "downloaded", f"{downloaded.size_bytes // (1024 * 1024) or 1}MB")
+    session.commit()
     stage["v"] = "normalize"
     normalized = normalize_audio(
         Path(downloaded.local_path),
@@ -226,6 +243,8 @@ def _subtitle_or_asr(
         timeout_sec=s.ffmpeg_timeout_sec,
     )
     stage["v"] = "asr"
+    _set_progress(item, "normalizing", "ffmpeg 音频标准化")
+    session.commit()
     uri = storage.put_file(f"audio/{item.id}.wav", normalized.path)
     assets.record(
         item.id,
@@ -238,7 +257,15 @@ def _subtitle_or_asr(
     )
     _commit_status(session, item, "media_ready")
     _commit_status(session, item, "transcribing")
+    _set_progress(
+        item,
+        "asr_running",
+        f"mlx 转录中（音频 {normalized.duration_ms // 1000}s，约需 1 分钟）",
+    )
+    session.commit()
     asr_result = provider.transcribe(str(normalized.path))
+    _set_progress(item, "asr_done", f"产出 {len(asr_result.segments)} 段文本")
+    session.commit()
     prepared = [
         PreparedSegment(x.start_ms, x.end_ms, x.text, x.confidence, x.speaker)
         for x in asr_result.segments

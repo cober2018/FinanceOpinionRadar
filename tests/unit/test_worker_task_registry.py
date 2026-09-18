@@ -24,3 +24,22 @@ def test_beat_schedule_wires_prepare_sweep() -> None:
     sched = celery_app.conf.beat_schedule.get("dispatch-pending-prepares")
     assert sched is not None and sched["task"] == "dispatch_pending_prepares"
     assert sched["schedule"] > 0
+
+
+def test_worker_registry_contains_danmaku_tasks() -> None:
+    # Plan #5：弹幕采集三任务必须在 worker 注册表里（collect 走 danmaku 长任务队列）
+    celery_app.loader.import_default_modules()
+    assert "collect_danmaku" in celery_app.tasks
+    assert "dispatch_danmaku_collectors" in celery_app.tasks
+    assert "ingest_danmaku_files" in celery_app.tasks
+    assert celery_app.conf.task_routes["collect_danmaku"]["queue"] == "danmaku"
+
+
+def test_beat_schedule_wires_danmaku() -> None:
+    for key, task in (
+        ("dispatch-danmaku-collectors", "dispatch_danmaku_collectors"),
+        ("ingest-danmaku-files", "ingest_danmaku_files"),
+    ):
+        sched = celery_app.conf.beat_schedule.get(key)
+        assert sched is not None and sched["task"] == task
+        assert sched["schedule"] > 0

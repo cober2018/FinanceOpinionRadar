@@ -21,6 +21,8 @@ celery_app.conf.task_routes = {
     "prepare_live_segment": {"queue": "media"},
     "extract_source_item_viewpoints": {"queue": "llm"},
     "discover_source_account": {"queue": "media"},
+    # Plan #5：弹幕采集是 ≤12h 级长任务，独立队列不占 media/llm（F7）
+    "collect_danmaku": {"queue": "danmaku"},
 }
 
 celery_app.conf.beat_schedule = {
@@ -50,5 +52,14 @@ celery_app.conf.beat_schedule = {
     "retry-failed-prepares": {
         "task": "retry_failed_prepares",
         "schedule": 900,  # 每 15 分钟检查一次到期条目
+    },
+    # Plan #5：弹幕采集派发 + jsonl 入库（服务端未配置时任务内 no-op）
+    "dispatch-danmaku-collectors": {
+        "task": "dispatch_danmaku_collectors",
+        "schedule": get_settings().danmaku_dispatch_interval_sec,
+    },
+    "ingest-danmaku-files": {
+        "task": "ingest_danmaku_files",
+        "schedule": get_settings().danmaku_ingest_interval_sec,
     },
 }

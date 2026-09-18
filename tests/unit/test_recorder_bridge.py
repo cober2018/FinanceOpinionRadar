@@ -149,6 +149,21 @@ def test_resolve_room_prefers_live_room_url_over_profile():
     )
 
 
+def test_resolve_room_id_extracts_digits_for_danmaku():
+    # Plan #5：douyinLive 订阅用纯数字房间号（live_room_url 优先语义同 resolve_room_url）
+    account = _account(
+        url="https://www.douyin.com/user/MS4wLjABxxx",
+        live_room_url="https://live.douyin.com/2040437791",
+    )
+    assert recorder_bridge.resolve_room_id(account) == "2040437791"
+    assert recorder_bridge.resolve_room_id(_account()) == "330698468897"
+    # 主页 URL 解析不出房间号 → None
+    assert (
+        recorder_bridge.resolve_room_id(_account(url="https://www.douyin.com/user/x"))
+        is None
+    )
+
+
 def test_sync_skips_account_without_room_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     path = _set(monkeypatch, tmp_path)
     repo = Mock()

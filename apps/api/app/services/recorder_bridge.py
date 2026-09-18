@@ -6,6 +6,7 @@ StreamCap v1.0.3 无无头模式且配置不热重载（Task 1 决策记录）�
 """
 
 import json
+import re
 import subprocess
 import uuid
 from pathlib import Path
@@ -21,6 +22,7 @@ SEGMENT_TIME_MIN = 300
 SEGMENT_TIME_MAX = 600
 # rec_id 确定性命名空间（同 URL 恒同 id，diff 天然稳定）
 _REC_ID_NS = uuid.uuid5(uuid.NAMESPACE_URL, "radar://streamcap-recording")
+_ROOM_ID_RE = re.compile(r"live\.douyin\.com/(\d+)")
 
 # radar 依赖的最小 user_settings（仅文件缺失时创建，绝不覆盖用户配置）
 _USER_SETTINGS_DEFAULT = {
@@ -55,6 +57,18 @@ def resolve_room_url(account) -> str | None:
     if room and room.startswith("http://"):  # 抖音 handler 注册正则只认 https
         room = "https://" + room[len("http://"):]
     return room
+
+
+def resolve_room_id(account) -> str | None:
+    """直播间纯数字房间号（douyinLive ws://…/ws/<room_id> 订阅用，Plan #5）。
+
+    复用 resolve_room_url 的优先级语义（live_room_url 优先）；解析不出数字 → None。
+    """
+    room = resolve_room_url(account)
+    if room is None:
+        return None
+    m = _ROOM_ID_RE.search(room)
+    return m.group(1) if m else None
 
 
 def build_recording(account) -> dict | None:

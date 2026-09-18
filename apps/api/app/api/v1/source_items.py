@@ -148,6 +148,7 @@ def list_source_items(
             "duration_ms": item.duration_ms,
             "published_at": item.published_at,
             "backfill": bool((item.metadata_json or {}).get("backfill")),
+            "progress": (item.metadata_json or {}).get("progress"),
         }
         for item, account, creator_name in rows
     ]
