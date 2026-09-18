@@ -132,8 +132,10 @@ def ingest_live_segments(session, provider=None) -> dict:
         # 收尾判定先行：静默关闭的是上一轮遗留会话，不计入本轮 sessions_active
         _close_stale_sessions(session, s.live_close_grace_sec)
         for sd in scan_live_dir(root):
-            _warn_gaps(sd, s.live_close_grace_sec)
             item = _ensure_session(session, sd)
+            if item is None:
+                continue
+            _warn_gaps(sd, s.live_close_grace_sec)
             if item.status in ("transcribed", "extracting", "reviewing", "ready"):
                 # 已收尾/进入抽取链的会话不再扫描（EPIC-04 状态机扩展后的兼容）
                 continue
@@ -249,8 +251,13 @@ def _warn_gaps(sd: LiveSessionDir, grace_sec: int) -> None:
             )
 
 
-def _resolve_live_account(session, author: str) -> SourceAccount:
-    """目录 author → 账号：external_id 直配 → creator 同名 → 自动建档（enabled=False 不入轮询）。"""
+def _resolve_live_account(session, author: str) -> SourceAccount | None:
+    """目录 author → 账号：external_id 直配 → creator 同名。
+
+    不再自动建档（2026-09-18 用户实录 bug）：删除主播后磁盘目录残留，自动建档会把
+    已删账号以 sec_uid 名义"复活"（还会重新导入旧分片烧转录）。账号一律由 UI 显式
+    添加；目录无对应账号 → 返回 None，调用方跳过该会话并留日志。
+    """
     existing = (
         session.query(SourceAccount)
         .filter(SourceAccount.platform == "douyin", SourceAccount.external_id == author)
@@ -258,32 +265,21 @@ def _resolve_live_account(session, author: str) -> SourceAccount:
     )
     if existing is not None:
         return existing
-    by_creator = (
+    return (
         session.query(SourceAccount)
         .join(Creator, SourceAccount.creator_id == Creator.id)
         .filter(SourceAccount.platform == "douyin", Creator.display_name == author)
         .order_by(SourceAccount.id)
         .first()
     )
-    if by_creator is not None:
-        return by_creator
-    creator = Creator(display_name=author, status="active")
-    session.add(creator)
-    session.flush()
-    account = SourceAccount(
-        creator_id=creator.id,
-        platform="douyin",
-        external_id=author,  # 主播昵称即身份；真实账号的 external_id 是 sec_uid，无碰撞
-        enabled=False,  # 录制账号不参与发现轮询（list_due/list_live_monitored 均滤 enabled）
-    )
-    session.add(account)
-    session.flush()
-    return account
 
 
-def _ensure_session(session, sd: LiveSessionDir) -> SourceItem:
-    """F2：精确键查重 → 未收尾会话归并（跨零点延续）→ 新建。"""
+def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
+    """F2：精确键查重 → 未收尾会话归并（跨零点延续）→ 新建；无对应账号返回 None。"""
     account = _resolve_live_account(session, sd.author)
+    if account is None:
+        logger.warning("live_dir_no_account_skip", author=sd.author, date=sd.date)
+        return None
     key = _SESSION_KEY_FMT.format(external_id=account.external_id, date=sd.date)
     exact = (
         session.query(SourceItem)

@@ -10,10 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
-from app.db.models import SourceAccount
+from app.db.models import Creator, SourceAccount
 from app.db.session import get_db
 from app.repositories.source_accounts import SourceAccountRepository
 from app.services import discovery
+from app.services.discovery import FALLBACK_CREATOR_NAME
 from app.services.media.url_guard import UrlNotAllowedError, ensure_allowed_url
 
 router = APIRouter(prefix="/source-accounts", tags=["source-accounts"])
@@ -122,6 +123,14 @@ def create_source_account(body: CreateSourceAccountRequest, session: DbDep):
         url=url,
         discovery_mode=body.discovery_mode,
     )
+    # upsert 撞上历史/复活账号（creator_id 不可变）时：占位名升级为用户填的真名
+    if body.display_name:
+        creator = session.get(Creator, account.creator_id)
+        if creator is not None and creator.display_name in (
+            external_id,
+            FALLBACK_CREATOR_NAME,
+        ):
+            creator.display_name = body.display_name
     account.poll_interval_sec = body.poll_interval_sec
     account.poll_interval_min_sec = body.poll_interval_min_sec
     account.poll_interval_max_sec = body.poll_interval_max_sec
@@ -182,7 +191,14 @@ def delete_source_account(
     account = session.get(SourceAccount, account_id)
     if account is None:
         raise HTTPException(status_code=404, detail=f"source_account {account_id} 不存在")
+    from app.db.models import DeletedItemRef, SourceItem
     from app.services.audit import write_audit
+
+    # 墓碑：该账号全部条目防 discover 重导（vod 列表下一轮还会出现）
+    for it in session.query(SourceItem).filter(SourceItem.source_account_id == account_id).all():
+        session.add(
+            DeletedItemRef(source_account_id=account_id, external_item_id=it.external_item_id)
+        )
 
     write_audit(
         session,

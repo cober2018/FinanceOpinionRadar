@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from app.db.models import SourceAccount, SourceItem, TranscriptSegment
+from app.db.models import Creator, SourceAccount, SourceItem, TranscriptSegment
 from app.services import live_ingest
 from app.services.media.audio import NormalizedAudio
 from sqlalchemy import create_engine, text
@@ -66,7 +66,20 @@ def _fake_provider():
 
 @pytest.fixture
 def flow(db_session, database_url, monkeypatch: pytest.MonkeyPatch, tmp_path):
-    """任务的 session 换绑测试库（同 test_prepare_tasks 手法）。"""
+    """任务的 session 换绑测试库（同 test_prepare_tasks 手法）+ 显式预建直播账号
+    （2026-09-18 起 ingest 不再自动建档：目录无对应账号即跳过，防删除后复活）。"""
+    creator = Creator(display_name="新闻联播", status="active")
+    db_session.add(creator)
+    db_session.flush()
+    db_session.add(
+        SourceAccount(
+            creator_id=creator.id,
+            platform="douyin",
+            external_id="新闻联播",
+            enabled=False,
+        )
+    )
+    db_session.commit()
     factory = sessionmaker(bind=create_engine(database_url), expire_on_commit=False)
     monkeypatch.setattr(live_ingest, "get_session_factory", lambda: factory)
     monkeypatch.setattr(live_ingest, "get_settings", lambda: _settings(tmp_path))
@@ -91,6 +104,23 @@ def _make_tree(root: Path) -> Path:
     d = root / "新闻联播" / "2026-09-17"
     d.mkdir(parents=True)
     return d
+
+
+def _ensure_watch_account(db_session) -> None:
+    """预建直播账号（ingest 不再自动建档）。幂等。"""
+    if (
+        db_session.query(SourceAccount)
+        .filter_by(platform="douyin", external_id="新闻联播")
+        .one_or_none()
+    ):
+        return
+    creator = Creator(display_name="新闻联播", status="active")
+    db_session.add(creator)
+    db_session.flush()
+    db_session.add(
+        SourceAccount(creator_id=creator.id, platform="douyin", external_id="新闻联播", enabled=False)
+    )
+    db_session.commit()
 
 
 def _live_item(db_session) -> SourceItem:
@@ -132,7 +162,7 @@ def test_full_flow_creates_session_and_accumulates_offset(flow, db_session):
     assert [s.sequence_no for s in segs] == [0, 1]
     assert segs[1].text == "段2"  # E3 追加而非覆盖
 
-    # 自动建档账号：enabled=False，不入发现轮询
+    # 账号来自显式预建（ingest 不再自动建档）：enabled=False，不入发现轮询
     account = db_session.get(SourceAccount, item.source_account_id)
     assert account.enabled is False
     assert account.external_id == "新闻联播"
@@ -264,6 +294,7 @@ def test_min_duration_segment_skipped_not_counted_in_offset(
     db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """F5：残片跳过且不计入偏移。"""
+    _ensure_watch_account(db_session)
     _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
     _set_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(live_ingest, "normalize_audio", _fake_normalize(1_000))  # <30s
@@ -279,6 +310,7 @@ def test_segment_retry_cap_skips_after_max_attempts(
     db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """F4：同分片连续失败 ≥max 后跳过记账，不再重试。"""
+    _ensure_watch_account(db_session)
     _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
     _set_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(live_ingest, "normalize_audio", _fake_normalize(60_000))
@@ -301,6 +333,7 @@ def test_session_close_after_grace(
     db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """G1：静默超过 grace → 会话收尾 transcribing→transcribed。"""
+    _ensure_watch_account(db_session)
     _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
     _set_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(live_ingest, "normalize_audio", _fake_normalize(60_000))
