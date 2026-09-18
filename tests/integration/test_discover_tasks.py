@@ -189,3 +189,44 @@ def test_first_scan_backfill_titles_only_second_scan_auto_prepares(
     db_session.expire_all()
     worker_tasks.discover_source_account.run(account.id)
     assert sent == []
+
+
+def test_retry_failed_prepares_backoff_and_cap(db_session, sent, task_session_factory):
+    """自动重试：首次立即派发；间隔未到不派；5 次封顶。"""
+    from datetime import UTC, datetime
+
+    from app.db.models import Creator, SourceAccount, SourceItem
+
+    creator = Creator(display_name="重试主播", status="active")
+    db_session.add(creator)
+    db_session.flush()
+    account = SourceAccount(creator_id=creator.id, platform="douyin", external_id="MS4wLjABretry1")
+    db_session.add(account)
+    db_session.flush()
+
+    def _mk(external, retry_meta):
+        it = SourceItem(
+            source_account_id=account.id,
+            external_item_id=external,
+            item_type="vod",
+            status="failed",
+            metadata_json={"retry": retry_meta} if retry_meta else {},
+        )
+        db_session.add(it)
+        return it
+
+    fresh = _mk("v_fresh", None)  # 从未重试 → 立即派
+    cooling = _mk("v_cooling", {"count": 1, "last_at": datetime.now(UTC).isoformat()})  # 间隔未到
+    capped = _mk("v_capped", {"count": 5, "last_at": "2026-09-18T00:00:00+00:00"})  # 封顶
+    db_session.commit()
+
+    import app.worker.tasks as wt
+
+    wt.get_session_factory = lambda: task_session_factory
+    n = wt.retry_failed_prepares.run()
+    assert n == 1
+    assert [args for _, kw in sent for args in [kw.get("args")]] == [[fresh.id]]
+    assert cooling.id not in [i for kw_args in [kw.get("args") for _, kw in sent] for i in kw_args]
+    assert capped.id not in [i for kw_args in [kw.get("args") for _, kw in sent] for i in kw_args]
+    db_session.expire_all()
+    assert (db_session.get(SourceItem, fresh.id).metadata_json or {}).get("retry", {}).get("count") == 1

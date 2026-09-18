@@ -46,4 +46,9 @@ celery_app.conf.beat_schedule = {
         "task": "dispatch_pending_extractions",
         "schedule": get_settings().extraction_sweep_interval_sec,
     },
+    # 失败转写自动重试（退避，CDN 限速自愈）
+    "retry-failed-prepares": {
+        "task": "retry_failed_prepares",
+        "schedule": 900,  # 每 15 分钟检查一次到期条目
+    },
 }

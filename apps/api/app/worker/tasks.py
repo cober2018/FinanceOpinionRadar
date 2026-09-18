@@ -254,6 +254,49 @@ def sync_live_monitors() -> dict:
         session.close()
 
 
+@celery_app.task(name="retry_failed_prepares")
+def retry_failed_prepares() -> int:
+    """失败转写自动重试（退避）：CDN 限速等运营性失败随时间自愈。
+
+    间隔按尝试次数递增（30min → 1h → 2h → 4h → 8h），上限 5 次；
+    记录在 metadata_json.retry = {count, last_at}，人工「转写」按钮重置计数。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models import SourceItem
+
+    spacing = [timedelta(minutes=30), timedelta(hours=1), timedelta(hours=2), timedelta(hours=4)]
+    session = get_session_factory()()
+    try:
+        failed = (
+            session.query(SourceItem)
+            .filter(SourceItem.status == "failed", SourceItem.item_type == "vod")
+            .order_by(SourceItem.id)
+            .all()
+        )
+        now = datetime.now(UTC)
+        dispatched = 0
+        for item in failed:
+            retry = dict((item.metadata_json or {}).get("retry") or {})
+            count = int(retry.get("count") or 0)
+            if count >= 5:
+                continue
+            last = datetime.fromisoformat(retry["last_at"]) if retry.get("last_at") else None
+            wait = spacing[min(count, len(spacing) - 1)]
+            if last and now - last < wait:
+                continue
+            meta = dict(item.metadata_json or {})
+            meta["retry"] = {"count": count + 1, "last_at": now.isoformat()}
+            item.metadata_json = meta
+            celery_app.send_task("prepare_source_item", args=[item.id])
+            dispatched += 1
+        session.commit()
+        logger.info("retry_failed_prepares", dispatched=dispatched, failed_total=len(failed))
+        return dispatched
+    finally:
+        session.close()
+
+
 # --- EPIC-04：观点抽取 ---
 
 
