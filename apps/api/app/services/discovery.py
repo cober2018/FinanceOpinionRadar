@@ -116,10 +116,23 @@ def discover_account(
         )
         repo = SourceItemRepository(session)
         created_ids: list[int] = []
+        # 墓碑过滤：用户显式物理删除过的内容不再重新导入（2026-09-18 指令）
+        from app.db.models import DeletedItemRef
+
+        tombstoned = {
+            (r.source_account_id, r.external_item_id)
+            for r in session.query(DeletedItemRef).filter(
+                DeletedItemRef.source_account_id == account.id
+            )
+        }
         # 首扫 = 旧视频回溯：只采标题建条目（backfill 标记），不投递转录；
         # 之后的周期轮询才是"跟踪最新"，仅 auto_poll（视频监控开关开）才自动转录新视频。
         first_scan = account.last_success_at is None
+        skipped_deleted = 0
         for discovered in items:
+            if (account.id, discovered.external_item_id) in tombstoned:
+                skipped_deleted += 1
+                continue
             item, is_new = repo.upsert_by_external(
                 source_account_id=account.id,
                 external_item_id=discovered.external_item_id,
@@ -135,6 +148,7 @@ def discover_account(
                 created_ids.append(item.id)
         auto_prepare = account.discovery_mode == "auto_poll" and not first_scan
         account.last_success_at = datetime.now(UTC)
+        _ = skipped_deleted  # 计数进日志（下条 logger.info 扩展）
         account.failure_count = 0
         _redraw_random_poll_interval(account)
         session.commit()
@@ -164,6 +178,7 @@ def discover_account(
         created=len(created_ids),
         backfill_scan=first_scan,
         auto_prepare=auto_prepare,
+        skipped_deleted=skipped_deleted,
     )
     return {
         "account_id": account_id,

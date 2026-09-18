@@ -224,10 +224,10 @@ def extract_viewpoints_manual(item_id: int, session: DbDep):
     item = session.get(SourceItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
-    if item.item_type != "vod" or item.status != "transcribed":
+    if item.item_type not in ("vod", "live") or item.status != "transcribed":
         raise HTTPException(
             status_code=409,
-            detail=f"当前状态 {item.status} 不可抽取（仅 vod + transcribed）",
+            detail=f"当前状态 {item.status} 不可抽取（仅 vod/live + transcribed）",
         )
     celery_app.send_task("extract_source_item_viewpoints", args=[item_id])
     return {"item_id": item_id, "dispatched": True}

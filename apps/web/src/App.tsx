@@ -618,16 +618,20 @@ function LibraryPage() {
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [drawer, setDrawer] = useState<number | null>(null)
+  const [drillAccount, setDrillAccount] = useState<string | null>(null)
 
   const reload = useCallback(() => {
     const params = new URLSearchParams()
-    if (accountFilter) params.set('account_id', accountFilter)
-    if (statusFilter) params.set('status', statusFilter)
+    if (drillAccount) params.set('account_id', drillAccount)
+    else {
+      if (accountFilter) params.set('account_id', accountFilter)
+      if (statusFilter) params.set('status', statusFilter)
+    }
     params.set('limit', '200')
     api<LibraryItem[]>(`/source-items?${params}`)
       .then(setRows)
       .catch((e: Error) => setError(e.message))
-  }, [accountFilter, statusFilter])
+  }, [accountFilter, statusFilter, drillAccount])
 
   useEffect(() => {
     reload()
@@ -635,7 +639,7 @@ function LibraryPage() {
 
   useEffect(() => {
     api<LiveMonitor[]>('/live/monitors').then(setMonitors).catch(() => {})
-  }, [])
+  }, [drillAccount])
 
   const transcribe = async (id: number) => {
     setBusyId(id)
@@ -662,6 +666,16 @@ function LibraryPage() {
       setBusyId(null)
     }
   }
+
+  const creatorGroups = (() => {
+    const by = new Map<number, { accountId: number; displayName: string; platform: string; items: LibraryItem[] }>()
+    for (const r of rows) {
+      const g = by.get(r.account_id)
+      if (g) g.items.push(r)
+      else by.set(r.account_id, { accountId: r.account_id, displayName: r.display_name || `账号${r.account_id}`, platform: r.platform, items: [r] })
+    }
+    return [...by.values()].sort((a, b) => b.items.length - a.items.length)
+  })()
 
   const search = async () => {
     if (!query.trim()) {
@@ -723,8 +737,39 @@ function LibraryPage() {
         </div>
       )}
 
+      {drillAccount === null && (
+        <div className="panel">
+          <div className="panel-head">
+            <h3>按主播浏览（{creatorGroups.length}）</h3>
+          </div>
+          <div className="room-grid">
+            {creatorGroups.map((g) => {
+              const m = monitors.find((x) => x.account_id === g.accountId)
+              return (
+                <div key={g.accountId} className="room-card clickable-card" onClick={() => setDrillAccount(String(g.accountId))}>
+                  <div className="room-name">{g.displayName}<span className="muted"> · {g.items.length} 条</span></div>
+                  <div className="room-meta">{g.platform}{m?.is_live === true ? ' · 🔴 直播中' : ''}</div>
+                  <div className="room-meta">
+                    {g.items.filter((i) => i.status === 'transcribed').length} 已转写 ·{' '}
+                    {g.items.filter((i) => i.status === 'discovered').length} 待转写 ·{' '}
+                    {g.items.filter((i) => i.status === 'failed').length} 失败
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="toolbar">
-        <h3 className="toolbar-title">内容列表（{rows.length}）</h3>
+        {drillAccount !== null && (
+          <button className="ghost" onClick={() => setDrillAccount(null)}>← 返回全部主播</button>
+        )}
+        <h3 className="toolbar-title">
+          {drillAccount !== null
+            ? `${creatorGroups.find((g) => String(g.accountId) === drillAccount)?.displayName ?? ''} 的内容（${rows.length}）`
+            : `全部内容（${rows.length}）`}
+        </h3>
         <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
           <option value="">全部账号</option>
           {monitors.map((m) => (

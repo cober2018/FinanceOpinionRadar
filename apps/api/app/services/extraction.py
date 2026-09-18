@@ -119,10 +119,14 @@ def extract_source_item(
         pack = registry.get(prompt_version)
         provider = provider or _default_provider(session)
 
-        # 状态推进：transcribed → extracting
-        ensure_transition(item.status, "extracting")
-        item.status = "extracting"
-        session.commit()
+        # 状态推进：transcribed → extracting；
+        # extracting（重试场景，如 worker 中途被杀）容忍继续，其他状态拒绝
+        if item.status == "transcribed":
+            ensure_transition(item.status, "extracting")
+            item.status = "extracting"
+            session.commit()
+        elif item.status != "extracting":
+            return {"item_id": item_id, "skipped": f"status {item.status}"}
 
         run_id = str(uuid.uuid4())
         seg_dicts = [
@@ -146,8 +150,10 @@ def extract_source_item(
             except Exception as exc:  # noqa: BLE001 chunk 级失败容忍（run 报告记账）
                 failed_chunks.append(f"{chunk.chunk_id}: {str(exc)[:120]}")
                 continue
+            # MiniMax-M3 等模型可能返回裸数组（schema 要求 {"viewpoints": [...]}）→ 归一
+            data = resp.data if isinstance(resp.data, dict) else {"viewpoints": resp.data or []}
             chunk_ids = set(chunk.segment_ids)
-            for cand in resp.data.get("viewpoints", []):
+            for cand in data.get("viewpoints", []):
                 err, stance = _validate_candidate(cand, chunk_ids)
                 if err:
                     rejected.append({"chunk": chunk.chunk_id, "reason": err})

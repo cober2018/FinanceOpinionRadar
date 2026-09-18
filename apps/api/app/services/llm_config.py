@@ -120,4 +120,5 @@ def build_llm_provider(session: Session):
         timeout_sec=s.llm_timeout_sec,
         max_retries=s.llm_max_retries,
         chat_path=cfg["chat_path"],
+        max_tokens=s.llm_max_tokens,
     )

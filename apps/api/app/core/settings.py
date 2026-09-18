@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout_sec: int = 120
     llm_max_retries: int = 2
+    llm_max_tokens: int = 16384  # 推理模型（如 MiniMax-M3）推理+回答共用预算，给足防截断
     extraction_sweep_interval_sec: int = 900  # beat：观点抽取补扫
     review_confidence_threshold: float = 0.75  # RAD-051：低于此值进人工队列
     review_min_evidence_chars: int = 50  # RAD-051：证据总字数下限""

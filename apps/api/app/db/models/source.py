@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -87,4 +88,22 @@ class SourceItem(TimestampMixin, IdMixin, Base):
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="discovered")
     metadata_json: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
+    )
+
+
+class DeletedItemRef(Base):
+    """物理删除条目的墓碑：防止 discover 下一轮把同一内容重新导入并再次自动转写。"""
+
+    __tablename__ = "deleted_item_ref"
+    __table_args__ = (
+        UniqueConstraint("source_account_id", "external_item_id", name="uq_deleted_item_ref"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_account_id: Mapped[int] = mapped_column(
+        ForeignKey("source_account.id", ondelete="CASCADE"), nullable=False
+    )
+    external_item_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    deleted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

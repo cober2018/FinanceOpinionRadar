@@ -43,7 +43,7 @@ class Viewpoint(TimestampMixin, IdMixin, Base):
     entity_id: Mapped[int | None] = mapped_column(ForeignKey("entity.id", ondelete="SET NULL"))
     claim: Mapped[str] = mapped_column(Text, nullable=False)
     stance: Mapped[str] = mapped_column(String(30), nullable=False)
-    horizon: Mapped[str] = mapped_column(String(30), nullable=False)
+    horizon: Mapped[str | None] = mapped_column(String(30))  # 未提时间维度则空（合法）
     conditional: Mapped[bool] = mapped_column(nullable=False, default=False)
     importance: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.5)
     confidence: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.5)

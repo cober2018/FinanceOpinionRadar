@@ -521,3 +521,6 @@ input:focus, select:focus, textarea:focus {
 .selected-row td {
   background: var(--accent-soft) !important;
 }
+
+.clickable-card { cursor: pointer; transition: border-color 0.2s; }
+.clickable-card:hover { border-color: var(--accent); }

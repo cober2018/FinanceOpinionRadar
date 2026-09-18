@@ -54,6 +54,22 @@ class MockLLMProvider:
         )
 
 
+def _extract_json(content: str) -> dict:
+    """健壮 JSON 提取：剥 markdown 围栏；兜底截取首个 { 到最后一个 }。"""
+    text = content.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1] if "```" in text[3:] else text[3:]
+        if text.startswith("json"):
+            text = text[4:]
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        lo, hi = text.find("{"), text.rfind("}")
+        if lo >= 0 and hi > lo:
+            return json.loads(text[lo : hi + 1])
+        raise
+
+
 class OpenAICompatProvider:
     def __init__(
         self,
@@ -64,6 +80,7 @@ class OpenAICompatProvider:
         timeout_sec: int = 120,
         max_retries: int = 2,
         chat_path: str = "/chat/completions",
+        max_tokens: int = 16384,
     ) -> None:
         if not base_url or not api_key:
             raise LLMError(
@@ -76,6 +93,8 @@ class OpenAICompatProvider:
         self._max_retries = max_retries
         # 个别服务路径不同（MiniMax: /text/chatcompletion_v2）
         self._chat_path = chat_path or "/chat/completions"
+        # 推理模型（M3/R 系）的推理与回答共用 token 预算，默认值小会被截断成空 content
+        self._max_tokens = max_tokens
 
     def _post(self, payload: dict) -> httpx.Response:
         return httpx.post(
@@ -97,6 +116,7 @@ class OpenAICompatProvider:
         payload = {
             "model": model or self._model,
             "temperature": temperature,
+            "max_tokens": self._max_tokens,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -119,11 +139,13 @@ class OpenAICompatProvider:
                 continue
             try:
                 body = resp.json()
-                content = body["choices"][0]["message"]["content"]
+                message = body["choices"][0]["message"]
+                content = (message.get("content") or "").strip()
                 usage = body.get("usage") or {}
-                data = json.loads(content)
-            except (KeyError, json.JSONDecodeError) as exc:
-                last_err = f"响应 JSON 解析失败: {exc}"
+                data = _extract_json(content)
+            except (KeyError, json.JSONDecodeError, ValueError) as exc:
+                head = repr(content[:60]) if isinstance(content, str) else "?"
+                last_err = f"响应解析失败: {exc}（content 头部={head}）"
                 logger.warning("llm_request_retry", attempt=attempt, error=last_err)
                 time.sleep(2**attempt)
                 continue

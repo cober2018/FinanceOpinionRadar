@@ -211,19 +211,33 @@ def extract_source_item_viewpoints(item_id: int) -> dict:
     run = JobRun(job_type="extract_viewpoints", source_item_id=item_id, status="running")
     session.add(run)
     session.commit()
+    run_id = run.id
+    session.close()
+
+    def _finish(status: str, error: str | None = None, payload: dict | None = None) -> None:
+        # 独立会话写终态：主会话可能已被异常污染（PendingRollback）
+        s2 = get_session_factory()()
+        try:
+            r = s2.get(JobRun, run_id)
+            if r is not None:
+                r.status = status
+                r.finished_at = datetime.now(UTC)
+                if error:
+                    r.error_code = "EXTRACT_FAILED"
+                    r.error_message = error[:500]
+                if payload:
+                    r.payload_json = payload
+                s2.commit()
+        finally:
+            s2.close()
+
+    session = get_session_factory()()
     try:
         out = extract_source_item(session, item_id)
-        run.status = "success"
-        run.finished_at = datetime.now(UTC)
-        run.payload_json = {"created": out.get("created"), "run_uri": out.get("run_uri")}
-        session.commit()
+        _finish("success", payload={"created": out.get("created"), "run_uri": out.get("run_uri")})
         return out
     except Exception as exc:
-        run.status = "failed"
-        run.error_code = "EXTRACT_FAILED"
-        run.error_message = str(exc)[:500]
-        run.finished_at = datetime.now(UTC)
-        session.commit()
+        _finish("failed", error=str(exc))
         raise
     finally:
         session.close()
@@ -241,7 +255,7 @@ def dispatch_pending_extractions() -> int:
             .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
             .filter(
                 SourceItem.status == "transcribed",
-                SourceItem.item_type == "vod",
+                SourceItem.item_type.in_(["vod", "live"]),
                 SourceAccount.enabled.is_(True),
                 SourceAccount.discovery_mode == "auto_poll",
             )

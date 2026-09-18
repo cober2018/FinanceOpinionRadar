@@ -134,7 +134,8 @@ def ingest_live_segments(session, provider=None) -> dict:
         for sd in scan_live_dir(root):
             _warn_gaps(sd, s.live_close_grace_sec)
             item = _ensure_session(session, sd)
-            if item.status == "transcribed":  # 已收尾会话不再处理
+            if item.status in ("transcribed", "extracting", "reviewing", "ready"):
+                # 已收尾/进入抽取链的会话不再扫描（EPIC-04 状态机扩展后的兼容）
                 continue
             if item.status != "transcribing":
                 _advance_chain(session, item)  # F3：discovered→…→transcribing 连续推进
