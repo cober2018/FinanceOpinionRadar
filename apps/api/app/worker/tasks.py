@@ -288,6 +288,34 @@ def ingest_danmaku_files() -> dict:
         session.close()
 
 
+@celery_app.task(name="housekeeping_stale_jobs")
+def housekeeping_stale_jobs() -> int:
+    """僵尸清理：running 超 2 小时的任务标记 failed（进程被杀等场景的收尾）。"""
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models import JobRun
+
+    session = get_session_factory()()
+    try:
+        cutoff = datetime.now(UTC) - timedelta(hours=2)
+        stale = (
+            session.query(JobRun)
+            .filter(JobRun.status == "running", JobRun.created_at < cutoff)
+            .all()
+        )
+        for r in stale:
+            r.status = "failed"
+            r.error_code = "STALE_TIMEOUT"
+            r.error_message = "任务超 2 小时未结束（worker 中断），由 housekeeping 收尾"
+            r.finished_at = datetime.now(UTC)
+        session.commit()
+        if stale:
+            logger.info("housekeeping_stale_jobs", marked=len(stale))
+        return len(stale)
+    finally:
+        session.close()
+
+
 @celery_app.task(name="retry_failed_prepares")
 def retry_failed_prepares() -> int:
     """失败转写自动重试（退避）：CDN 限速等运营性失败随时间自愈。

@@ -89,6 +89,12 @@ class SourceItem(TimestampMixin, IdMixin, Base):
     metadata_json: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
     )
+    # --- Plan #6 内容生命周期 ---
+    # 精华资产：true = 永久保留（retention sweep 跳过）；false = 到期物理删除（留结论快照）
+    is_asset: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    asset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DeletedItemRef(Base):
