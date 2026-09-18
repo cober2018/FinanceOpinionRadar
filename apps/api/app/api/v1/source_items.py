@@ -231,3 +231,42 @@ def extract_viewpoints_manual(item_id: int, session: DbDep):
         )
     celery_app.send_task("extract_source_item_viewpoints", args=[item_id])
     return {"item_id": item_id, "dispatched": True}
+
+
+@router.get("/{item_id}/viewpoint-evidence")
+def get_viewpoint_evidence(item_id: int, session: DbDep):
+    """RAD-084：观点证据行（含原文与时间戳，供 seek link 与 review actions）。"""
+    from app.db.models import Viewpoint, ViewpointEvidence
+
+    vps = (
+        session.query(Viewpoint)
+        .filter(Viewpoint.source_item_id == item_id)
+        .order_by(Viewpoint.id)
+        .all()
+    )
+    out = []
+    for vp in vps:
+        evs = (
+            session.query(ViewpointEvidence)
+            .filter(ViewpointEvidence.viewpoint_id == vp.id)
+            .order_by(ViewpointEvidence.evidence_order)
+            .all()
+        )
+        out.append(
+            {
+                "viewpoint_id": vp.id,
+                "claim": vp.claim,
+                "stance": vp.stance,
+                "verification_status": vp.verification_status,
+                "evidences": [
+                    {
+                        "segment_id": ev.transcript_segment_id,
+                        "start_ms": ev.start_ms,
+                        "end_ms": ev.end_ms,
+                        "text": ev.evidence_text,
+                    }
+                    for ev in evs
+                ],
+            }
+        )
+    return out

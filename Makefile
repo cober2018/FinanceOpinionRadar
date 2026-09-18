@@ -27,6 +27,9 @@ web: ## 启动前端 Vite 开发服务器
 build-web: ## 构建前端产物（apps/web/dist），此后 API 单端口同时服务页面与 /api
 	cd apps/web && npm run build
 
+api-types: ## 从 OpenAPI 生成前端 TS 类型（apps/web/src/api-types.ts，RAD-070）
+	cd apps/web && npx openapi-typescript http://localhost:8000/openapi.json -o src/api-types.ts
+
 stop: ## 停止 docker compose 服务
 	docker compose stop
 
@@ -72,8 +75,8 @@ migrate: ## 执行数据库迁移至最新版本
 worker: ## 启动 Celery worker
 	$(PYTHON) -m celery -A app.worker.celery_app worker --loglevel=info
 
-worker-beat: ## 启动 Celery worker + beat（来源发现调度）
-	$(PYTHON) -m celery -A app.worker.celery_app worker --beat --loglevel=info
+worker-beat: ## 启动 Celery worker + beat（dev：全队列消费 default/media/llm）
+	$(PYTHON) -m celery -A app.worker.celery_app worker --beat -Q default,media,llm --loglevel=info
 
 live-status: ## 直播值守看板（每个值守直播间一行：在播/同步/会话/转录）
 	$(PYTHON) scripts/live_dashboard.py

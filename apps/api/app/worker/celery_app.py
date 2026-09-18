@@ -14,6 +14,15 @@ celery_app.conf.task_default_queue = "default"
 # C6：到期账号派发调度；间隔可配（DISCOVER_DISPATCH_INTERVAL_SEC，默认 300s）
 # 注记②：discovered 存量周期补扫（PREPARE_SWEEP_INTERVAL_SEC，默认 600s）——
 # 任务投递丢失/进程崩溃后的兜底路径
+# RAD-101 队列拆分：重活（媒体/ASR/LLM）与普通任务分流，避免互相堵塞。
+# dev 单 worker 用 make worker-beat（-Q 全消费）；prod compose 按队列分进程。
+celery_app.conf.task_routes = {
+    "prepare_source_item": {"queue": "media"},
+    "prepare_live_segment": {"queue": "media"},
+    "extract_source_item_viewpoints": {"queue": "llm"},
+    "discover_source_account": {"queue": "media"},
+}
+
 celery_app.conf.beat_schedule = {
     "dispatch-due-discoveries": {
         "task": "dispatch_due_discoveries",

@@ -202,11 +202,29 @@ def sync_live_monitors() -> dict:
 
 @celery_app.task(name="extract_source_item_viewpoints")
 def extract_source_item_viewpoints(item_id: int) -> dict:
+    from datetime import UTC, datetime
+
+    from app.db.models import JobRun
     from app.services.extraction import extract_source_item
 
     session = get_session_factory()()
+    run = JobRun(job_type="extract_viewpoints", source_item_id=item_id, status="running")
+    session.add(run)
+    session.commit()
     try:
-        return extract_source_item(session, item_id)
+        out = extract_source_item(session, item_id)
+        run.status = "success"
+        run.finished_at = datetime.now(UTC)
+        run.payload_json = {"created": out.get("created"), "run_uri": out.get("run_uri")}
+        session.commit()
+        return out
+    except Exception as exc:
+        run.status = "failed"
+        run.error_code = "EXTRACT_FAILED"
+        run.error_message = str(exc)[:500]
+        run.finished_at = datetime.now(UTC)
+        session.commit()
+        raise
     finally:
         session.close()
 

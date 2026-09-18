@@ -200,3 +200,40 @@ def get_dashboard(
             for r in recent_vps
         ],
     }
+
+
+@router.get("/jobs")
+def list_jobs(
+    session: Annotated[Session, Depends(get_db)],
+    limit: int = 50,
+    job_type: str | None = None,
+    status: str | None = None,
+):
+    """RAD-089 Job Center：任务执行记录（状态/耗时/attempt/trace/错误）。"""
+    from app.db.models import JobRun
+
+    q = session.query(JobRun).order_by(JobRun.id.desc())
+    if job_type:
+        q = q.filter(JobRun.job_type == job_type)
+    if status:
+        q = q.filter(JobRun.status == status)
+    rows = q.limit(min(limit, 200)).all()
+    return [
+        {
+            "id": r.id,
+            "job_type": r.job_type,
+            "status": r.status,
+            "source_item_id": r.source_item_id,
+            "attempt": r.attempt,
+            "trace_id": r.trace_id,
+            "duration_ms": int(
+                (r.finished_at - r.started_at).total_seconds() * 1000
+            )
+            if r.started_at and r.finished_at
+            else None,
+            "error_code": r.error_code,
+            "error_message": (r.error_message or "")[:200] or None,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
