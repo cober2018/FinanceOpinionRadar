@@ -1,0 +1,4 @@
+[
+  {"case_id": "case_001", "platform": "youtube", "url": "https://www.youtube.com/watch?v=HlHAxo6FTH0", "transcript": "transcripts/case_001.json", "annotation": "annotations/case_001.json", "note": "阳光财经《美股：一路讲来一路跌》真实样本（已转写 277 段）"},
+  {"case_id": "case_002", "platform": "bilibili", "url": "https://www.bilibili.com/video/BV1nT8M6vEDB/", "transcript": "transcripts/case_002.json", "annotation": "annotations/case_002.json", "note": "爱德华说《141万新生凭空消失》真实样本（已转写 177 段）"}
+]

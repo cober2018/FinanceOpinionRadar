@@ -1,0 +1,15 @@
+{
+  "case_id": "case_002",
+  "annotator": "样例标注（格式示范，正式标注需人工复核）",
+  "viewpoints": [
+    {
+      "claim": "人口结构变化将冲击民办高校招生",
+      "stance": "bearish",
+      "horizon": "3M+",
+      "topic": "教育行业",
+      "entities": [],
+      "evidence_segment_ids": [],
+      "evidence_hint": "141万新生凭空消失 相关段落"
+    }
+  ]
+}

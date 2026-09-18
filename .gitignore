@@ -18,3 +18,4 @@ celerybeat-schedule*
 # Plan #4 抖音外部栈的宿主 bind 状态目录（StreamCap 配置与直播分片，见 infra/docker/docker-compose.douyin.yml）
 data/
 logs/
+tests/golden/expected/

@@ -1,0 +1,15 @@
+{
+  "case_id": "case_001",
+  "annotator": "样例标注（格式示范，正式标注需人工复核）",
+  "viewpoints": [
+    {
+      "claim": "美联储降息预期利好黄金等避险资产",
+      "stance": "bullish",
+      "horizon": "1-4W",
+      "topic": "美联储利率",
+      "entities": [{"raw_name": "黄金", "entity_type": "commodity"}],
+      "evidence_segment_ids": [],
+      "evidence_hint": "美联储九月必然降息 + 黄金上涨行情 相关段落"
+    }
+  ]
+}
