@@ -195,3 +195,49 @@ def sync_live_monitors() -> dict:
         )
     finally:
         session.close()
+
+
+# --- EPIC-04：观点抽取 ---
+
+
+@celery_app.task(name="extract_source_item_viewpoints")
+def extract_source_item_viewpoints(item_id: int) -> dict:
+    from app.services.extraction import extract_source_item
+
+    session = get_session_factory()()
+    try:
+        return extract_source_item(session, item_id)
+    finally:
+        session.close()
+
+
+@celery_app.task(name="dispatch_pending_extractions")
+def dispatch_pending_extractions() -> int:
+    """EPIC-04 补扫：transcribed 且应自动抽取（账号开视频监控、非 backfill）的条目派发。"""
+    from app.db.models import SourceAccount, SourceItem
+
+    session = get_session_factory()()
+    try:
+        pending = (
+            session.query(SourceItem)
+            .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+            .filter(
+                SourceItem.status == "transcribed",
+                SourceItem.item_type == "vod",
+                SourceAccount.enabled.is_(True),
+                SourceAccount.discovery_mode == "auto_poll",
+            )
+            .order_by(SourceItem.id)
+            .limit(get_settings().prepare_sweep_batch_size)
+            .all()
+        )
+        dispatched = 0
+        for item in pending:
+            if (item.metadata_json or {}).get("backfill"):
+                continue
+            celery_app.send_task("extract_source_item_viewpoints", args=[item.id])
+            dispatched += 1
+        logger.info("dispatch_pending_extractions", dispatched=dispatched)
+        return dispatched
+    finally:
+        session.close()

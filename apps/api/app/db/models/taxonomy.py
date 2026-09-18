@@ -4,7 +4,7 @@ JSONB 形状（docstring-only，正式 schema 推迟 EPIC-04，见 M4）：
 - entity.metadata_json: 实体归一化辅助信息（交易所、币种、板块、消歧规则等）。
 """
 
-from sqlalchemy import String, Text
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,4 +37,20 @@ class Entity(TimestampMixin, IdMixin, Base):
     )
     metadata_json: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}"
+    )
+
+
+class EntityCandidate(TimestampMixin, IdMixin, Base):
+    """归一化失败的未知实体：待人工/LLM 消歧后晋升为正式 Entity（RAD-044）。"""
+
+    __tablename__ = "entity_candidate"
+    __table_args__ = (
+        UniqueConstraint("raw_name", "entity_type", name="uq_entity_candidate_raw_type"),
+    )
+
+    raw_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(30), nullable=False, default="other")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    first_seen_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("source_item.id", ondelete="SET NULL")
     )

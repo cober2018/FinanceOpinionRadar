@@ -213,3 +213,21 @@ def get_transcript(item_id: int, session: DbDep):
             for s in segments
         ],
     }
+
+
+@router.post("/{item_id}/extract", status_code=202)
+def extract_viewpoints_manual(item_id: int, session: DbDep):
+    """手动抽取观点（视频库按钮）：仅 transcribed 状态可发起，幂等由抽取服务保证。"""
+    from app.db.models import SourceItem
+    from app.worker.celery_app import celery_app
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    if item.item_type != "vod" or item.status != "transcribed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"当前状态 {item.status} 不可抽取（仅 vod + transcribed）",
+        )
+    celery_app.send_task("extract_source_item_viewpoints", args=[item_id])
+    return {"item_id": item_id, "dispatched": True}

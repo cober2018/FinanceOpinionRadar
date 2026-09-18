@@ -32,4 +32,9 @@ celery_app.conf.beat_schedule = {
         "task": "sync_live_monitors",
         "schedule": get_settings().recorder_sync_interval_sec,
     },
+    # EPIC-04：观点抽取补扫（transcribed → extracting）
+    "dispatch-pending-extractions": {
+        "task": "dispatch_pending_extractions",
+        "schedule": get_settings().extraction_sweep_interval_sec,
+    },
 }

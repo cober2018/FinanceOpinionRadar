@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     s3_bucket_media: str = "radar-media"
     llm_api_key: str = ""
     llm_base_url: str = ""
+    llm_model: str = "gpt-4o-mini"
+    llm_timeout_sec: int = 120
+    llm_max_retries: int = 2
+    extraction_sweep_interval_sec: int = 900  # beat：观点抽取补扫""
     db_pool_size: int = 5
     db_max_overflow: int = 10
     # --- EPIC-02 媒体发现 ---

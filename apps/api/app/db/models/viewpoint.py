@@ -54,6 +54,8 @@ class Viewpoint(TimestampMixin, IdMixin, Base):
     )
     extractor_version: Mapped[str | None] = mapped_column(String(100))
     prompt_version: Mapped[str | None] = mapped_column(String(100))
+    # RAD-045 去重：该观点吸收了哪些重复候选（"同实体同立场 claim 相似度 0.91"）
+    merge_reason: Mapped[str | None] = mapped_column(String(200))
 
 
 class ViewpointEvidence(IdMixin, Base):

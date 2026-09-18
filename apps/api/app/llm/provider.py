@@ -132,6 +132,6 @@ class OpenAICompatProvider:
                     "total_tokens": usage.get("total_tokens", 0),
                 },
                 provider="openai-compat",
-                model=payload["model"],
+                model=str(payload["model"]),
             )
         raise LLMError(f"LLM 请求失败（重试 {self._max_retries} 次后）: {last_err}")

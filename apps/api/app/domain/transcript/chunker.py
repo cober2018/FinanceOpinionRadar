@@ -54,9 +54,11 @@ def chunk_transcript(
     chunks: list[Chunk] = []
     for idx, group in enumerate(groups):
         carried: list[dict] = []
-        prev = groups[idx - 1] if idx > 0 else None
+        prev: list[dict] | None = groups[idx - 1] if idx > 0 else None
         # 上一组本身已超 max（超长单段独立 chunk）→ 不作 overlap 携带，避免整段重复进上下文
-        prev_oversized = bool(prev) and (prev[-1]["end_ms"] - prev[0]["start_ms"]) > max_ms
+        prev_oversized = prev is not None and (
+            prev[-1]["end_ms"] - prev[0]["start_ms"]
+        ) > max_ms
         if overlap > 0 and prev is not None and not prev_oversized:
             carried = prev[-overlap:]
             # 携带段不得与本体重复
