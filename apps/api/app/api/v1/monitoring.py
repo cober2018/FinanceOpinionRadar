@@ -1,6 +1,7 @@
 """监控看板与安全设置 API（Plan #4 后续：前端"监控/安全"页数据面）。"""
 
 import json
+from datetime import timedelta
 from typing import Annotated
 
 import structlog
@@ -220,14 +221,39 @@ def get_dashboard(
     }
 
 
+@router.get("/jobs/stats")
+def get_job_stats(session: DbDep) -> dict:
+    from app.db.models import JobRun
+
+    rows = session.query(JobRun.status, func.count()).group_by(JobRun.status).all()
+    by_status = {s: n for s, n in rows}
+    by_type: dict[str, int] = {
+        jt: n
+        for jt, n in session.query(JobRun.job_type, func.count())
+        .group_by(JobRun.job_type)
+        .all()
+    }
+    return {
+        "total": sum(by_status.values()),
+        "running": by_status.get("running", 0),
+        "success": by_status.get("success", 0),
+        "failed": by_status.get("failed", 0),
+        "by_type": by_type,
+    }
+
+
 @router.get("/jobs")
 def list_jobs(
     session: Annotated[Session, Depends(get_db)],
     limit: int = 50,
     job_type: str | None = None,
     status: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
-    """RAD-089 Job Center：任务执行记录（状态/耗时/attempt/trace/错误）。"""
+    """RAD-089 Job Center：任务执行记录（状态/耗时/attempt/错误）+ 日期筛选。"""
+    from datetime import datetime as dt
+
     from app.db.models import JobRun
 
     q = session.query(JobRun).order_by(JobRun.id.desc())
@@ -235,6 +261,10 @@ def list_jobs(
         q = q.filter(JobRun.job_type == job_type)
     if status:
         q = q.filter(JobRun.status == status)
+    if date_from:
+        q = q.filter(JobRun.created_at >= dt.fromisoformat(date_from))
+    if date_to:
+        q = q.filter(JobRun.created_at < dt.fromisoformat(date_to) + timedelta(days=1))
     rows = q.limit(min(limit, 200)).all()
     return [
         {
@@ -304,3 +334,50 @@ def test_llm_settings(session: Annotated[Session, Depends(get_db)]):
         }
     except Exception as exc:  # noqa: BLE001 测试端点把上游错误原样带回
         return {"ok": False, "latency_ms": int((time.time() - t0) * 1000), "error": str(exc)[:300]}
+
+
+class PolishRequest(BaseModel):
+    claim: str
+
+
+@router.post("/llm/polish")
+def polish_claim(body: PolishRequest, session: Annotated[Session, Depends(get_db)]):
+    """观点润色（人工修改界面用）：固定默认提示词 + app_setting 可覆盖。
+
+    只返回润色文本，不落库——由前端确认后随 PATCH /viewpoints/{id} 提交。
+    """
+
+    claim = body.claim.strip()
+    if not claim:
+        raise HTTPException(status_code=422, detail="内容为空，无法润色")
+    provider = llm_config.build_llm_provider(session)
+    if type(provider).__name__ == "MockLLMProvider":
+        raise HTTPException(status_code=409, detail="大模型未配置，润色不可用（设置 → 大模型）")
+
+    from app.db.models import AppSetting
+
+    row = session.get(AppSetting, "polish_prompt")
+    prompt = (row.value or {}).get("template") if row else None
+    prompt = prompt or (
+        "你是资深财经编辑。请在严格保持原意、立场方向、程度与条件不变的前提下，"
+        "把下面的观点陈述润色为一句通顺、专业、简洁的财经观点（不超过 80 字），"
+        "修正口语化和错别字。只输出润色后的句子本身，不要任何解释或引号。"
+    )
+
+    try:
+        resp = provider.generate_json(
+            "只输出 JSON。",
+            f'{prompt}\n\n原句：{claim}\n\n输出 JSON：{{"polished": "..."}}',
+            {"type": "object", "properties": {"polished": {"type": "string"}}},
+            temperature=0.2,
+        )
+    except Exception as exc:  # noqa: BLE001 上游错误原样返回给前端
+        return {"ok": False, "error": str(exc)[:300]}
+
+    polished = ""
+    data = resp.data if isinstance(resp.data, dict) else {}
+    for k in ("polished", "result", "text", "content"):
+        if isinstance(data.get(k), str) and data[k].strip():
+            polished = data[k].strip()
+            break
+    return {"ok": bool(polished), "polished": polished, "model": resp.model}

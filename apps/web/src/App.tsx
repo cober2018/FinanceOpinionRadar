@@ -1154,6 +1154,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
   const [busyId, setBusyId] = useState<number | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
   const [drawer, setDrawer] = useState<{ viewpointId: number; sourceItemId: number } | null>(null)
+  const [editingVp, setEditingVp] = useState<VPRow | null>(null)
 
   const pageSize = 20
 
@@ -1256,6 +1257,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
             <th>主题</th>
             <th>标的</th>
             <th>置信</th>
+            <th>发布日期</th>
             <th>状态</th>
             <th>操作</th>
           </tr>
@@ -1273,6 +1275,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
               <td>{r.topic_name ?? <span className="muted">-</span>}</td>
               <td>{r.entity_name ?? <span className="muted">-</span>}</td>
               <td>{r.confidence.toFixed(2)}</td>
+              <td>{r.as_of_date ?? '-'}</td>
               <td>
                 <span className={`badge ${r.verification_status === 'confirmed' ? 'ok' : r.verification_status === 'rejected' ? 'err' : 'run'}`}>
                   {VP_STATUS_CN[r.verification_status] ?? r.verification_status}
@@ -1289,6 +1292,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
                     </button>
                   </>
                 )}
+                <button className="ghost" onClick={() => setEditingVp(r)}>修改</button>
                 <button
                   className="ghost"
                   onClick={() => setDrawer({ viewpointId: r.id, sourceItemId: r.source_item_id })}
@@ -1323,6 +1327,16 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
           sourceItemId={drawer.sourceItemId}
           onClose={() => setDrawer(null)}
           onReviewed={reload}
+        />
+      )}
+      {editingVp !== null && (
+        <EditViewpointModal
+          vp={editingVp}
+          onClose={() => setEditingVp(null)}
+          onDone={() => {
+            setEditingVp(null)
+            reload()
+          }}
         />
       )}
     </div>
@@ -1413,6 +1427,118 @@ function ViewpointEvidenceDrawer(props: {
   )
 }
 
+/* ---------------- 观点修改弹窗（含 AI 润色） ---------------- */
+
+function EditViewpointModal(props: {
+  vp: VPRow
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [claim, setClaim] = useState(props.vp.claim)
+  const [stance, setStance] = useState(props.vp.stance)
+  const [horizon, setHorizon] = useState(props.vp.horizon ?? '')
+  const [importance, setImportance] = useState(String(props.vp.importance))
+  const [confidence, setConfidence] = useState(String(props.vp.confidence))
+  const [reason, setReason] = useState('')
+  const [polishing, setPolishing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const polish = async () => {
+    if (!claim.trim()) return
+    setPolishing(true)
+    setError(null)
+    try {
+      const r = await api<{ ok: boolean; polished?: string; error?: string }>('/llm/polish', {
+        method: 'POST',
+        body: JSON.stringify({ claim: claim.trim() }),
+      })
+      if (r.ok && r.polished) setClaim(r.polished)
+      else setError(r.error ?? '润色失败')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setPolishing(false)
+    }
+  }
+
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api(`/viewpoints/${props.vp.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          claim: claim.trim(),
+          stance,
+          horizon: horizon || null,
+          importance: Number(importance),
+          confidence: Number(confidence),
+          reason: reason || '人工修正' + (claim.trim() !== props.vp.claim ? '（含润色）' : ''),
+        }),
+      })
+      props.onDone()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="modal-mask" onClick={props.onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>修改观点 #{props.vp.id}</h3>
+        {error && <p className="error">{error}</p>}
+        <label className="field">
+          观点内容（可手改，或点「AI 润色」自动整理表达——立场与方向保持不变）
+          <textarea rows={3} value={claim} onChange={(e) => setClaim(e.target.value)} />
+          <div>
+            <button className="ghost" disabled={polishing} onClick={polish}>
+              {polishing ? '润色中…' : '✨ AI 润色'}
+            </button>
+          </div>
+        </label>
+        <div className="grid-2">
+          <label className="field">
+            立场
+            <select value={stance} onChange={(e) => setStance(e.target.value)}>
+              {Object.entries(STANCE_CN).map(([v, cn]) => (
+                <option key={v} value={v}>{cn}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            时间维度
+            <select value={horizon} onChange={(e) => setHorizon(e.target.value)}>
+              <option value="">未提及</option>
+              {['intraday', '1-3D', '1-4W', '1-3M', '3M+'].map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            置信度（0-1）
+            <input type="number" step="0.05" min="0" max="1" value={confidence} onChange={(e) => setConfidence(e.target.value)} />
+          </label>
+          <label className="field">
+            重要性（0-1）
+            <input type="number" step="0.05" min="0" max="1" value={importance} onChange={(e) => setImportance(e.target.value)} />
+          </label>
+        </div>
+        <label className="field">
+          修改原因（写入审计日志）
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="如：AI 润色 / 人工精简表达" />
+        </label>
+        <div className="form-actions">
+          <button className="primary" onClick={save} disabled={busy || !claim.trim()}>保存修改</button>
+          <button onClick={props.onClose} disabled={busy}>取消</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ---------------- 任务中心 ---------------- */
 
 type JobRow = {
@@ -1442,13 +1568,26 @@ const JOB_TYPE_CN: Record<string, string> = {
 
 function JobCenterPage() {
   const [rows, setRows] = useState<JobRow[]>([])
+  const [stats, setStats] = useState<{ total: number; running: number; success: number; failed: number } | null>(null)
+  const [typeF, setTypeF] = useState('')
+  const [statusF, setStatusF] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<number | null>(null)
 
   const reload = useCallback(() => {
-    api<JobRow[]>('/jobs?limit=100')
+    const params = new URLSearchParams()
+    if (typeF) params.set('job_type', typeF)
+    if (statusF) params.set('status', statusF)
+    if (dateFrom) params.set('date_from', dateFrom)
+    params.set('limit', '200')
+    api<JobRow[]>(`/jobs?${params}`)
       .then(setRows)
       .catch((e: Error) => setError(e.message))
-  }, [])
+    api<{ total: number; running: number; success: number; failed: number }>('/jobs/stats')
+      .then(setStats)
+      .catch(() => {})
+  }, [typeF, statusF, dateFrom])
 
   useEffect(() => {
     reload()
@@ -1456,13 +1595,62 @@ function JobCenterPage() {
     return () => clearInterval(t)
   }, [reload])
 
+  const runningRows = rows.filter((r) => r.status === 'running')
+
   return (
     <div className="stack">
       {error && <p className="error">{error}</p>}
+
+      {stats && (
+        <div className="stat-row">
+          <div className="stat-card"><div className="stat-num">{stats.total}</div><div className="stat-label">任务总数</div></div>
+          <div className="stat-card"><div className="stat-num">{stats.running}</div><div className="stat-label">正在执行</div></div>
+          <div className="stat-card"><div className="stat-num">{stats.success}</div><div className="stat-label">成功</div></div>
+          <div className="stat-card"><div className={`stat-num ${stats.failed > 0 ? 'live-num' : ''}`}>{stats.failed}</div><div className="stat-label">失败</div></div>
+        </div>
+      )}
+
+      {runningRows.length > 0 && (
+        <div className="panel">
+          <div className="panel-head"><h3>⏳ 正在执行的任务（{runningRows.length}）</h3></div>
+          <table className="board">
+            <thead>
+              <tr><th>#</th><th>任务</th><th>内容</th><th>已运行</th><th>开始时间</th></tr>
+            </thead>
+            <tbody>
+              {runningRows.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.id}</td>
+                  <td>{JOB_TYPE_CN[r.job_type] ?? r.job_type}</td>
+                  <td>{r.source_item_id ? `内容 ${r.source_item_id}` : '-'}</td>
+                  <td>{fmtAgo(r.created_at)}</td>
+                  <td>{r.created_at ? new Date(r.created_at).toLocaleTimeString() : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="toolbar">
-        <h3 className="toolbar-title">任务执行记录（{rows.length}）</h3>
-        <button className="ghost" onClick={reload}>刷新</button>
+        <h3 className="toolbar-title">任务记录</h3>
+        <select value={typeF} onChange={(e) => setTypeF(e.target.value)}>
+          <option value="">全部类型</option>
+          <option value="prepare_media">转写</option>
+          <option value="extract_viewpoints">观点抽取</option>
+        </select>
+        <select value={statusF} onChange={(e) => setStatusF(e.target.value)}>
+          <option value="">全部状态</option>
+          {Object.entries(JOB_STATUS_CN).map(([v, cn]) => (
+            <option key={v} value={v}>{cn}</option>
+          ))}
+        </select>
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        {(typeF || statusF || dateFrom) && (
+          <button className="ghost" onClick={() => { setTypeF(''); setStatusF(''); setDateFrom('') }}>清除</button>
+        )}
       </div>
+
       <table className="board">
         <thead>
           <tr>
@@ -1472,8 +1660,8 @@ function JobCenterPage() {
             <th>内容</th>
             <th>耗时</th>
             <th>attempt</th>
-            <th>错误</th>
             <th>时间</th>
+            <th>错误详情</th>
           </tr>
         </thead>
         <tbody>
@@ -1489,16 +1677,27 @@ function JobCenterPage() {
               <td>{r.source_item_id ? `内容 ${r.source_item_id}` : '-'}</td>
               <td>{r.duration_ms != null ? `${(r.duration_ms / 1000).toFixed(1)}s` : '-'}</td>
               <td>{r.attempt}</td>
-              <td className="title-cell">{r.error_message ?? '-'}</td>
               <td>{fmtAgo(r.created_at)}</td>
+              <td>
+                {r.error_message ? (
+                  <button className="ghost" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
+                    {expanded === r.id ? '收起' : '查看错误'}
+                  </button>
+                ) : (
+                  '-'
+                )}
+                {expanded === r.id && r.error_message && (
+                  <div className="error" style={{ whiteSpace: 'pre-wrap', marginTop: 6, maxWidth: 520 }}>{r.error_message}</div>
+                )}
+              </td>
             </tr>
           ))}
           {rows.length === 0 && !error && (
-            <tr><td colSpan={8} className="muted pad">暂无任务记录</td></tr>
+            <tr><td colSpan={8} className="muted pad">暂无任务记录（筛选条件下）</td></tr>
           )}
         </tbody>
       </table>
-      <p className="hint">当前记录：转写与观点抽取任务。页面每 15 秒自动刷新。</p>
+      <p className="hint">全系统任务监控：转写 / 观点抽取任务真实状态。失败任务点「查看错误」定位原因。页面每 15 秒自动刷新。</p>
     </div>
   )
 }
