@@ -270,3 +270,21 @@ def get_viewpoint_evidence(item_id: int, session: DbDep):
             }
         )
     return out
+
+
+@router.delete("/{item_id}", status_code=200)
+def delete_source_item(item_id: int, session: DbDep):
+    """删除单条内容（物理，级联转录/观点/资产）+ 写墓碑防 discover 重导。"""
+    from app.db.models import DeletedItemRef, SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    session.add(
+        DeletedItemRef(
+            source_account_id=item.source_account_id, external_item_id=item.external_item_id
+        )
+    )
+    session.delete(item)
+    session.commit()
+    return {"deleted": item_id, "tombstoned": True}

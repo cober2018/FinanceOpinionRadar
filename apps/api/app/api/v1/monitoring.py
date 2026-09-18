@@ -94,7 +94,7 @@ def get_dashboard(
     from datetime import date as date_cls
     from datetime import timedelta
 
-    from app.db.models import Creator, Topic, TopicConsensusDaily, Viewpoint
+    from app.db.models import Creator, SourceItem, Topic, TopicConsensusDaily, Viewpoint
     from app.services import llm_config
     from app.services.extraction import EXTRACTOR_VERSION, PROMPT_VERSION
 
@@ -107,7 +107,18 @@ def get_dashboard(
     monitors = live_status.build_live_monitors(session)
     live_count = sum(1 for m in monitors if m["is_live"] is True)
     watching = sum(1 for m in monitors if m["live_monitor_enabled"])
-    total_segments = sum(m["transcript_count"] for m in monitors)
+    # 统计直查 DB（口径明确）：直播段落 = live 条目下全部 transcript；已转写内容 = 有段落条目
+    from app.db.models import TranscriptSegment
+
+    total_segments = (
+        session.query(func.count(TranscriptSegment.id))
+        .join(SourceItem, SourceItem.id == TranscriptSegment.source_item_id)
+        .filter(SourceItem.item_type == "live")
+        .scalar()
+    )
+    transcribed_contents = (
+        session.query(func.count(func.distinct(TranscriptSegment.source_item_id))).scalar()
+    )
 
     recent_vps = (
         session.query(
@@ -153,6 +164,7 @@ def get_dashboard(
             "live_watching": watching,
             "is_live": live_count,
             "live_segments": total_segments,
+            "transcribed_contents": transcribed_contents,
             "new_viewpoints_7d": new_vp_7d,
             "pending_review": pending_review,
             "llm_configured": llm_configured,

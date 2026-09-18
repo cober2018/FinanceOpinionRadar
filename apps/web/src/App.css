@@ -524,3 +524,6 @@ input:focus, select:focus, textarea:focus {
 
 .clickable-card { cursor: pointer; transition: border-color 0.2s; }
 .clickable-card:hover { border-color: var(--accent); }
+
+button.danger { color: var(--live); border-color: transparent; }
+button.danger:hover:not(:disabled) { border-color: var(--live); }

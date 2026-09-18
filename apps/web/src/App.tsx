@@ -142,8 +142,15 @@ function OverviewPage({ go }: { go: (tab: string) => void }) {
   const [monitors, setMonitors] = useState<LiveMonitor[]>([])
   const [recent, setRecent] = useState<LibraryItem[]>([])
   const [status, setStatus] = useState<SystemStatus | null>(null)
+  const [contents, setContents] = useState(0)
 
   useEffect(() => {
+    api<{ stats: { transcribed_contents: number; live_segments: number } }>('/dashboard')
+      .then((d) => {
+        setContents(d.stats.transcribed_contents)
+        setTotalSegs(d.stats.live_segments)
+      })
+      .catch(() => {})
     api<LiveMonitor[]>('/live/monitors').then(setMonitors).catch(() => {})
     api<LibraryItem[]>('/source-items?limit=10&status=transcribed')
       .then(setRecent)
@@ -153,7 +160,7 @@ function OverviewPage({ go }: { go: (tab: string) => void }) {
 
   const liveCount = monitors.filter((m) => m.is_live === true).length
   const watching = monitors.filter((m) => m.live_monitor_enabled).length
-  const totalSegs = monitors.reduce((acc, m) => acc + m.transcript_count, 0)
+  const [totalSegs, setTotalSegs] = useState(0)
 
   return (
     <div className="stack">
@@ -169,6 +176,10 @@ function OverviewPage({ go }: { go: (tab: string) => void }) {
         <div className="stat-card">
           <div className={`stat-num ${liveCount > 0 ? 'live-num' : ''}`}>{liveCount}</div>
           <div className="stat-label">正在直播</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num">{contents}</div>
+          <div className="stat-label">已转写内容</div>
         </div>
         <div className="stat-card">
           <div className="stat-num">{totalSegs}</div>
@@ -307,6 +318,23 @@ function AccountsPage() {
     }
   }
 
+  const removeAccount = async (r: LiveMonitor) => {
+    const n = window.confirm(
+      `确定删除主播「${r.display_name}」？\n其全部内容（视频/直播转录/观点）将一并物理删除，不可恢复。`,
+    )
+    if (!n) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api(`/source-accounts/${r.account_id}`, { method: 'DELETE' })
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const startEdit = (r: LiveMonitor) => {
     setEditing(r.account_id)
     setDraft({
@@ -431,9 +459,10 @@ function AccountsPage() {
                     busy={busy}
                   />
                 ) : (
-                  <button className="ghost" onClick={() => startEdit(r)}>
-                    编辑
-                  </button>
+                  <>
+                    <button className="ghost" onClick={() => startEdit(r)}>编辑</button>{' '}
+                    <button className="ghost danger" onClick={() => removeAccount(r)}>删除</button>
+                  </>
                 )}
               </td>
             </tr>
@@ -654,6 +683,23 @@ function LibraryPage() {
     }
   }
 
+  const removeItem = async (r: LibraryItem) => {
+    const n = window.confirm(
+      `确定删除「${(r.title ?? '').slice(0, 30)}」？转录与观点将物理删除，且不会重新导入。`,
+    )
+    if (!n) return
+    setBusyId(r.id)
+    setError(null)
+    try {
+      await api(`/source-items/${r.id}`, { method: 'DELETE' })
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const extractPoints = async (id: number) => {
     setBusyId(id)
     setError(null)
@@ -824,14 +870,19 @@ function LibraryPage() {
                   </button>
                 ) : r.status === 'transcribed' ? (
                   <>
-                    <button className="ghost" onClick={() => setDrawer(r.id)}>正文</button>
+                    <button className="ghost" onClick={() => setDrawer(r.id)}>正文</button>{' '}
                     <button disabled={busyId === r.id} onClick={() => extractPoints(r.id)}>
                       {busyId === r.id ? '派发中…' : '抽取观点'}
                     </button>
                   </>
-                ) : (
-                  '-'
-                )}
+                ) : null}{' '}
+                <button
+                  className="ghost danger"
+                  disabled={busyId === r.id}
+                  onClick={() => removeItem(r)}
+                >
+                  删除
+                </button>
               </td>
             </tr>
           ))}

@@ -167,3 +167,37 @@ def patch_source_account(account_id: int, body: PatchSourceAccountRequest, sessi
         setattr(account, field, value)
     session.commit()
     return account
+
+
+@router.delete("/{account_id}", status_code=200)
+def delete_source_account(
+    account_id: int,
+    session: DbDep,
+    mode: str = "delete_content",  # delete_content | keep_none
+):
+    """删除主播账号及其全部内容（级联：条目/转录/观点/资产，FK CASCADE）。
+
+    删除后值守桥下一轮同步自动从录制器配置移除该房间；账号不存在返回 404。
+    """
+    account = session.get(SourceAccount, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail=f"source_account {account_id} 不存在")
+    from app.services.audit import write_audit
+
+    write_audit(
+        session,
+        actor="console",
+        action="delete",
+        resource_type="source_account",
+        resource_id=account_id,
+        before={
+            "platform": account.platform,
+            "external_id": account.external_id,
+            "live_monitor_enabled": account.live_monitor_enabled,
+        },
+        after=None,
+        reason=f"用户删除主播（mode={mode}）",
+    )
+    session.delete(account)  # FK CASCADE：source_item → transcript/viewpoint/asset
+    session.commit()
+    return {"deleted": account_id}
