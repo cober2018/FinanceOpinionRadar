@@ -105,13 +105,13 @@ INDEX (source_item_id, published_at)
 - **业务消息实录未获**（决策门不触发）：4 个值守房间（含 大潘说股）spike 时段全部 offline（深夜，股市直播收播）。业务消息序列化路径已从源码核实（`room_session.go`：protojson Marshal + 顶层注入 `method/livename/title/avatarThumb`；proto 字段见 `new_douyin.proto` ChatMessage/GiftMessage/LikeMessage/MemberMessage/SocialMessage），fixture 按 proto schema 合成（camelCase + uint64 字符串形态），**真实弹幕样本冒烟挂 Task 5**（值守房间下一开播窗口，交易时段必有）。
 - **部署形态**：`docker run -d --name douyinlive --restart unless-stopped -p 127.0.0.1:1088:1088 ghcr.io/jwwsjlm/douyinlive:v2.2.1` 已在宿主运行（Task 2 转正进 compose）。
 
-## Task 2: 模型 + 迁移 + settings + compose（TDD）
+## Task 2: 模型 + 迁移 + settings + compose（TDD）✅
 
 - [ ] RED：integration `test_live_chat_message_model.py`——迁移后表存在、唯一约束拒重复行、级联删除随 item
 - [ ] GREEN：模型/迁移（沿 b7e4d2c9a5f1 风格）；settings +7 键；`docker-compose.douyin.yml` +douyinlive 服务（`127.0.0.1:${DOUYINLIVE_PORT:-1088}:1088`，pin v2.2.1，restart unless-stopped）；pyproject +websocket-client；Makefile -Q 加 danmaku
 - [ ] 全量 pytest + ruff + mypy；commit `feat: live_chat_message 表与弹幕采集配置基建`
 
-## Task 3: 解析器 + 采集器（TDD）
+## Task 3: 解析器 + 采集器（TDD）✅
 
 - [ ] RED `test_danmaku_parse.py`：系统/业务分流；chat/gift/like/member/social 五类类型化抽取；uint64 字符串形态；msgId 缺失合成 id 的确定性（同消息两次解析同 id）；createTime 秒/毫秒双形态；恶意/缺字段消息不抛异常（chaos）
 - [ ] RED `test_danmaku_collector.py`（fake WS，零网络）：
@@ -123,7 +123,7 @@ INDEX (source_item_id, published_at)
   - 未配置（ws_base_url 空）→ no-op
 - [ ] GREEN：实现 parse.py + collector.py（连接工厂/时钟/sleep 全部可注入）；commit `feat: 弹幕采集 worker（WS 客户端/jsonl 落盘/advisory lock 防重）`
 
-## Task 4: 派发器 + ingest + beat 接线（TDD）
+## Task 4: 派发器 + ingest + beat 接线（TDD）✅
 
 - [ ] RED `test_danmaku_dispatch.py`：候选 = douyin + enabled + live_monitor_enabled + transcribing live 会话 + 可解析 room_id；mtime 新鲜 → 不派发；过期/无文件 → 派发；活跃数 ≥ max_collectors → 不派新；未配置 no-op；无 room_id 跳过
 - [ ] RED `test_danmaku_ingest.py`：jsonl → 行入库；重复 ingest 零新增（幂等）；半行（写入中截断）跳过不炸；文件名非 `\d+.jsonl` 忽略；item 不存在跳过；计数行字段（files/messages_inserted/messages_skipped）
@@ -143,3 +143,14 @@ INDEX (source_item_id, published_at)
 | jsonl 与 metadata_json 无竞态但采集器无心跳入库 | 观测靠文件 mtime + ingest 计数行 + 任务返回值 |
 | 单文件超大（超长直播） | 追加型写入无内存问题；ingest 全量重读（10MB 级）v1 可接受，增量 offset 挂账 |
 | 弹幕量级冲击 LLM 分析 | F9 明示不做——本计划止步入库，采样/聚合策略由 EPIC-04 设计 |
+
+
+---
+
+## 实施实录（2026-09-18/19，main 分支）
+
+- Task 2 commit `733652a`：live_chat_message 表（迁移 e6a1b2c3d4f5）+ settings 7 键 + compose douyinlive 服务 + danmaku 队列 + websocket-client 依赖。
+- Task 3/4 commit `d7ca163`：`services/danmaku/` 四件套 + 三个 celery 任务 + beat 2 条目 + 注册表/解析器/采集器/派发/ingest 测试（新 24 条）。
+- **真栈冒烟（00:23）**：真实 douyinLive 容器 + radar_test 库全链——采集器连 `ws://127.0.0.1:1088/ws/330698468897` 收 3 条系统消息（ACCOUNT_OFFLINE_NO_ROOM，服务端 ~30s 轮询节奏与文档一致）→ jsonl envelope 落盘 → 40s 后会话翻转 transcribed → `session_closed` 退出 → ingest 正确跳过非业务消息（inserted=0/skipped=3）→ 派发器候选查询正常。**冒烟抓到并修复 1 个真 bug**：collector 默认 session_factory 调用约定错（get_session_factory 需两段式调用），真实容器验证路径价值实证。
+- 全量门禁：**334 passed** / ruff clean / mypy clean（80 文件）。
+- **挂账（下一开播窗口）**：真实弹幕流（业务消息）实录校准——值守房间（大潘说股等，交易时段开播）首个 transcribing 会话期间观察 `danmaku_ingest_scan` 计数行 + psql 验收查询（README「直播弹幕采集」节）。fixture 按 proto schema 合成的业务消息字段若与实录有出入，仅影响 parse.py 字段映射（有 chaos 兜底不炸），校准成本 = 改测试 fixture。

@@ -1165,6 +1165,19 @@ platform-adapter-broken.md
 > 走外部解析服务、factory per-platform 分流（e92ec57），douyin 配置键见 `.env.example`，
 > 外部栈部署见 `infra/docker/docker-compose.douyin.yml` 与 README「抖音 Quickstart」。
 
+> **落地注记⑥（2026-09-18，Plan #5 `docs/superpowers/plans/2026-09-18-plan5-live-chat-capture.md`）**：
+> 直播观众语料（弹幕/礼物/点赞/进场/关注）采集落地——Plan #4「明示不做」边界项的拾起，
+> 采集窗口绑定录制会话（`item_type='live' AND status='transcribing'`，F1：首分片落盘前的
+> 弹幕不采集，挂账 V2 always-on）。外部服务 = jwwsjlm/douyinLive v2.2.1（本地 a_bogus 签名免浏览器，
+> WS 代理 `ws://…/ws/<room_id>` + 只读 HTTP API；上游重连/轮询/指纹轮换在其内部），
+> radar 侧 `services/danmaku/` 四件套：`collector.py`（pg advisory lock 防重 + jsonl 原始档案 +
+> 零 DB 写——避开与 live_ingest 的 metadata_json 整列覆盖竞态，F2）、`dispatch.py`
+> （mtime 心跳软闸 + max_collectors 容量）、`ingest.py`（单飞闸 + 幂等入库）、`parse.py`
+> （protojson uint64 字符串形态兼容 + msgId 缺失确定性合成 id，F5）。数据落
+> `live_chat_message` 表（迁移 e6a1b2c3d4f5），采集任务走独立 `danmaku` 队列（≤12h 长任务），
+> beat 条目 `dispatch-danmaku-collectors` / `ingest-danmaku-files`。真栈验证：douyinLive
+> 容器 + WS 系统消息实录（Task 1 决策记录）；真实弹幕样本冒烟挂下一开播窗口。
+
 ## RAD-LIVE-01 LiveAdapter
 
 接口：

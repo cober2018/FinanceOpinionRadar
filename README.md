@@ -186,6 +186,40 @@ docker compose -f infra/docker/docker-compose.douyin.yml up -d   # 3) 重启生�
 
 监控台（单入口）：`make build-web` 后由 API 一个端口同时服务页面与接口（如 http://localhost:8000/）；开发模式用 `make web`（Vite 热更）。四个页面：「总览」统计卡/直播间状态/引擎状态；「主播」账号表格（添加主播、视频监控与直播值守开关、主页/直播间双路配置编辑）；「视频库」全文搜索、转录正文抽屉、旧视频手动转写；「设置」安全（防风控）参数。终端版看板：`make live-status`。StreamCap（:5001）与 dtk（:8080）的管理页是内部运维工具，不面向使用者，其状态已聚合进「总览」页。——每个值守直播间一行（主播/在播态/录制器同步/最近会话/分片与转录段数/最近活动），数据取自 DB + recordings.json + StreamCap 日志（零额外抖音请求）。
 
+### 直播弹幕采集（Plan #5）
+
+开播值守期间自动采集直播间观众侧语料（弹幕/礼物/点赞/进场/关注），落 `live_chat_message` 表——**与 transcript（主播语音）严格分离**，是后续观众情绪分析的输入。采集走第三个外部容器 [jwwsjlm/douyinLive](https://github.com/jwwsjlm/douyinLive)（本地 a_bogus 签名、免浏览器；上游断线重连/未开播轮询/验证码指纹轮换由其内部处理），radar 侧三个 beat 任务：`dispatch_danmaku_collectors`（找进行中的直播会话 → 派采集任务）→ `collect_danmaku`（WS 收流 → jsonl 落盘，≤12h 长任务走独立 `danmaku` 队列）→ `ingest_danmaku_files`（jsonl → 幂等入库）。
+
+**采集窗口约定**：弹幕只采集「StreamCap 已录到分片」的会话（`item_type='live' AND status='transcribing'`）——开播后首个分片落盘前（约 5–10 分钟）的弹幕不采集，属 V1 已知边界。账号侧开关跟随「直播值守」（`live_monitor_enabled`）：关掉值守即同时关掉该账号的弹幕采集。
+
+启用三步（douyin 栈已在跑的前提下）：
+
+```bash
+# 1) 起 douyinLive 容器（已包含在 docker-compose.douyin.yml；手动跑等价于：
+docker run -d --name douyinlive --restart unless-stopped \
+  -p 127.0.0.1:1088:1088 ghcr.io/jwwsjlm/douyinlive:v2.2.1
+# 2) 探活（预期 ok:true，signProvider=local）
+curl -fsS localhost:1088/api/v1/health
+# 3) .env 取消注释并填写后重启 worker：
+#    DANMAKU_WS_BASE_URL=ws://localhost:1088
+#    DANMAKU_SINK_DIR=data/douyin/danmaku
+make worker-beat
+```
+
+验收——下一场直播结束后直接在库里看（DX-2A 模式）：
+
+```bash
+docker exec financeopinionradar-postgres-1 psql -U radar -d radar -c \
+  "SELECT msg_type, user_name, left(text,30) AS text, published_at \
+   FROM live_chat_message WHERE source_item_id=<会话id> ORDER BY id LIMIT 10;"
+# 原始档案（含未入库的全部消息类型）：
+ls data/douyin/danmaku/<YYYY-MM-DD>/   # <item_id>.jsonl，每行 = 服务端原文 envelope
+```
+
+诊断一条龙：`curl localhost:1088/api/v1/rooms/<room_id>/status`（douyinLive 侧房间状态：online/offline/not_found）→ `ls -la data/douyin/danmaku/*/`（jsonl mtime = 采集器心跳，30s 内新鲜即存活）→ worker 日志 grep `danmaku_`（dispatch/collect/ingest 计数行）。
+
+升级外部镜像：`docker-compose.douyin.yml` 改 tag → `docker compose -f infra/docker/docker-compose.douyin.yml pull douyinlive && docker compose -f infra/docker/docker-compose.douyin.yml up -d` → 冒烟同上第 2 步。签名被风控（`ROOM_STATUS_UNKNOWN` 持续）时优先升级镜像；仍不行切备选路线（Plan #5 决策记录）。
+
 ## 排障
 
 | 症状 | 原因 | 处理 |

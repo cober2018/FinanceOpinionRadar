@@ -88,10 +88,11 @@ def collect_danmaku(
     if not s.danmaku_ws_base_url or not s.danmaku_sink_dir:
         logger.info("danmaku_collect_noop", reason="danmaku 未配置")
         return {"noop": "danmaku 未配置"}
-    session_factory = session_factory or get_session_factory
+    # 注入约定：session_factory() → Session（默认两段式 get_session_factory()()，同 live_ingest）
+    factory = session_factory or (lambda: get_session_factory()())
     ws_factory = ws_factory or _default_ws_factory
 
-    session = session_factory()
+    session = factory()
     started = clock()
     try:
         locked = session.execute(
