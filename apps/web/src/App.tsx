@@ -900,6 +900,9 @@ const NAV = [
   { key: 'overview', label: '总览' },
   { key: 'accounts', label: '主播' },
   { key: 'library', label: '视频库' },
+  { key: 'viewpoints', label: '观点' },
+  { key: 'review', label: '复核队列' },
+  { key: 'jobs', label: '任务' },
   { key: 'settings', label: '设置' },
 ] as const
 

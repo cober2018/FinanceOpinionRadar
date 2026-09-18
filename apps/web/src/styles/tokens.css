@@ -1,0 +1,48 @@
+/* 设计 token（RAD-080）：唯一颜色/字号/圆角来源，页面禁止自写颜色 */
+:root {
+  --bg: #060708;
+  --card: #121419;
+  --card-2: #171a20;
+  --line: #262b33;
+  --line-soft: #1c2128;
+  --ink-900: #f0f3f7;
+  --ink-700: #d2d7de;
+  --ink-500: #a6adba;
+  --ink-400: #8b929e;
+  --ink-300: #667080;
+  --accent: #6ea0ff;
+  --accent-soft: rgba(110, 160, 255, 0.14);
+  --accent-deep: #8db2ff;
+  --live: #ff5c4d;
+  --live-soft: rgba(255, 92, 77, 0.13);
+  --ok: #3dcd8f;
+  --ok-soft: rgba(61, 205, 143, 0.13);
+  --warn: #e8a33d;
+  --warn-soft: rgba(232, 163, 61, 0.13);
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.35);
+  --font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  /* spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+}
+
+* { box-sizing: border-box; margin: 0; }
+
+html, body, #root { height: 100%; }
+
+body {
+  font: 14px/1.6 var(--font);
+  color: var(--ink-700);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font-family: inherit; }

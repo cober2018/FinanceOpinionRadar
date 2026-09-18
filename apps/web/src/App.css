@@ -510,3 +510,14 @@ input:focus, select:focus, textarea:focus {
   padding: 8px 12px;
   font-size: 13px;
 }
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.selected-row td {
+  background: var(--accent-soft) !important;
+}
