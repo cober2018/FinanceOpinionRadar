@@ -1197,7 +1197,7 @@ function SettingsPage() {
             {effective && <span className="muted">当前生效：{effective.douyin_discover_max_pages} 页</span>}
           </label>
           <label className="field">
-            代理池（每行一条 http/socks5 URL；按「身份↔出口稳定绑定」使用，勿按请求轮换）
+            代理池（每行一条 http/socks5 URL）——已接入媒体下载：同账号恒走同一出口（稳定绑定），失败自动冷却 10 分钟；留空则直连
             <textarea rows={5} value={pool} onChange={(e) => setPool(e.target.value)} placeholder={'http://user:pass@host:port\nsocks5://host:port'} />
           </label>
           <div>

@@ -180,6 +180,8 @@ docker compose -f infra/docker/docker-compose.douyin.yml up -d   # 3) 重启生�
 # 4) 升级后复查：/api/setup/status 仍 initialized:true；必要时重跑 Quickstart 第 4 步补身份池
 ```
 
+代理池：设置页「安全 → 代理池」每行一条 http/socks5 地址，媒体下载按账号稳定绑定出口（同账号恒走同一代理，失败冷却 10 分钟自动剔除，池空/全冷却直连）。注意：**抖音 CDN 403 是 IP 级限速**，浏览器能看是因为浏览器带完整指纹与 cookie 且频率低；配静态住宅代理后各账号走不同出口即互不影响。
+
 诊断一条龙：`curl $DOUYIN_API_BASE_URL/docs`（dtk 探活）→ `ls data/douyin/live_segments/douyin/`（分片观测）→ worker 日志 grep `recorder_sync_`（值守桥）与 `sessions_active`（ingest）。
 
 监控台（单入口）：`make build-web` 后由 API 一个端口同时服务页面与接口（如 http://localhost:8000/）；开发模式用 `make web`（Vite 热更）。四个页面：「总览」统计卡/直播间状态/引擎状态；「主播」账号表格（添加主播、视频监控与直播值守开关、主页/直播间双路配置编辑）；「视频库」全文搜索、转录正文抽屉、旧视频手动转写；「设置」安全（防风控）参数。终端版看板：`make live-status`。StreamCap（:5001）与 dtk（:8080）的管理页是内部运维工具，不面向使用者，其状态已聚合进「总览」页。——每个值守直播间一行（主播/在播态/录制器同步/最近会话/分片与转录段数/最近活动），数据取自 DB + recordings.json + StreamCap 日志（零额外抖音请求）。

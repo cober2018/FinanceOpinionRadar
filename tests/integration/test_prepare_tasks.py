@@ -47,7 +47,7 @@ def sent(monkeypatch: pytest.MonkeyPatch):
 def test_prepare_task_runs_pipeline(db_session, task_session_factory, monkeypatch):
     item = _make_discovered_item(db_session)
     db_session.commit()  # 任务用独立 session，先落库
-    monkeypatch.setattr(worker_tasks, "build_adapter", lambda platform=None: FakeAdapter(_resolved()))
+    monkeypatch.setattr(worker_tasks, "build_adapter", lambda platform=None, **kw: FakeAdapter(_resolved()))
     monkeypatch.setattr("app.services.storage.get_storage", lambda: FakeStorage())
     monkeypatch.setattr(
         "app.services.transcription.get_transcription_provider", lambda: FakeProvider()
@@ -125,7 +125,7 @@ def test_prepare_task_routes_douyin_platform(db_session, task_session_factory, m
     db_session.commit()
     seen: dict = {}
 
-    def fake_build(platform=None):
+    def fake_build(platform=None, **kw):
         seen["platform"] = platform
         return FakeAdapter(_resolved())
 

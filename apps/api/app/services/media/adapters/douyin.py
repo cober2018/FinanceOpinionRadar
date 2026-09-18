@@ -40,6 +40,8 @@ class DouyinAdapter:
         discover_max_pages: int = 3,
         page_size: int = 20,
         http: httpx.Client | None = None,
+        proxy: str | None = None,
+        proxy_key: str | None = None,
     ) -> None:
         self._client = client
         self._allowlist = allowlist
@@ -48,6 +50,9 @@ class DouyinAdapter:
         self._page_size = page_size
         # 短链跟随与 CDN 下载共用；测试注入 MockTransport
         self._http = http or httpx.Client(timeout=60, follow_redirects=True)
+        # 代理池（设置页「安全」）：下载走稳定出口；None = 直连
+        self._proxy = proxy
+        self._proxy_key = proxy_key
 
     # --- 契约实现 ---
 
@@ -101,6 +106,11 @@ class DouyinAdapter:
     ) -> SubtitleResult | None:
         return None  # 抖音 VOD 无字幕轨（prepare 编排自动走 ASR 兜底）
 
+    def _download_client(self, proxy: str | None) -> httpx.Client:
+        if not proxy:
+            return self._http
+        return httpx.Client(proxy=proxy, timeout=300, follow_redirects=True)
+
     def download_media(self, item: ItemRef, workdir: str | Path) -> DownloadResult:
         data = self._client.fetch_one_video(item.external_item_id)
         media = data.get("media") or {}
@@ -112,14 +122,21 @@ class DouyinAdapter:
             )
         ensure_allowed_url(url, self._cdn_allowlist)  # 伪造直链指向内网 → 此处拒绝
         target = Path(workdir) / f"{item.external_item_id}.mp4"
+        from app.services.proxy_pool import get_proxy_pool
+
+        pool = get_proxy_pool()
+        proxy = self._proxy
         try:
-            with self._http.stream("GET", url) as resp:
+            with self._download_client(proxy).stream("GET", url) as resp:
                 if resp.status_code != 200:
+                    pool.report_failure(proxy, f"HTTP {resp.status_code}")
                     raise AdapterProcessError(f"dtk CDN HTTP {resp.status_code}: 下载失败")
                 with target.open("wb") as f:
                     for chunk in resp.iter_bytes():
                         f.write(chunk)
+            pool.report_success(proxy)
         except httpx.HTTPError as exc:
+            pool.report_failure(proxy, str(exc))
             raise AdapterProcessError(f"dtk CDN 下载失败: {exc}") from exc
         return DownloadResult(local_path=str(target), size_bytes=target.stat().st_size)
 

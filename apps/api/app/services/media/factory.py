@@ -42,7 +42,11 @@ def detect_platform(url: str) -> str:
 
 @lru_cache
 def get_media_adapter(
-    platform: str | None = None, *, discover_max_pages: int | None = None
+    platform: str | None = None,
+    *,
+    discover_max_pages: int | None = None,
+    proxy: str | None = None,
+    proxy_key: str | None = None,
 ) -> MediaSourceAdapter:
     s = get_settings()
     if platform == "douyin":
@@ -59,6 +63,8 @@ def get_media_adapter(
             discover_max_pages=discover_max_pages
             if discover_max_pages is not None
             else s.douyin_discover_max_pages,
+            proxy=proxy,
+            proxy_key=proxy_key,
         )
     return GenericYtDlpAdapter(
         binary=s.ytdlp_binary,

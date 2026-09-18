@@ -16,12 +16,21 @@ logger = structlog.get_logger(__name__)
 
 
 def build_adapter(
-    platform: str | None = None, *, discover_max_pages: int | None = None
+    platform: str | None = None,
+    *,
+    discover_max_pages: int | None = None,
+    proxy: str | None = None,
+    proxy_key: str | None = None,
 ) -> MediaSourceAdapter:
     # F1：工厂在 services/media，worker 不依赖 app.api；platform=douyin 走外部 dtk
     from app.services.media.factory import get_media_adapter
 
-    return get_media_adapter(platform, discover_max_pages=discover_max_pages)
+    return get_media_adapter(
+        platform,
+        discover_max_pages=discover_max_pages,
+        proxy=proxy,
+        proxy_key=proxy_key,
+    )
 
 
 def _account_platform(session, account_id: int) -> str | None:
@@ -127,7 +136,18 @@ def prepare_source_item(item_id: int) -> dict:
     session = factory()
     try:
         try:
-            adapter = build_adapter(_item_platform(session, item_id))
+            from app.db.models import SourceItem
+            from app.services.proxy_pool import get_proxy_pool
+
+            item_row = session.get(SourceItem, item_id)
+            account_id = item_row.source_account_id if item_row else None
+            # 代理池稳定绑定：同账号恒走同一出口（设置页「安全 → 代理池」配置）
+            proxy = get_proxy_pool().pick(session, str(account_id or item_id))
+            adapter = build_adapter(
+                _item_platform(session, item_id),
+                proxy=proxy,
+                proxy_key=str(account_id or item_id),
+            )
         except AdapterError as exc:
             # douyin 未配置等构造期失败：与其他 prepare 失败同语义落 last_error（F8）
             from app.services.preparation import record_stage_failure
