@@ -1,6 +1,6 @@
 """转录分段器单测（EPIC-04 RAD-040）：目标时长/边界/不切段/overlap 标记。"""
 
-from app.domain.transcript.chunker import chunk_transcript, Chunk
+from app.domain.transcript.chunker import Chunk, chunk_transcript
 
 
 def _seg(i: int, start_ms: int, end_ms: int, text: str = "x") -> dict:

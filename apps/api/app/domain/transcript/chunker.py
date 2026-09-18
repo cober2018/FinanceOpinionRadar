@@ -36,7 +36,10 @@ def chunk_transcript(
     groups: list[list[dict]] = []
     current: list[dict] = []
     for seg in ordered:
-        span = seg["end_ms"] - current[0]["start_ms"] if current else seg["end_ms"] - seg["start_ms"]
+        if current:
+            span = seg["end_ms"] - current[0]["start_ms"]
+        else:
+            span = seg["end_ms"] - seg["start_ms"]
         if current and span > max_ms:
             groups.append(current)
             current = [seg]
