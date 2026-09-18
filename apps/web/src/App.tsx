@@ -648,6 +648,36 @@ function LibraryPage() {
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [drawer, setDrawer] = useState<number | null>(null)
   const [drillAccount, setDrillAccount] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const allSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.id))
+
+  const batchDelete = async () => {
+    const n = window.confirm(
+      `确定删除选中的 ${selectedIds.size} 条内容？转录与观点将物理删除，且不会重新导入。`,
+    )
+    if (!n) return
+    setError(null)
+    try {
+      await api('/source-items/batch-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids: [...selectedIds] }),
+      })
+      setSelectedIds(new Set())
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   const reload = useCallback(() => {
     const params = new URLSearchParams()
@@ -831,11 +861,25 @@ function LibraryPage() {
           ))}
         </select>
         <button className="ghost" onClick={reload}>刷新</button>
+        {selectedIds.size > 0 && (
+          <button className="danger" onClick={batchDelete}>
+            删除选中（{selectedIds.size}）
+          </button>
+        )}
       </div>
 
       <table className="board">
         <thead>
           <tr>
+            <th>
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={() =>
+                  setSelectedIds(allSelected ? new Set() : new Set(rows.map((r) => r.id)))
+                }
+              />
+            </th>
             <th>主播</th>
             <th>平台</th>
             <th>标题</th>
@@ -853,6 +897,13 @@ function LibraryPage() {
               className={r.status === 'transcribed' ? 'clickable' : undefined}
               onClick={() => r.status === 'transcribed' && setDrawer(r.id)}
             >
+              <td onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(r.id)}
+                  onChange={() => toggleSelect(r.id)}
+                />
+              </td>
               <td>{r.display_name}</td>
               <td>{r.platform}</td>
               <td className="title-cell">{r.title ?? '-'}</td>

@@ -288,3 +288,31 @@ def delete_source_item(item_id: int, session: DbDep):
     session.delete(item)
     session.commit()
     return {"deleted": item_id, "tombstoned": True}
+
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[int]
+
+
+@router.post("/batch-delete", status_code=200)
+def batch_delete_items(body: BatchDeleteRequest, session: DbDep):
+    """批量物理删除（视频库多选）：逐条级联 + 墓碑，返回成功/失败清单。"""
+    from app.db.models import DeletedItemRef, SourceItem
+
+    deleted: list[int] = []
+    missing: list[int] = []
+    for item_id in body.ids:
+        item = session.get(SourceItem, item_id)
+        if item is None:
+            missing.append(item_id)
+            continue
+        session.add(
+            DeletedItemRef(
+                source_account_id=item.source_account_id,
+                external_item_id=item.external_item_id,
+            )
+        )
+        session.delete(item)
+        deleted.append(item_id)
+    session.commit()
+    return {"deleted": deleted, "missing": missing}
