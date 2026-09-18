@@ -23,6 +23,10 @@ _INGEST_LOCK_KEY = 861_205_301
 _BATCH_SIZE = 500
 _DATE_DIR_LEN = 10  # YYYY-MM-DD
 
+# 产品裁决（2026-09-19 用户）：只入库弹幕正文（观众发言）；进场/点赞/礼物/粉丝团等
+# 事件仅留 jsonl 原始档案——舆论分析以发言文本为语料，事件类无分析价值。
+STORED_METHODS = frozenset({"WebcastChatMessage"})
+
 
 def parse_envelope_line(line: str):
     """jsonl 档案行 → DanmakuRecord；坏行/半行/不支持类型 → None（仅计数）。
@@ -47,6 +51,8 @@ def parse_envelope_line(line: str):
         return None
     record = parse_business(doc)
     if record is None:
+        return None
+    if record.msg_type not in STORED_METHODS:
         return None
     if record.published_at is None and isinstance(envelope.get("received_at"), str):
         try:

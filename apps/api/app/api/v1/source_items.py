@@ -135,6 +135,22 @@ def list_source_items(
     if status is not None:
         stmt = stmt.where(SourceItem.status == status)
     rows = session.execute(stmt).all()
+
+    # 弹幕计数（Plan #5）：单条聚合查询，避免行级 N+1
+    from sqlalchemy import func
+
+    from app.db.models import LiveChatMessage
+
+    item_ids = [item.id for item, _account, _name in rows]
+    chat_counts: dict[int, int] = {
+        item_id: count
+        for item_id, count in session.query(
+            LiveChatMessage.source_item_id, func.count(LiveChatMessage.id)
+        )
+        .filter(LiveChatMessage.source_item_id.in_(item_ids or [0]))
+        .group_by(LiveChatMessage.source_item_id)
+        .all()
+    }
     return [
         {
             "id": item.id,
@@ -149,6 +165,7 @@ def list_source_items(
             "published_at": item.published_at,
             "backfill": bool((item.metadata_json or {}).get("backfill")),
             "progress": (item.metadata_json or {}).get("progress"),
+            "chat_count": chat_counts.get(item.id, 0),
         }
         for item, account, creator_name in rows
     ]
@@ -212,6 +229,35 @@ def get_transcript(item_id: int, session: DbDep):
                 "text": s.text,
             }
             for s in segments
+        ],
+    }
+
+
+@router.get("/{item_id}/chat-messages")
+def get_chat_messages(item_id: int, session: DbDep, limit: int = 500):
+    """直播弹幕详情（视频库抽屉，Plan #5）：观众发言正文，时间升序。"""
+    from app.db.models import LiveChatMessage, SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    rows = (
+        session.query(
+            LiveChatMessage.user_name,
+            LiveChatMessage.text,
+            LiveChatMessage.published_at,
+        )
+        .filter(LiveChatMessage.source_item_id == item_id)
+        .order_by(LiveChatMessage.id)
+        .limit(min(limit, 2000))
+        .all()
+    )
+    return {
+        "item_id": item_id,
+        "title": item.title,
+        "total": len(rows),
+        "messages": [
+            {"user_name": u, "text": t, "published_at": p} for u, t, p in rows
         ],
     }
 

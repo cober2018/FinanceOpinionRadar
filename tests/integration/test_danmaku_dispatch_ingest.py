@@ -176,17 +176,18 @@ def test_ingest_parses_dedupes_and_counts(migrated_db, db_session, tmp_path):
     )
     out = danmaku_ingest.ingest_danmaku_files(db_session, settings=_settings(tmp_path))
     assert out["files"] == 1
-    assert out["messages_inserted"] == 2
-    assert out["messages_skipped"] == 3  # 不支持类型 + 坏行 + 半行（批内重复不算 skip）
+    # 产品裁决（2026-09-19）：只入库弹幕（chat）；member/不支持类型/坏行/半行全部 skip
+    assert out["messages_inserted"] == 1
+    assert out["messages_skipped"] == 4
 
     rows = db_session.query(LiveChatMessage).order_by(LiveChatMessage.id).all()
-    assert [r.external_msg_id for r in rows] == ["9001", "9002"]
+    assert [r.external_msg_id for r in rows] == ["9001"]
     assert rows[0].text == "主播怎么看明天的大盘？"
 
     # 重放幂等（F5）：同文件再扫一遍零新增
     again = danmaku_ingest.ingest_danmaku_files(db_session, settings=_settings(tmp_path))
     assert again["messages_inserted"] == 0
-    assert db_session.query(LiveChatMessage).count() == 2
+    assert db_session.query(LiveChatMessage).count() == 1
 
 
 def test_ingest_skips_file_without_item(migrated_db, db_session, tmp_path):

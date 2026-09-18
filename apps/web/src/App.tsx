@@ -38,6 +38,18 @@ type LibraryItem = {
   published_at: string | null
   backfill: boolean
   progress: { phase: string; detail: string; at: string } | null
+  chat_count: number
+}
+
+type DanmakuStats = { total: number; sessions: number; latest_message_at: string | null }
+
+type DanmakuMessage = { user_name: string | null; text: string | null; published_at: string | null }
+
+type DanmakuDetail = {
+  item_id: number
+  title: string | null
+  total: number
+  messages: DanmakuMessage[]
 }
 
 type TranscriptRow = { sequence_no: number; start_ms: number; end_ms: number; text: string }
@@ -166,6 +178,7 @@ function OverviewPage({ go }: { go: (tab: string) => void }) {
   const [recent, setRecent] = useState<LibraryItem[]>([])
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [contents, setContents] = useState(0)
+  const [chatTotal, setChatTotal] = useState(0)
 
   useEffect(() => {
     api<{ stats: { transcribed_contents: number; live_segments: number } }>('/dashboard')
@@ -179,6 +192,9 @@ function OverviewPage({ go }: { go: (tab: string) => void }) {
       .then(setRecent)
       .catch(() => {})
     api<SystemStatus>('/system/status').then(setStatus).catch(() => {})
+    api<DanmakuStats>('/danmaku/stats')
+      .then((s) => setChatTotal(s.total))
+      .catch(() => {})
   }, [])
 
   const liveCount = monitors.filter((m) => m.is_live === true).length
@@ -207,6 +223,10 @@ function OverviewPage({ go }: { go: (tab: string) => void }) {
         <div className="stat-card">
           <div className="stat-num">{totalSegs}</div>
           <div className="stat-label">直播转录段落</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-num">{chatTotal}</div>
+          <div className="stat-label">直播弹幕</div>
         </div>
       </div>
 
@@ -685,6 +705,7 @@ function LibraryPage() {
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [drawer, setDrawer] = useState<number | null>(null)
+  const [chatDrawer, setChatDrawer] = useState<number | null>(null)
   const [drillAccount, setDrillAccount] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
@@ -957,6 +978,11 @@ function LibraryPage() {
               <td>{r.duration_ms ? `${Math.round(r.duration_ms / 60000)} 分` : '-'}</td>
               <td>{r.published_at ? new Date(r.published_at).toLocaleDateString() : '-'}</td>
               <td onClick={(e) => e.stopPropagation()}>
+                {r.chat_count > 0 && (
+                  <button className="ghost" onClick={() => setChatDrawer(r.id)}>
+                    弹幕（{r.chat_count}）
+                  </button>
+                )}{' '}
                 {r.status === 'discovered' || r.status === 'failed' ? (
                   <button disabled={busyId === r.id} onClick={() => transcribe(r.id)}>
                     {busyId === r.id ? '派发中…' : '转写'}
@@ -986,6 +1012,9 @@ function LibraryPage() {
       </p>
 
       {drawer !== null && <TranscriptDrawer itemId={drawer} onClose={() => setDrawer(null)} />}
+      {chatDrawer !== null && (
+        <DanmakuDrawer itemId={chatDrawer} onClose={() => setChatDrawer(null)} />
+      )}
     </div>
   )
 }
@@ -1023,6 +1052,442 @@ function TranscriptDrawer(props: { itemId: number; onClose: () => void }) {
           {data && data.segments.length === 0 && <p className="muted pad">无分段（可能是空音频或纯音乐）</p>}
         </div>
       </div>
+    </div>
+  )
+}
+
+function fmtClock(iso: string | null): string {
+  if (!iso) return '--:--'
+  const d = new Date(iso)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function DanmakuDrawer(props: { itemId: number; onClose: () => void }) {
+  const [data, setData] = useState<DanmakuDetail | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api<DanmakuDetail>(`/source-items/${props.itemId}/chat-messages`)
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+  }, [props.itemId])
+
+  return (
+    <div className="drawer-mask" onClick={props.onClose}>
+      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head">
+          <div>
+            <div className="drawer-title">{data?.title ?? `内容 #${props.itemId}`}</div>
+            <div className="muted">直播弹幕 · {data?.total ?? 0} 条</div>
+          </div>
+          <button className="ghost" onClick={props.onClose}>关闭</button>
+        </div>
+        {error && <p className="error pad">{error}</p>}
+        <div className="drawer-body">
+          {data?.messages.map((m, i) => (
+            <div key={i} className="ts-row">
+              <span className="ts-time">{fmtClock(m.published_at)}</span>
+              <span className="ts-text">
+                <b>{m.user_name ?? '匿名'}</b>
+                {m.text ? `：${m.text}` : ''}
+              </span>
+            </div>
+          ))}
+          {data && data.messages.length === 0 && (
+            <p className="muted pad">该会话暂无弹幕入库（采集窗口或未开播）</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+/* ---------------- 观点 / 复核队列 ---------------- */
+
+type VPRow = {
+  id: number
+  creator_name: string | null
+  topic_name: string | null
+  entity_name: string | null
+  claim: string
+  stance: string
+  horizon: string | null
+  confidence: number
+  importance: number
+  as_of_date: string | null
+  verification_status: string
+  source_item_id: number
+}
+
+const STANCE_CN: Record<string, string> = {
+  strong_bullish: '强烈看多',
+  bullish: '看多',
+  neutral: '中性',
+  bearish: '看空',
+  strong_bearish: '强烈看空',
+  unclear: '不明',
+}
+
+const VP_STATUS_CN: Record<string, string> = {
+  candidate: '候选',
+  needs_review: '待复核',
+  confirmed: '已确认',
+  rejected: '已驳回',
+}
+
+function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
+  const [rows, setRows] = useState<VPRow[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [sort, setSort] = useState('id')
+  const [order, setOrder] = useState<'asc' | 'desc'>('desc')
+  const [stanceF, setStanceF] = useState('')
+  const [statusF, setStatusF] = useState(mode === 'review' ? 'needs_review' : '')
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<number | null>(null)
+  const [selected, setSelected] = useState<number | null>(null)
+  const [drawer, setDrawer] = useState<{ id: number; sourceUrl: string | null } | null>(null)
+
+  const pageSize = 20
+
+  const reload = useCallback(() => {
+    const params = new URLSearchParams()
+    params.set('page', String(page))
+    params.set('page_size', String(pageSize))
+    params.set('sort', sort)
+    params.set('order', order)
+    if (stanceF) params.set('stance', stanceF)
+    if (statusF) params.set('status', statusF)
+    window.history.replaceState(null, '', `?${params.toString()}`)
+    api<{ items: VPRow[]; total: number }>(`/viewpoints?${params}`)
+      .then((d) => {
+        setRows(d.items)
+        setTotal(d.total)
+      })
+      .catch((e: Error) => setError(e.message))
+  }, [page, sort, order, stanceF, statusF])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (selected == null) return
+      const row = rows.find((r) => r.id === selected)
+      if (!row) return
+      const reviewable = row.verification_status === 'needs_review' || row.verification_status === 'candidate'
+      if ((e.key === 'a' || e.key === 'A') && reviewable) review(selected, 'confirm')
+      if ((e.key === 'r' || e.key === 'R') && reviewable) doReject(selected)
+      if (e.key === 'e' || e.key === 'E')
+        setDrawer({ id: row.id, sourceUrl: row.source_item_id ? `/console/` : null })
+      if (e.key === 'Escape') setSelected(null)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  })
+
+  const review = async (id: number, action: 'confirm' | 'reject', reason?: string) => {
+    setBusyId(id)
+    setError(null)
+    try {
+      const q = reason ? `?reason=${encodeURIComponent(reason)}` : ''
+      await api(`/viewpoints/${id}/${action}${q}`, { method: 'POST' })
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const doReject = (id: number) => {
+    const reason = window.prompt('驳回原因（必填）：')
+    if (reason && reason.trim()) review(id, 'reject', reason.trim())
+  }
+
+  return (
+    <div className="stack">
+      {error && <p className="error">{error}</p>}
+      <div className="toolbar">
+        <h3 className="toolbar-title">
+          {mode === 'review' ? `复核队列（${total}）` : `观点（${total}）`}
+        </h3>
+        <select value={stanceF} onChange={(e) => { setStanceF(e.target.value); setPage(1) }}>
+          <option value="">全部立场</option>
+          {Object.entries(STANCE_CN).map(([v, cn]) => (
+            <option key={v} value={v}>{cn}</option>
+          ))}
+        </select>
+        {mode === 'all' && (
+          <select value={statusF} onChange={(e) => { setStatusF(e.target.value); setPage(1) }}>
+            <option value="">全部状态</option>
+            {Object.entries(VP_STATUS_CN).map(([v, cn]) => (
+              <option key={v} value={v}>{cn}</option>
+            ))}
+          </select>
+        )}
+        <select value={`${sort}:${order}`} onChange={(e) => {
+          const [s, o] = e.target.value.split(':')
+          setSort(s)
+          setOrder(o as 'asc' | 'desc')
+        }}>
+          <option value="id:desc">最新</option>
+          <option value="confidence:desc">置信度↓</option>
+          <option value="importance:desc">重要性↓</option>
+          <option value="as_of_date:desc">日期↓</option>
+        </select>
+      </div>
+      <table className="board">
+        <thead>
+          <tr>
+            <th>主播</th>
+            <th>观点</th>
+            <th>立场</th>
+            <th>主题</th>
+            <th>标的</th>
+            <th>置信</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr
+              key={r.id}
+              className={selected === r.id ? 'selected-row' : undefined}
+              onClick={() => setSelected(r.id)}
+            >
+              <td>{r.creator_name}</td>
+              <td className="title-cell" title={r.claim}>{r.claim}</td>
+              <td>{STANCE_CN[r.stance] ?? r.stance}</td>
+              <td>{r.topic_name ?? <span className="muted">-</span>}</td>
+              <td>{r.entity_name ?? <span className="muted">-</span>}</td>
+              <td>{r.confidence.toFixed(2)}</td>
+              <td>
+                <span className={`badge ${r.verification_status === 'confirmed' ? 'ok' : r.verification_status === 'rejected' ? 'err' : 'run'}`}>
+                  {VP_STATUS_CN[r.verification_status] ?? r.verification_status}
+                </span>
+              </td>
+              <td onClick={(e) => e.stopPropagation()}>
+                {(r.verification_status === 'needs_review' || r.verification_status === 'candidate') && (
+                  <>
+                    <button className="ghost" disabled={busyId === r.id} onClick={() => review(r.id, 'confirm')}>
+                      通过
+                    </button>
+                    <button className="ghost" disabled={busyId === r.id} onClick={() => doReject(r.id)}>
+                      驳回
+                    </button>
+                  </>
+                )}
+                <button
+                  className="ghost"
+                  onClick={() =>
+                    setDrawer({ id: r.id, sourceUrl: null })
+                  }
+                >
+                  证据
+                </button>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={8} className="muted pad">
+                {mode === 'review'
+                  ? '复核队列为空（自动复核通过的不进队列）'
+                  : '暂无观点：先在视频库转写内容并点「抽取观点」'}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      <div className="pager">
+        <button disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</button>
+        <span className="muted">第 {page} 页 / 共 {Math.max(1, Math.ceil(total / pageSize))} 页</span>
+        <button disabled={page * pageSize >= total} onClick={() => setPage(page + 1)}>下一页</button>
+      </div>
+      <p className="hint">
+        复核操作：点击行选中后按 <b>A</b> 通过 / <b>R</b> 驳回（驳回必填原因）/ <b>E</b> 查证据，ESC 取消选中。
+      </p>
+      {drawer !== null && (
+        <ViewpointEvidenceDrawer itemId={drawer.id} onClose={() => setDrawer(null)} onReviewed={reload} />
+      )}
+    </div>
+  )
+}
+
+function ViewpointEvidenceDrawer(props: {
+  itemId: number
+  onClose: () => void
+  onReviewed: () => void
+}) {
+  const [data, setData] = useState<{
+    title: string | null
+    display_name: string
+    segments: { sequence_no: number; start_ms: number; end_ms: number; text: string }[]
+  } | null>(null)
+  const [vpRows, setVpRows] = useState<
+    { viewpoint_id: number; claim: string; stance: string; verification_status: string; evidences: { segment_id: number; start_ms: number; end_ms: number; text: string }[] }[]
+  >([])
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api<{ title: string | null; display_name: string; segments: { sequence_no: number; start_ms: number; end_ms: number; text: string }[] }>(
+      `/source-items/${props.itemId}/transcript`,
+    )
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+    api<{ viewpoint_id: number; claim: string; stance: string; verification_status: string; evidences: { segment_id: number; start_ms: number; end_ms: number; text: string }[] }[]>(
+      `/source-items/${props.itemId}/viewpoint-evidence`,
+    )
+      .then(setVpRows)
+      .catch(() => {})
+  }, [props.itemId])
+
+  const review = async (action: 'confirm' | 'reject') => {
+    try {
+      await api(`/viewpoints/${props.itemId}/${action}`, { method: 'POST' })
+      props.onClose()
+      props.onReviewed()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  return (
+    <div className="drawer-mask" onClick={props.onClose}>
+      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head">
+          <div>
+            <div className="drawer-title">{data?.title ?? `内容 #${props.itemId}`}</div>
+            <div className="muted">{data?.display_name} · {data?.segments.length ?? 0} 段</div>
+          </div>
+          <button className="ghost" onClick={props.onClose}>关闭</button>
+        </div>
+        {error && <p className="error pad">{error}</p>}
+        <div className="drawer-body">
+          {vpRows.map((vp) => (
+            <div key={vp.viewpoint_id} style={{ marginBottom: 14 }}>
+              <div style={{ fontWeight: 600, color: 'var(--ink-900)' }}>
+                {vp.claim} <span className="badge">{STANCE_CN[vp.stance] ?? vp.stance}</span>{' '}
+                <span className="badge">{VP_STATUS_CN[vp.verification_status] ?? vp.verification_status}</span>{' '}
+                <button className="ghost" onClick={() => review('confirm')}>通过</button>{' '}
+                <button className="ghost" onClick={() => review('reject')}>驳回</button>
+              </div>
+              {vp.evidences.map((ev) => (
+                <div key={ev.segment_id} className="ts-row">
+                  <span className="ts-time">{fmtTs(ev.start_ms)}–{fmtTs(ev.end_ms)}</span>
+                  <span className="ts-text">{ev.text}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {vpRows.length === 0 && data && (
+            <>
+              {data.segments.map((s) => (
+                <div key={s.sequence_no} className="ts-row">
+                  <span className="ts-time">{fmtTs(s.start_ms)}–{fmtTs(s.end_ms)}</span>
+                  <span className="ts-text">{s.text}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- 任务中心 ---------------- */
+
+type JobRow = {
+  id: number
+  job_type: string
+  status: string
+  source_item_id: number | null
+  attempt: number
+  trace_id: string | null
+  duration_ms: number | null
+  error_code: string | null
+  error_message: string | null
+  created_at: string | null
+}
+
+const JOB_STATUS_CN: Record<string, string> = {
+  success: '成功',
+  failed: '失败',
+  running: '运行中',
+  queued: '排队中',
+}
+
+const JOB_TYPE_CN: Record<string, string> = {
+  prepare_media: '转写',
+  extract_viewpoints: '观点抽取',
+}
+
+function JobCenterPage() {
+  const [rows, setRows] = useState<JobRow[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(() => {
+    api<JobRow[]>('/jobs?limit=100')
+      .then(setRows)
+      .catch((e: Error) => setError(e.message))
+  }, [])
+
+  useEffect(() => {
+    reload()
+    const t = setInterval(reload, 15_000)
+    return () => clearInterval(t)
+  }, [reload])
+
+  return (
+    <div className="stack">
+      {error && <p className="error">{error}</p>}
+      <div className="toolbar">
+        <h3 className="toolbar-title">任务执行记录（{rows.length}）</h3>
+        <button className="ghost" onClick={reload}>刷新</button>
+      </div>
+      <table className="board">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>任务</th>
+            <th>状态</th>
+            <th>内容</th>
+            <th>耗时</th>
+            <th>attempt</th>
+            <th>错误</th>
+            <th>时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <td>{r.id}</td>
+              <td>{JOB_TYPE_CN[r.job_type] ?? r.job_type}</td>
+              <td>
+                <span className={`badge ${r.status === 'success' ? 'ok' : r.status === 'failed' ? 'err' : 'run'}`}>
+                  {JOB_STATUS_CN[r.status] ?? r.status}
+                </span>
+              </td>
+              <td>{r.source_item_id ? `内容 ${r.source_item_id}` : '-'}</td>
+              <td>{r.duration_ms != null ? `${(r.duration_ms / 1000).toFixed(1)}s` : '-'}</td>
+              <td>{r.attempt}</td>
+              <td className="title-cell">{r.error_message ?? '-'}</td>
+              <td>{fmtAgo(r.created_at)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && !error && (
+            <tr><td colSpan={8} className="muted pad">暂无任务记录</td></tr>
+          )}
+        </tbody>
+      </table>
+      <p className="hint">当前记录：转写与观点抽取任务。页面每 15 秒自动刷新。</p>
     </div>
   )
 }
@@ -1278,6 +1743,9 @@ function App() {
         {tab === 'overview' && <OverviewPage go={(t) => setTab(t as Tab)} />}
         {tab === 'accounts' && <AccountsPage />}
         {tab === 'library' && <LibraryPage />}
+        {tab === 'viewpoints' && <ViewpointsPage mode="all" />}
+        {tab === 'review' && <ViewpointsPage mode="review" />}
+        {tab === 'jobs' && <JobCenterPage />}
         {tab === 'settings' && <SettingsPage />}
       </main>
     </div>
