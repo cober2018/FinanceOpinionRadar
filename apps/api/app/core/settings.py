@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     # 留空默认值用于区分“显式提供”与“未提供或留空”：非 dev 环境未提供即拒绝启动
     database_url: str = ""
     redis_url: str = "redis://localhost:6379/0"
+    # --- 防风控：出口并发闸（2026-09-19 与用户对齐规则）---
+    # 每个出口 IP 同时最多 N 个抖音网络操作（dtk 解析 + CDN 下载共用闸）；
+    # 配置 M 个代理 IP 后总容量 ≈ (1 直连 + M) × N。0 = 关闭闸门不限制。
+    egress_max_concurrency: int = 3
+    # 位次 TTL：worker 崩溃遗留的闸位自动过期回收（须大于最慢单次下载）
+    egress_slot_ttl_sec: int = 900
     s3_endpoint_url: str = "http://localhost:9000"
     s3_access_key: str = "radar"
     s3_secret_key: str = "radar-secret"

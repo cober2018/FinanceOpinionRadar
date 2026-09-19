@@ -152,13 +152,26 @@ class DouyinAdapter:
             )
         ensure_allowed_url(url, self._cdn_allowlist)  # 伪造直链指向内网 → 此处拒绝
         target = Path(workdir) / f"{item.external_item_id}.mp4"
+        from app.core.settings import get_settings
+        from app.services.download_gate import EgressBusyError, get_download_gate
         from app.services.proxy_pool import get_proxy_pool
 
         pool = get_proxy_pool()
         proxy = self._proxy
+        s = get_settings()
+        limit = s.egress_max_concurrency
+        gate = get_download_gate() if limit > 0 else None
         try:
-            self._download(url, target, proxy)
+            if gate is not None:
+                with gate.slot(
+                    proxy or "direct", limit=limit, ttl_sec=s.egress_slot_ttl_sec
+                ):
+                    self._download(url, target, proxy)
+            else:
+                self._download(url, target, proxy)
             pool.report_success(proxy)
+        except EgressBusyError:
+            raise  # 闸排队超时不是代理的错，不进冷却记账
         except httpx.HTTPError as exc:
             pool.report_failure(proxy, str(exc))
             raise AdapterProcessError(f"dtk CDN 下载失败: {exc}") from exc

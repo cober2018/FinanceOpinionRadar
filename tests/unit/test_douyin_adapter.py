@@ -33,6 +33,14 @@ SHORT_URL = "https://v.douyin.com/abc123/"
 SEC_UID = "MS4wLjABAAAABjAuPf6auEmCtvGsI2TPBck_OhhcgHoeTruXjIaFYbw"
 
 
+@pytest.fixture(autouse=True)
+def _no_egress_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """单测不依赖 Redis：关闭出口并发闸（egress_limit=0 走无闸分支）。"""
+    import app.services.download_gate as dg
+
+    monkeypatch.setattr(dg, "egress_limit", lambda: 0)
+
+
 def make_adapter(sample: dict | None = None, http: httpx.Client | None = None) -> DouyinAdapter:
     client = Mock()
     client.fetch_one_video.return_value = sample if sample is not None else dict(SAMPLE)

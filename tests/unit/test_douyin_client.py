@@ -9,6 +9,14 @@ BASE = "http://dtk.test:8080"
 KEY = "dtk_test_key"
 
 
+@pytest.fixture(autouse=True)
+def _no_egress_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """单测不依赖 Redis：关闭出口并发闸（egress_limit=0 走无闸分支）。"""
+    import app.services.download_gate as dg
+
+    monkeypatch.setattr(dg, "egress_limit", lambda: 0)
+
+
 def make_client(handler) -> DouyinApiClient:
     transport = httpx.MockTransport(handler)
     client = DouyinApiClient(base_url=BASE, api_key=KEY, timeout_sec=5)

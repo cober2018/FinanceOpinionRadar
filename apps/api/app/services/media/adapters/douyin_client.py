@@ -13,6 +13,8 @@ from app.services.media.contracts import AdapterProcessError, AdapterTimeoutErro
 _WAIT_SEC = 30
 # 非 2xx 时截断进错误消息的 body 长度（DX R3：进 last_error 供排障与 cookie 过期判别）
 _BODY_SNIPPET_CHARS = 200
+# dtk API 面的闸键：dtk 容器出口恒为本机 IP，与 CDN 下载出口分开计数
+_DTK_GATE_EGRESS = "dtk"
 
 
 class DouyinApiClient:
@@ -37,6 +39,22 @@ class DouyinApiClient:
         )
 
     def _fetch(self, path: str, params: dict) -> dict:
+        """出口并发闸内执行：dtk 上游 429 的防护面（egress_max_concurrency=0 关闸）。"""
+        from app.services.download_gate import egress_limit, get_download_gate
+
+        limit = egress_limit()
+        if limit <= 0:
+            return self._do_fetch(path, params)
+        from app.core.settings import get_settings
+
+        with get_download_gate().slot(
+            _DTK_GATE_EGRESS,
+            limit=limit,
+            ttl_sec=get_settings().egress_slot_ttl_sec,
+        ):
+            return self._do_fetch(path, params)
+
+    def _do_fetch(self, path: str, params: dict) -> dict:
         try:
             resp = self._client.get(path, params={**params, "wait": _WAIT_SEC})
         except httpx.TimeoutException as exc:
