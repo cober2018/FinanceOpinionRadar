@@ -133,6 +133,13 @@ function fmtTs(ms: number): string {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }
 
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
 const STATUS_CN: Record<string, string> = {
   discovered: '已发现',
   resolved: '已解析',
@@ -1020,7 +1027,7 @@ function LibraryPage() {
                 {r.progress?.detail ?? '-'}
               </td>
               <td>{r.duration_ms ? `${Math.round(r.duration_ms / 60000)} 分` : '-'}</td>
-              <td>{r.published_at ? new Date(r.published_at).toLocaleDateString() : '-'}</td>
+              <td>{fmtDateTime(r.published_at)}</td>
               <td onClick={(e) => e.stopPropagation()}>
                 <button className="ghost" title={r.is_asset ? '取消精华' : '标记精华（永久保留）'} onClick={() => toggleAsset(r.id)}>
                   {r.is_asset ? '⭐' : '☆'}
@@ -1759,7 +1766,7 @@ function JobCenterPage() {
                 {statusBadgeWithProgress(r.status, r.progress_phase ? { phase: r.progress_phase, detail: r.progress_detail ?? '' } : null)}
               </td>
               <td className="muted" style={{ fontSize: 11 }}>{r.progress_detail ?? '-'}</td>
-              <td>{r.published_at ? new Date(r.published_at).toLocaleDateString() : '-'}</td>
+              <td>{fmtDateTime(r.published_at)}</td>
               <td>{r.transcript_count}</td>
               <td>
                 {r.viewpoint_total > 0 ? (
