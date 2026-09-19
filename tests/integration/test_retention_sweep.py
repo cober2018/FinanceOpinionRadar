@@ -189,3 +189,73 @@ def test_sweep_respects_manual_status_filter_via_raw(db_session, tmp_path):
     )
     sweep_expired_content(db_session, settings=_settings(tmp_path))
     assert db_session.get(SourceItem, item.id) is not None
+
+
+def test_unasset_grace_period_and_expiry(db_session):
+    """精华→普通切换的宽限期语义：TTL 从「取消精华时间」重算，不按创建时间立即过期。
+
+    两条内容同轮 sweep 验证：
+    - grace：取消于 10 天前（< 30 天 TTL）→ 保留
+    - expired：取消于 35 天前（> 30 天 TTL）→ 过期删除 + 结论快照 + 墓碑
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models import (
+        ContentSummary,
+        Creator,
+        DeletedItemRef,
+        SourceAccount,
+        SourceItem,
+    )
+
+    creator = Creator(display_name="宽限主播", status="active")
+    db_session.add(creator)
+    db_session.flush()
+    account = SourceAccount(creator_id=creator.id, platform="douyin", external_id="grace1")
+    db_session.add(account)
+    db_session.flush()
+
+    now = datetime.now(UTC)
+
+    def _mk(external: str, *, created_days: int, unasset_days: int) -> SourceItem:
+        created = now - timedelta(days=created_days)
+        it = SourceItem(
+            source_account_id=account.id,
+            external_item_id=external,
+            title=external,  # 快照断言按标题定位
+            item_type="vod",
+            status="transcribed",
+            created_at=created,
+            is_asset=False,
+        )
+        db_session.add(it)
+        db_session.flush()
+        it.metadata_json = {"unasset_at": (now - timedelta(days=unasset_days)).isoformat()}
+        db_session.commit()
+        return it
+
+    in_grace = _mk("v_in_grace", created_days=40, unasset_days=10)  # 宽限期内
+    expired = _mk("v_expired", created_days=70, unasset_days=35)  # 已超 TTL
+    # 两条都需要有转录段可被 sweep 快照/级联（viewpoints=[] 也留档）
+    expired.metadata_json = {
+        **(expired.metadata_json or {}),
+        "last_error": {"code": "X", "message": "占位"},
+    }
+    db_session.commit()
+
+    counters = sweep_expired_content(db_session)
+    assert counters["swept"] == 1 and counters["snapshots"] == 1
+    assert db_session.get(SourceItem, in_grace.id) is not None  # 宽限期内保留
+    assert db_session.get(SourceItem, expired.id) is None  # 超期删除
+    assert (
+        db_session.query(DeletedItemRef)
+        .filter_by(source_account_id=account.id, external_item_id="v_expired")
+        .count()
+        == 1
+    )
+    summary = (
+        db_session.query(ContentSummary)
+        .filter_by(creator_name="宽限主播", item_title="v_expired")
+        .one()
+    )
+    assert summary.viewpoints == []  # 无观点条目留档（D3）

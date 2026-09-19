@@ -356,7 +356,18 @@ def toggle_asset(item_id: int, session: DbDep, is_asset: bool | None = None):
     if item is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
     item.is_asset = (not item.is_asset) if is_asset is None else is_asset
-    item.asset_at = datetime.now(UTC) if item.is_asset else None
+    now = datetime.now(UTC)
+    item.asset_at = now if item.is_asset else None
+    meta = dict(item.metadata_json or {})
+    if item.is_asset:
+        meta.pop("unasset_at", None)  # 重新入精华 → 清宽限期
+    else:
+        # 取消精华 = 宽限期从现在重算（retention 按 max(created_at, unasset_at) 判定）
+        meta["unasset_at"] = now.isoformat()
+    item.metadata_json = meta
+    from sqlalchemy.orm.attributes import flag_modified
+
+    flag_modified(item, "metadata_json")
     session.commit()
     return {"item_id": item_id, "is_asset": item.is_asset}
 

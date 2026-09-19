@@ -113,6 +113,20 @@ def sweep_expired_content(session, *, dry_run: bool = False, settings=None) -> d
             .order_by(SourceItem.id)
             .all()
         )
+        # 取消精华的宽限期：判定基准 = max(created_at, unasset_at)。
+        # 否则"标精华 40 天后取消"会立即过期——精华→普通切换的陷阱（2026-09-19 修复）。
+        def _effective_created(item) -> datetime:
+            unasset_at = (item.metadata_json or {}).get("unasset_at")
+            if unasset_at:
+                try:
+                    return max(
+                        item.created_at, datetime.fromisoformat(unasset_at)
+                    )
+                except (ValueError, TypeError):
+                    return item.created_at
+            return item.created_at
+
+        items = [it for it in items if _effective_created(it) < cutoff]
         counters = {**zero, "expired": len(items)}
         if dry_run:
             logger.info("retention_sweep_dry_run", **counters)
