@@ -538,6 +538,7 @@ function AccountsPage() {
       </p>
       {adding && (
         <AddAccountModal
+          existingNames={rows.map((r) => r.display_name)}
           onClose={() => setAdding(false)}
           onDone={() => {
             setAdding(false)
@@ -592,7 +593,12 @@ function EditForm(props: {
   )
 }
 
-function AddAccountModal(props: { onClose: () => void; onDone: () => void }) {
+function AddAccountModal(props: {
+  onClose: () => void
+  onDone: () => void
+  existingNames: string[]
+}) {
+  const rowsCache = props.existingNames
   const [platform, setPlatform] = useState('douyin')
   const [displayName, setDisplayName] = useState('')
   const [profileUrl, setProfileUrl] = useState('')
@@ -606,6 +612,15 @@ function AddAccountModal(props: { onClose: () => void; onDone: () => void }) {
   const submit = async () => {
     setBusy(true)
     setError(null)
+    // 同名防呆：已有同名主播时二次确认（不同 URL 形态的同频道最易重复添加）
+    const dupName = Boolean(displayName) && rowsCache.includes(displayName)
+    if (dupName) {
+      const go = window.confirm(`已存在同名主播「${displayName}」，确认仍要添加？`)
+      if (!go) {
+        setBusy(false)
+        return
+      }
+    }
     try {
       const created = await api<{ id: number }>('/source-accounts', {
         method: 'POST',
