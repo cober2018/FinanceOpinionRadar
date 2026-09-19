@@ -44,6 +44,15 @@ _STAGE_CODES = {
     "persist": "TRANSCRIPT_FAILED",
 }
 
+# 失败进度文案：_record_failure 同步覆写 progress，避免前端残留上一阶段的进行时文案
+_STAGE_PROGRESS_CN = {
+    "resolve": "解析视频信息",
+    "download": "从平台拉取视频文件",
+    "normalize": "音频标准化",
+    "asr": "语音识别",
+    "persist": "转录落库",
+}
+
 
 class MediaTooLongError(Exception):
     """CEO-2C：媒体时长超过 prepare_max_media_duration_sec。"""
@@ -336,6 +345,7 @@ def _persist_transcript(
         "transcript": {**meta, "segment_count": len(cleaned)},
     }
     item.metadata_json.pop("last_error", None)  # 成功后清掉历史失败残留，避免误读
+    item.metadata_json.pop("progress", None)  # 进度只服务进行中/失败态，成功即清
     if item.language is None and meta["language"]:
         item.language = meta["language"]
     _commit_status(session, item, "transcribed")
@@ -380,17 +390,19 @@ def _record_failure(
     try:
         fresh = _lock_item(session, item_id)
         if fresh is not None and fresh.status != "ready":
-            try:
-                ensure_transition(fresh.status, "failed")
-            except InvalidTransitionError:
-                # 终态半路失败不覆盖，仅记日志
-                logger.warning(
-                    "prepare_failure_transition_skipped",
-                    item_id=item_id,
-                    status=fresh.status,
-                )
-                session.rollback()
-                return {"item_id": item_id, "status": fresh.status, "code": code}
+            if fresh.status != "failed":
+                try:
+                    ensure_transition(fresh.status, "failed")
+                except InvalidTransitionError:
+                    # 终态半路失败不覆盖，仅记日志
+                    logger.warning(
+                        "prepare_failure_transition_skipped",
+                        item_id=item_id,
+                        status=fresh.status,
+                    )
+                    session.rollback()
+                    return {"item_id": item_id, "status": fresh.status, "code": code}
+            # 已是 failed（重试再败）允许覆写：last_error/progress 必须反映最新一次失败
             fresh.status = "failed"
             fresh.metadata_json = {
                 **fresh.metadata_json,
@@ -398,6 +410,14 @@ def _record_failure(
                     "code": code,
                     "stage": stage,
                     "message": str(exc)[:500],
+                    "at": datetime.now(UTC).isoformat(),
+                },
+                # 覆写为失败语义，替换掉失败前残留的 downloading 等进行时进度
+                "progress": {
+                    "phase": "failed",
+                    "detail": (
+                        f"{_STAGE_PROGRESS_CN.get(stage, stage)}失败：{str(exc)[:80]}"
+                    ),
                     "at": datetime.now(UTC).isoformat(),
                 },
             }

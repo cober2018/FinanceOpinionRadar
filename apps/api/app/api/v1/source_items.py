@@ -208,6 +208,7 @@ def prepare_source_item_manual(item_id: int, session: DbDep):
         )
     meta = dict(item.metadata_json or {})
     meta.pop("backfill", None)
+    meta.pop("retry", None)  # 人工介入视为重新开始，自动重试退避计数清零
     item.metadata_json = meta
     session.commit()
     celery_app.send_task("prepare_source_item", args=[item_id])
