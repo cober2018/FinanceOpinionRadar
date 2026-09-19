@@ -381,3 +381,106 @@ def polish_claim(body: PolishRequest, session: Annotated[Session, Depends(get_db
             polished = data[k].strip()
             break
     return {"ok": bool(polished), "polished": polished, "model": resp.model}
+
+
+@router.get("/ledger")
+def get_content_ledger(
+    session: Annotated[Session, Depends(get_db)],
+    creator_id: int | None = None,
+    status: str | None = None,
+    limit: int = 100,
+):
+    """内容台账（任务页主视图）：每条内容一行，持续追踪全生命周期——
+
+    发现 → 转写 → 观点抽取 → 人工复核 → 归档，附各阶段产物计数与错误。
+    """
+    from app.db.models import (
+        Creator,
+        SourceAccount,
+        SourceItem,
+        TranscriptSegment,
+        Viewpoint,
+    )
+
+    q = (
+        session.query(
+            SourceItem,
+            SourceAccount.platform,
+            Creator.display_name,
+        )
+        .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+        .join(Creator, Creator.id == SourceAccount.creator_id)
+        .filter(SourceItem.item_type.in_(["vod", "live"]))
+        .order_by(SourceItem.id.desc())
+    )
+    if creator_id:
+        q = q.filter(SourceItem.source_account_id == creator_id)
+    if status:
+        q = q.filter(SourceItem.status == status)
+    rows = q.limit(min(limit, 300)).all()
+
+    item_ids = [it.id for it, _, _ in rows] or [0]
+    seg_counts: dict[int, int] = {
+        si: n
+        for si, n in session.query(
+            TranscriptSegment.source_item_id, func.count()
+        )
+        .filter(TranscriptSegment.source_item_id.in_(item_ids))
+        .group_by(TranscriptSegment.source_item_id)
+        .all()
+    }
+    vp_rows = (
+        session.query(
+            Viewpoint.source_item_id,
+            Viewpoint.verification_status,
+            func.count(),
+        )
+        .filter(Viewpoint.source_item_id.in_(item_ids))
+        .group_by(Viewpoint.source_item_id, Viewpoint.verification_status)
+        .all()
+    )
+    vp_counts: dict[int, dict[str, int]] = {}
+    vp_topic: dict[int, str] = {}
+    for si, vs, n in vp_rows:
+        vp_counts.setdefault(si, {})[vs] = n
+    from app.db.models import Topic as TopicModel
+    from app.db.models import Viewpoint as VPModel
+
+    first_vp_topics = (
+        session.query(VPModel.source_item_id, TopicModel.canonical_name)
+        .join(TopicModel, TopicModel.id == VPModel.topic_id)
+        .filter(VPModel.source_item_id.in_(item_ids))
+        .order_by(VPModel.source_item_id)
+        .all()
+    )
+    for si, tname in first_vp_topics:
+        vp_topic.setdefault(si, tname)
+
+    ledger = []
+    for item, platform, cname in rows:
+        err = (item.metadata_json or {}).get("last_error") or {}
+        prog = (item.metadata_json or {}).get("progress") or {}
+        vc = vp_counts.get(item.id, {})
+        total_vp = sum(vc.values())
+        ledger.append(
+            {
+                "item_id": item.id,
+                "creator_name": cname,
+                "platform": platform,
+                "title": (item.title or "")[:60],
+                "item_type": item.item_type,
+                "status": item.status,
+                "progress_phase": prog.get("phase"),
+                "progress_detail": prog.get("detail"),
+                "published_at": item.published_at.isoformat() if item.published_at else None,
+                "transcript_count": seg_counts.get(item.id, 0),
+                "viewpoint_total": total_vp,
+                "viewpoint_needs_review": vc.get("needs_review", 0) + vc.get("candidate", 0),
+                "viewpoint_confirmed": vc.get("confirmed", 0),
+                "viewpoint_rejected": vc.get("rejected", 0),
+                "topic_name": vp_topic.get(item.id),
+                "error_code": err.get("code"),
+                "error_message": (err.get("message") or "")[:160] or None,
+            }
+        )
+    return ledger

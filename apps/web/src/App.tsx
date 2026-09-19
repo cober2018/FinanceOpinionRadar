@@ -1570,6 +1570,26 @@ function EditViewpointModal(props: {
 
 /* ---------------- 任务中心 ---------------- */
 
+type LedgerRow = {
+  item_id: number
+  creator_name: string
+  platform: string
+  title: string
+  item_type: string
+  status: string
+  progress_phase: string | null
+  progress_detail: string | null
+  published_at: string | null
+  transcript_count: number
+  viewpoint_total: number
+  viewpoint_needs_review: number
+  viewpoint_confirmed: number
+  viewpoint_rejected: number
+  topic_name: string | null
+  error_code: string | null
+  error_message: string | null
+}
+
 type JobRow = {
   id: number
   job_type: string
@@ -1626,6 +1646,28 @@ function JobCenterPage() {
 
   const runningRows = rows.filter((r) => r.status === 'running')
 
+  const [ledger, setLedger] = useState<LedgerRow[]>([])
+  const [ledgerCreator, setLedgerCreator] = useState('')
+  const [ledgerStatus, setLedgerStatus] = useState('')
+  const [ledgerMonitors, setLedgerMonitors] = useState<{ account_id: number; display_name: string }[]>([])
+
+  useEffect(() => {
+    api<LiveMonitor[]>('/live/monitors')
+      .then((ms) => setLedgerMonitors(ms.map((m) => ({ account_id: m.account_id, display_name: m.display_name }))))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (ledgerCreator) params.set('creator_id', ledgerCreator)
+    if (ledgerStatus) params.set('status', ledgerStatus)
+    api<LedgerRow[]>(`/ledger?${params}`)
+      .then(setLedger)
+      .catch(() => {})
+  }, [ledgerCreator, ledgerStatus])
+
+  const ledgerCreators = ledgerMonitors
+
   return (
     <div className="stack">
       {error && <p className="error">{error}</p>}
@@ -1662,7 +1704,77 @@ function JobCenterPage() {
       )}
 
       <div className="toolbar">
-        <h3 className="toolbar-title">任务记录</h3>
+        <h3 className="toolbar-title">📋 任务台账（按内容，{ledger.length} 条）</h3>
+        <select value={ledgerCreator} onChange={(e) => setLedgerCreator(e.target.value)}>
+          <option value="">全部主播</option>
+          {ledgerCreators.map((c) => (
+            <option key={c.account_id} value={c.account_id}>{c.display_name}</option>
+          ))}
+        </select>
+        <select value={ledgerStatus} onChange={(e) => setLedgerStatus(e.target.value)}>
+          <option value="">全部状态</option>
+          {Object.entries(STATUS_CN).map(([v, cn]) => (
+            <option key={v} value={v}>{cn}</option>
+          ))}
+        </select>
+      </div>
+
+      <table className="board">
+        <thead>
+          <tr>
+            <th>主播</th>
+            <th>标题</th>
+            <th>类型</th>
+            <th>内容状态</th>
+            <th>进度</th>
+            <th>发布</th>
+            <th>转录段</th>
+            <th>观点（待审/确认/驳回）</th>
+            <th>主题</th>
+            <th>错误</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ledger.map((r) => (
+            <tr key={r.item_id}>
+              <td>{r.creator_name}</td>
+              <td className="title-cell" title={r.title}>{r.title}</td>
+              <td>{r.item_type === 'live' ? '直播' : '视频'}</td>
+              <td>
+                {statusBadgeWithProgress(r.status, r.progress_phase ? { phase: r.progress_phase, detail: r.progress_detail ?? '' } : null)}
+              </td>
+              <td className="muted" style={{ fontSize: 11 }}>{r.progress_detail ?? '-'}</td>
+              <td>{r.published_at ? new Date(r.published_at).toLocaleDateString() : '-'}</td>
+              <td>{r.transcript_count}</td>
+              <td>
+                {r.viewpoint_total > 0 ? (
+                  <span>
+                    {r.viewpoint_needs_review > 0 && <span className="badge run">{r.viewpoint_needs_review} 待审</span>}{' '}
+                    <span className="badge ok">{r.viewpoint_confirmed} 认</span>{' '}
+                    {r.viewpoint_rejected > 0 && <span className="badge err">{r.viewpoint_rejected} 驳</span>}
+                  </span>
+                ) : (
+                  <span className="muted">-</span>
+                )}
+              </td>
+              <td>{r.topic_name ?? <span className="muted">-</span>}</td>
+              <td>
+                {r.error_code ? (
+                  <span className="badge err" title={r.error_message ?? ''}>{r.error_code}</span>
+                ) : (
+                  '-'
+                )}
+              </td>
+            </tr>
+          ))}
+          {ledger.length === 0 && (
+            <tr><td colSpan={10} className="muted pad">暂无内容</td></tr>
+          )}
+        </tbody>
+      </table>
+
+      <div className="toolbar">
+        <h3 className="toolbar-title">任务历史（按执行，{rows.length} 条）</h3>
         <select value={typeF} onChange={(e) => setTypeF(e.target.value)}>
           <option value="">全部类型</option>
           <option value="prepare_media">转写</option>
