@@ -2208,6 +2208,30 @@ function SettingsPage() {
 
 /* ---------------- 外壳 ---------------- */
 
+// 后端健康横幅：API 不可达时置顶提示（10s 轮询，恢复自动消失）。
+// 解决"进程死了但界面操作静默失败"——用户第一时间看到的是服务挂了，不是自己点错了。
+function BackendHealthBanner() {
+  const [down, setDown] = useState(false)
+  useEffect(() => {
+    let alive = true
+    const ping = () => {
+      fetch('/api/v1/system/status')
+        .then((r) => { if (alive) setDown(!r.ok) })
+        .catch(() => { if (alive) setDown(true) })
+    }
+    ping()
+    const t = setInterval(ping, 10000)
+    return () => { alive = false; clearInterval(t) }
+  }, [])
+  if (!down) return null
+  return (
+    <div className="backend-down">
+      ⚠ 后端服务不可达（API :8010 无响应），页面上的操作不会生效。
+      在项目目录运行 <b>make up</b> 一键恢复，服务恢复后此提示自动消失。
+    </div>
+  )
+}
+
 const NAV = [
   { key: 'overview', label: '总览' },
   { key: 'accounts', label: '主播' },
@@ -2245,6 +2269,7 @@ function App() {
         <div className="sidebar-foot">V1 · 抖音采集基座</div>
       </aside>
       <main className="main">
+        <BackendHealthBanner />
         {tab === 'overview' && <OverviewPage go={(t) => setTab(t as Tab)} />}
         {tab === 'accounts' && <AccountsPage />}
         {tab === 'library' && <LibraryPage />}

@@ -6,7 +6,7 @@ PYTHON ?= .venv/bin/python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup dev web stop bootstrap doctor lint format test test-e2e migrate worker seed reset-db
+.PHONY: help setup dev up status web stop bootstrap doctor lint format test test-e2e migrate worker seed reset-db
 
 help: ## 显示所有可用目标
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -20,6 +20,12 @@ setup: ## 创建 .venv 并安装后端/前端依赖
 dev: ## 启动 API 开发服务器 (前端开发服务器用 make web)
 	docker compose up -d
 	$(PYTHON) -m uvicorn app.main:app --reload --port $(PORT) --app-dir apps/api
+
+up: ## 一键幂等拉起全部组件：docker 依赖 + dtk + API :8010 + worker（已在跑的跳过）
+	@bash scripts/dev_up.sh up
+
+status: ## 诊断组件存活（Postgres/Redis/dtk/API/worker），DOWN 时提示 make up
+	@bash scripts/dev_up.sh status
 
 web: ## 启动前端 Vite 开发服务器
 	cd apps/web && npm run dev
