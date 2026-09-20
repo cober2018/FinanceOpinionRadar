@@ -1207,31 +1207,23 @@ const STANCE_CN: Record<string, string> = {
   unclear: '不明',
 }
 
-const HORIZON_CN: Record<string, string> = {
-  intraday: '日内',
-  '1-3D': '数日',
-  '1-4W': '数周',
-  '1-3M': '1-3月',
-  '3M+': '长期',
+// 立场徽章（A股习惯）：看多族=红、看空族=绿，其余灰
+function StanceBadge({ stance }: { stance: string }) {
+  const cls = stance.includes('bullish') ? 'stance-bull' : stance.includes('bearish') ? 'stance-bear' : ''
+  return <span className={`badge ${cls}`}>{STANCE_CN[stance] ?? stance}</span>
 }
 
-// 视频级立场标签：按时间维度聚合（已确认优先），如「数周 看多 · 长期 看空」
+// 视频级立场标签：一个期限一行（1-3D 看多 / 1-4W 看空），期限用原始编码
 function StanceSummary({ summary }: { summary: VPVideoRow['stance_summary'] }) {
   if (!summary || summary.length === 0) return <span className="muted">-</span>
   return (
-    <span>
+    <span className="stance-summary">
       {summary.map((g, i) => (
         <span key={i}>
-          {i > 0 && ' · '}
-          <span className="muted">{g.horizon ? HORIZON_CN[g.horizon] ?? g.horizon : '未定期限'}</span>{' '}
-          {g.stances.map((s) => {
-            const cls = s.includes('bullish') ? 'ok' : s.includes('bearish') ? 'err' : ''
-            return (
-              <span key={s} className={`badge ${cls}`} style={{ marginRight: 2 }}>
-                {STANCE_CN[s] ?? s}
-              </span>
-            )
-          })}
+          <span className="muted" style={{ marginRight: 4 }}>{g.horizon ?? '未定期限'}</span>
+          {g.stances.map((s) => (
+            <StanceBadge key={s} stance={s} />
+          ))}
         </span>
       ))}
     </span>
@@ -1414,10 +1406,8 @@ function VideoViewpointsDrawer(props: {
             <div key={r.id} className="vp-item">
               <div className="vp-item-head">
                 <span className="vp-item-no">#{idx + 1}</span>
-                <span className={`badge ${r.stance === 'bullish' ? 'ok' : r.stance === 'bearish' ? 'err' : ''}`}>
-                  {STANCE_CN[r.stance] ?? r.stance}
-                </span>
-                {r.horizon && <span className="badge">{HORIZON_CN[r.horizon] ?? r.horizon}</span>}
+                <StanceBadge stance={r.stance} />
+                {r.horizon && <span className="badge">{r.horizon}</span>}
                 <span className={`badge ${r.verification_status === 'confirmed' ? 'ok' : r.verification_status === 'rejected' ? 'err' : 'run'}`}>
                   {VP_STATUS_CN[r.verification_status] ?? r.verification_status}
                 </span>
@@ -1610,7 +1600,7 @@ function ViewpointEvidenceDrawer(props: {
           {vpRows.map((vp) => (
             <div key={vp.viewpoint_id} style={{ marginBottom: 14 }}>
               <div style={{ fontWeight: 600, color: 'var(--ink-900)' }}>
-                {vp.claim} <span className="badge">{STANCE_CN[vp.stance] ?? vp.stance}</span>{' '}
+                {vp.claim} <StanceBadge stance={vp.stance} />{' '}
                 <span className="badge">{VP_STATUS_CN[vp.verification_status] ?? vp.verification_status}</span>{' '}
                 <button className="ghost" onClick={() => review('confirm')}>通过</button>{' '}
                 <button className="ghost" onClick={() => review('reject')}>驳回</button>

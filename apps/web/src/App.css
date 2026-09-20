@@ -544,6 +544,18 @@ input:focus, select:focus, textarea:focus {
   padding: 2px 8px;
 }
 
+/* 立场配色（A股习惯）：看多=红、看空=绿 */
+.badge.stance-bull { background: var(--live-soft); color: var(--live); }
+.badge.stance-bear { background: var(--ok-soft); color: var(--ok); }
+
+/* 视频行立场标签：一个期限一行，紧凑可扫读 */
+.stance-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+}
+
 .ok {
   color: var(--ok);
   background: var(--ok-soft);
