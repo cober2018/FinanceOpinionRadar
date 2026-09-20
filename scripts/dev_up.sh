@@ -10,6 +10,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+# REDIS_PORT 从 .env 读（本机多项目共用 6379，本项目容器走独立端口）
+REDIS_PORT=${REDIS_PORT:-$(sed -n 's/^REDIS_PORT=//p' .env 2>/dev/null)}
+REDIS_PORT=${REDIS_PORT:-6379}
+
 API_PORT=8010
 API_LOG=/tmp/radar-api-8010.log
 WORKER_LOG=/tmp/radar-worker-beat.log
@@ -22,8 +26,8 @@ c_down=$'\033[31mDOWN\033[0m'
 api_alive() { lsof -nP -iTCP:"$API_PORT" -sTCP:LISTEN >/dev/null 2>&1; }
 worker_alive() { pgrep -f "celery -A app.worker.celery_app" >/dev/null 2>&1; }
 pg_alive() { docker exec financeopinionradar-postgres-1 pg_isready -U radar -d radar >/dev/null 2>&1; }
-# 本机 Redis 实为宿主进程（brew），compose 的 redis 容器因 6379 冲突未起——按端口探活
-redis_alive() { redis-cli -h 127.0.0.1 -p "${REDIS_PORT:-6379}" ping 2>/dev/null | grep -q PONG; }
+# 本项目 Redis 为 compose 容器（端口见 .env REDIS_PORT，避开共用 6379）
+redis_alive() { redis-cli -h 127.0.0.1 -p "$REDIS_PORT" ping 2>/dev/null | grep -q PONG; }
 dtk_alive() { curl -s -o /dev/null -m 3 "http://localhost:8080/health" 2>/dev/null; }
 
 wait_pg() {
@@ -77,7 +81,7 @@ report() {
   echo
   echo "组件状态："
   echo "  Postgres(容器)   $p"
-  echo "  Redis(:${REDIS_PORT:-6379})   $r"
+  echo "  Redis(:$REDIS_PORT)        $r"
   echo "  dtk 解析(:8080)  $d   （不监测抖音可忽略）"
   echo "  API(:$API_PORT)        $a"
   echo "  worker+beat      $w"
