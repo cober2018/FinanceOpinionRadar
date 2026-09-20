@@ -1059,7 +1059,7 @@ function LibraryPage() {
                 )}{' '}
                 {r.status === 'discovered' || r.status === 'failed' ? (
                   <button disabled={busyId === r.id} onClick={() => transcribe(r.id)}>
-                    {busyId === r.id ? '派发中…' : '转写'}
+                    {busyId === r.id ? '派发中…' : r.status === 'failed' ? '重试' : '转写'}
                   </button>
                 ) : r.status === 'transcribed' ? (
                   <>
@@ -1082,7 +1082,7 @@ function LibraryPage() {
         </tbody>
       </table>
       <p className="hint">
-        旧视频（注册时首扫采集标题）不自动转录，点「转写」手动解析；已转写条目点击行或「正文」查看分段文本。
+        旧视频（注册时首扫采集标题）不自动转录，点「转写」手动解析；失败条目点「重试」立即重新执行（并重置自动重试计数）；已转写条目点击行或「正文」查看分段文本。
       </p>
 
       {drawer !== null && <TranscriptDrawer itemId={drawer} onClose={() => setDrawer(null)} />}
