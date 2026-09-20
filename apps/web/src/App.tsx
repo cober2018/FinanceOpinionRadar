@@ -1410,23 +1410,24 @@ function VideoViewpointsDrawer(props: {
         </div>
         {error && <p className="error">{error}</p>}
         <div className="drawer-body">
-          {vps.map((r) => (
-            <div key={r.id} className="card" style={{ marginBottom: 10 }}>
-              <div>
+          {vps.map((r, idx) => (
+            <div key={r.id} className="vp-item">
+              <div className="vp-item-head">
+                <span className="vp-item-no">#{idx + 1}</span>
                 <span className={`badge ${r.stance === 'bullish' ? 'ok' : r.stance === 'bearish' ? 'err' : ''}`}>
                   {STANCE_CN[r.stance] ?? r.stance}
-                </span>{' '}
-                {r.horizon && <span className="badge">{HORIZON_CN[r.horizon] ?? r.horizon}</span>}{' '}
+                </span>
+                {r.horizon && <span className="badge">{HORIZON_CN[r.horizon] ?? r.horizon}</span>}
                 <span className={`badge ${r.verification_status === 'confirmed' ? 'ok' : r.verification_status === 'rejected' ? 'err' : 'run'}`}>
                   {VP_STATUS_CN[r.verification_status] ?? r.verification_status}
-                </span>{' '}
+                </span>
                 <span className="muted" style={{ fontSize: 11 }}>
                   置信 {r.confidence.toFixed(2)}
                   {r.topic_name ? ` · ${r.topic_name}` : ''}
                   {r.entity_name ? ` · ${r.entity_name}` : ''}
                 </span>
               </div>
-              <p style={{ margin: '8px 0' }}>{r.claim}</p>
+              <p style={{ margin: '0 0 10px', lineHeight: 1.6 }}>{r.claim}</p>
               <div>
                 {(r.verification_status === 'needs_review' || r.verification_status === 'candidate') && (
                   <>

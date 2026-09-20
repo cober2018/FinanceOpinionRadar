@@ -518,6 +518,32 @@ input:focus, select:focus, textarea:focus {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* 观点抽屉：一条观点一个独立块（编号 + 边框），按钮归属一目了然 */
+.vp-item {
+  border: 1px solid #2a3341;
+  border-radius: 8px;
+  background: var(--card, #10151d);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.vp-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #2a3341;
+  margin-bottom: 8px;
+}
+.vp-item-no {
+  font-weight: 700;
+  font-size: 13px;
+  color: #7fb0ec;
+  background: rgba(127, 176, 236, 0.12);
+  border-radius: 5px;
+  padding: 2px 8px;
+}
+
 .ok {
   color: var(--ok);
   background: var(--ok-soft);
