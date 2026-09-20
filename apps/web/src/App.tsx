@@ -1039,7 +1039,11 @@ function LibraryPage() {
                       : ''}
                 </div>
               </td>
-              <td className="muted" style={{ fontSize: 11, maxWidth: 160 }}>
+              <td
+                className="muted"
+                style={{ fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                title={r.progress?.detail ?? ''}
+              >
                 {r.progress?.detail ?? '-'}
               </td>
               <td>{r.duration_ms ? `${Math.round(r.duration_ms / 60000)} 分` : '-'}</td>
@@ -1886,7 +1890,13 @@ function JobCenterPage() {
               <td>
                 {statusBadgeWithProgress(r.status, r.progress_phase ? { phase: r.progress_phase, detail: r.progress_detail ?? '' } : null)}
               </td>
-              <td className="muted" style={{ fontSize: 11 }}>{r.progress_detail ?? '-'}</td>
+              <td
+                className="muted"
+                style={{ fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                title={r.progress_detail ?? ''}
+              >
+                {r.progress_detail ?? '-'}
+              </td>
               <td>{fmtDateTime(r.published_at)}</td>
               <td>{r.transcript_count}</td>
               <td>
