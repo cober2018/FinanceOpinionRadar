@@ -117,15 +117,21 @@ def list_source_items(
     account_id: int | None = None,
     status: str | None = None,
     asset: bool | None = None,
+    has_viewpoints: bool | None = None,
+    pending_review: bool | None = None,
     limit: int = 100,
 ):
-    """视频库列表（监控台"视频库"页）：按账号/状态/精华过滤，id 倒序。"""
+    """视频库列表（监控台"视频库"页）：按账号/状态/精华过滤，id 倒序。
+
+    has_viewpoints/pending_review：观点页（视频粒度）——只列有观点 / 有待审
+    观点（needs_review+candidate）的视频；行内带观点聚合计数。
+    """
     from datetime import timedelta
 
-    from sqlalchemy import select
+    from sqlalchemy import exists, func, select
 
     from app.core.settings import get_settings
-    from app.db.models import Creator, SourceAccount, SourceItem
+    from app.db.models import Creator, SourceAccount, SourceItem, Viewpoint
 
     stmt = (
         select(SourceItem, SourceAccount, Creator.display_name)
@@ -140,11 +146,22 @@ def list_source_items(
         stmt = stmt.where(SourceItem.status == status)
     if asset is not None:
         stmt = stmt.where(SourceItem.is_asset.is_(asset))
+    if has_viewpoints:
+        stmt = stmt.where(
+            exists(select(Viewpoint.id).where(Viewpoint.source_item_id == SourceItem.id))
+        )
+    if pending_review:
+        stmt = stmt.where(
+            exists(
+                select(Viewpoint.id).where(
+                    Viewpoint.source_item_id == SourceItem.id,
+                    Viewpoint.verification_status.in_(("needs_review", "candidate")),
+                )
+            )
+        )
     rows = session.execute(stmt).all()
 
-    # 弹幕计数（Plan #5）：单条聚合查询，避免行级 N+1
-    from sqlalchemy import func
-
+    # 弹幕计数（Plan #5）+ 观点聚合（观点页视频粒度）：单条聚合查询，避免行级 N+1
     from app.db.models import LiveChatMessage
 
     item_ids = [item.id for item, _account, _name in rows]
@@ -157,6 +174,19 @@ def list_source_items(
         .group_by(LiveChatMessage.source_item_id)
         .all()
     }
+    vp_rows = (
+        session.query(
+            Viewpoint.source_item_id,
+            Viewpoint.verification_status,
+            func.count(),
+        )
+        .filter(Viewpoint.source_item_id.in_(item_ids or [0]))
+        .group_by(Viewpoint.source_item_id, Viewpoint.verification_status)
+        .all()
+    )
+    vp_counts: dict[int, dict[str, int]] = {}
+    for si, vs, n in vp_rows:
+        vp_counts.setdefault(si, {})[vs] = n
 
     # 生命周期展示（Plan #6 D7）：精华/非终态无到期；可清理条目 = created_at + TTL
     retention_days = get_settings().content_retention_days
@@ -166,6 +196,14 @@ def list_source_items(
         if item.is_asset or retention_days <= 0 or item.status not in expiry_eligible:
             return None
         return item.created_at + timedelta(days=retention_days)
+
+    def _viewpoint_stats(item_id: int) -> dict:
+        vc = vp_counts.get(item_id, {})
+        return {
+            "viewpoint_total": sum(vc.values()),
+            "viewpoint_needs_review": vc.get("needs_review", 0) + vc.get("candidate", 0),
+            "viewpoint_confirmed": vc.get("confirmed", 0),
+        }
 
     return [
         {
@@ -184,6 +222,7 @@ def list_source_items(
             "chat_count": chat_counts.get(item.id, 0),
             "is_asset": item.is_asset,
             "expires_at": _expires_at(item),
+            **_viewpoint_stats(item.id),
         }
         for item, account, creator_name in rows
     ]

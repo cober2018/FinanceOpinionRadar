@@ -106,8 +106,12 @@ def list_viewpoints(
     stance: str | None = None,
     confidence_min: float | None = Query(None, ge=0, le=1),
     status: str | None = None,
+    source_item_id: int | None = None,
 ):
-    """RAD-072：统一列表过滤 + 分页（items/total/page/page_size）。"""
+    """RAD-072：统一列表过滤 + 分页（items/total/page/page_size）。
+
+    source_item_id：观点页（视频粒度）抽屉按视频取该条全部观点。
+    """
     stmt = (
         select(Viewpoint, Topic, Entity, Creator.display_name)
         .join(SourceItem, SourceItem.id == Viewpoint.source_item_id)
@@ -136,6 +140,8 @@ def list_viewpoints(
         filters.append(Viewpoint.confidence >= confidence_min)
     if status:
         filters.append(Viewpoint.verification_status == status)
+    if source_item_id:
+        filters.append(Viewpoint.source_item_id == source_item_id)
     for f in filters:
         stmt = stmt.where(f)
         count_stmt = count_stmt.where(f)

@@ -41,6 +41,22 @@ type LibraryItem = {
   chat_count: number
   is_asset: boolean
   expires_at: string | null
+  viewpoint_total?: number
+  viewpoint_needs_review?: number
+  viewpoint_confirmed?: number
+}
+
+type VPVideoRow = {
+  id: number
+  platform: string
+  display_name: string
+  title: string | null
+  item_type: string
+  status: string
+  published_at: string | null
+  viewpoint_total: number
+  viewpoint_needs_review: number
+  viewpoint_confirmed: number
 }
 
 type DanmakuStats = { total: number; sessions: number; latest_message_at: string | null }
@@ -1194,59 +1210,131 @@ const VP_STATUS_CN: Record<string, string> = {
 }
 
 function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
-  const [rows, setRows] = useState<VPRow[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [sort, setSort] = useState('id')
-  const [order, setOrder] = useState<'asc' | 'desc'>('desc')
-  const [stanceF, setStanceF] = useState('')
-  const [statusF, setStatusF] = useState(mode === 'review' ? 'needs_review' : '')
+  const [rows, setRows] = useState<VPVideoRow[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [busyId, setBusyId] = useState<number | null>(null)
-  const [selected, setSelected] = useState<number | null>(null)
-  const [drawer, setDrawer] = useState<{ viewpointId: number; sourceItemId: number } | null>(null)
-  const [editingVp, setEditingVp] = useState<VPRow | null>(null)
-
-  const pageSize = 20
+  const [vpDrawer, setVpDrawer] = useState<VPVideoRow | null>(null)
+  const [textDrawer, setTextDrawer] = useState<VPVideoRow | null>(null)
 
   const reload = useCallback(() => {
-    const params = new URLSearchParams()
-    params.set('page', String(page))
-    params.set('page_size', String(pageSize))
-    params.set('sort', sort)
-    params.set('order', order)
-    if (stanceF) params.set('stance', stanceF)
-    if (statusF) params.set('status', statusF)
-    window.history.replaceState(null, '', `?${params.toString()}`)
-    api<{ items: VPRow[]; total: number }>(`/viewpoints?${params}`)
+    const params = new URLSearchParams({ limit: '500' })
+    if (mode === 'review') params.set('pending_review', 'true')
+    else params.set('has_viewpoints', 'true')
+    api<VPVideoRow[]>(`/source-items?${params}`)
+      .then(setRows)
+      .catch((e: Error) => setError(e.message))
+  }, [mode])
+
+  useEffect(() => {
+    reload()
+    const t = setInterval(reload, 15000)
+    return () => clearInterval(t)
+  }, [reload])
+
+  const pendingTotal = rows.reduce((s, r) => s + r.viewpoint_needs_review, 0)
+  const allTotal = rows.reduce((s, r) => s + r.viewpoint_total, 0)
+
+  return (
+    <div className="stack">
+      {error && <p className="error">{error}</p>}
+      <div className="toolbar">
+        <h3 className="toolbar-title">
+          {mode === 'review'
+            ? `复核队列（${rows.length} 个视频 · ${pendingTotal} 条待审观点）`
+            : `观点（${rows.length} 个视频 · ${allTotal} 条观点）`}
+        </h3>
+      </div>
+      <p className="hint">
+        一个视频一条记录；点行或「观点」查看该视频抽出的全部观点（立场是每条观点自己的属性），「文案」看视频转写原文，证据在观点列表里逐条查看。
+      </p>
+      <table className="board">
+        <thead>
+          <tr>
+            <th>主播</th>
+            <th>视频标题</th>
+            <th>发布时间</th>
+            <th>观点</th>
+            <th>内容状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} className="clickable" onClick={() => setVpDrawer(r)}>
+              <td>{r.display_name}</td>
+              <td className="title-cell" title={r.title ?? ''}>{r.title ?? '-'}</td>
+              <td className="muted" style={{ fontSize: 11 }}>{fmtDateTime(r.published_at)}</td>
+              <td>
+                <b>{r.viewpoint_total}</b> 条{' '}
+                {r.viewpoint_needs_review > 0 && (
+                  <span className="badge run">{r.viewpoint_needs_review} 待审</span>
+                )}{' '}
+                {r.viewpoint_confirmed > 0 && (
+                  <span className="badge ok">{r.viewpoint_confirmed} 已确认</span>
+                )}
+              </td>
+              <td>{statusBadge(r.status)}</td>
+              <td onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => setVpDrawer(r)}>观点</button>{' '}
+                <button className="ghost" onClick={() => setTextDrawer(r)}>文案</button>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={6} className="muted pad">
+                {mode === 'review'
+                  ? '复核队列为空（自动复核通过的不进队列）'
+                  : '暂无观点：先在视频库转写内容并点「抽取观点」'}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      {vpDrawer !== null && (
+        <VideoViewpointsDrawer
+          item={vpDrawer}
+          mode={mode}
+          onClose={() => setVpDrawer(null)}
+          onChanged={reload}
+        />
+      )}
+      {textDrawer !== null && (
+        <TranscriptDrawer itemId={textDrawer.id} onClose={() => setTextDrawer(null)} />
+      )}
+    </div>
+  )
+}
+
+function VideoViewpointsDrawer(props: {
+  item: VPVideoRow
+  mode: 'all' | 'review'
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const { item, mode } = props
+  const [vps, setVps] = useState<VPRow[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<number | null>(null)
+  const [evidence, setEvidence] = useState<{ viewpointId: number; sourceItemId: number } | null>(null)
+  const [editingVp, setEditingVp] = useState<VPRow | null>(null)
+
+  const reload = useCallback(() => {
+    api<{ items: VPRow[] }>(`/viewpoints?source_item_id=${item.id}&page_size=200`)
       .then((d) => {
-        setRows(d.items)
-        setTotal(d.total)
+        const list =
+          mode === 'review'
+            ? d.items.filter(
+                (v) => v.verification_status === 'needs_review' || v.verification_status === 'candidate',
+              )
+            : d.items
+        setVps(list)
       })
       .catch((e: Error) => setError(e.message))
-  }, [page, sort, order, stanceF, statusF])
+  }, [item.id, mode])
 
   useEffect(() => {
     reload()
   }, [reload])
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      if (selected == null) return
-      const row = rows.find((r) => r.id === selected)
-      if (!row) return
-      const reviewable = row.verification_status === 'needs_review' || row.verification_status === 'candidate'
-      if ((e.key === 'a' || e.key === 'A') && reviewable) review(selected, 'confirm')
-      if ((e.key === 'r' || e.key === 'R') && reviewable) doReject(selected)
-      if (e.key === 'e' || e.key === 'E')
-        setDrawer({ viewpointId: row.id, sourceItemId: row.source_item_id })
-      if (e.key === 'Escape') setSelected(null)
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  })
 
   const review = async (id: number, action: 'confirm' | 'reject', reason?: string) => {
     setBusyId(id)
@@ -1255,6 +1343,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
       const q = reason ? `?reason=${encodeURIComponent(reason)}` : ''
       await api(`/viewpoints/${id}/${action}${q}`, { method: 'POST' })
       reload()
+      props.onChanged()
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -1268,115 +1357,62 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
   }
 
   return (
-    <div className="stack">
-      {error && <p className="error">{error}</p>}
-      <div className="toolbar">
-        <h3 className="toolbar-title">
-          {mode === 'review' ? `复核队列（${total}）` : `观点（${total}）`}
-        </h3>
-        <select value={stanceF} onChange={(e) => { setStanceF(e.target.value); setPage(1) }}>
-          <option value="">全部立场</option>
-          {Object.entries(STANCE_CN).map(([v, cn]) => (
-            <option key={v} value={v}>{cn}</option>
-          ))}
-        </select>
-        {mode === 'all' && (
-          <select value={statusF} onChange={(e) => { setStatusF(e.target.value); setPage(1) }}>
-            <option value="">全部状态</option>
-            {Object.entries(VP_STATUS_CN).map(([v, cn]) => (
-              <option key={v} value={v}>{cn}</option>
-            ))}
-          </select>
-        )}
-        <select value={`${sort}:${order}`} onChange={(e) => {
-          const [s, o] = e.target.value.split(':')
-          setSort(s)
-          setOrder(o as 'asc' | 'desc')
-        }}>
-          <option value="id:desc">最新</option>
-          <option value="confidence:desc">置信度↓</option>
-          <option value="importance:desc">重要性↓</option>
-          <option value="as_of_date:desc">日期↓</option>
-        </select>
-      </div>
-      <table className="board">
-        <thead>
-          <tr>
-            <th>主播</th>
-            <th>观点</th>
-            <th>立场</th>
-            <th>主题</th>
-            <th>标的</th>
-            <th>置信</th>
-            <th>发布日期</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr
-              key={r.id}
-              className={selected === r.id ? 'selected-row' : undefined}
-              onClick={() => setSelected(r.id)}
-            >
-              <td>{r.creator_name}</td>
-              <td className="title-cell" title={r.claim}>{r.claim}</td>
-              <td>{STANCE_CN[r.stance] ?? r.stance}</td>
-              <td>{r.topic_name ?? <span className="muted">-</span>}</td>
-              <td>{r.entity_name ?? <span className="muted">-</span>}</td>
-              <td>{r.confidence.toFixed(2)}</td>
-              <td>{r.as_of_date ?? '-'}</td>
-              <td>
+    <div className="drawer-mask" onClick={props.onClose}>
+      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head">
+          <div>
+            <b>{item.display_name}</b>
+            <span className="muted"> · {item.title ?? '无标题'}</span>
+            <div className="muted" style={{ fontSize: 11 }}>
+              {fmtDateTime(item.published_at)} · {vps.length} 条观点
+              {mode === 'review' ? '（仅列待审）' : ''}
+            </div>
+          </div>
+          <button className="ghost" onClick={props.onClose}>关闭</button>
+        </div>
+        {error && <p className="error">{error}</p>}
+        <div className="drawer-body">
+          {vps.map((r) => (
+            <div key={r.id} className="card" style={{ marginBottom: 10 }}>
+              <div>
+                <span className={`badge ${r.stance === 'bullish' ? 'ok' : r.stance === 'bearish' ? 'err' : ''}`}>
+                  {STANCE_CN[r.stance] ?? r.stance}
+                </span>{' '}
                 <span className={`badge ${r.verification_status === 'confirmed' ? 'ok' : r.verification_status === 'rejected' ? 'err' : 'run'}`}>
                   {VP_STATUS_CN[r.verification_status] ?? r.verification_status}
+                </span>{' '}
+                <span className="muted" style={{ fontSize: 11 }}>
+                  置信 {r.confidence.toFixed(2)}
+                  {r.topic_name ? ` · ${r.topic_name}` : ''}
+                  {r.entity_name ? ` · ${r.entity_name}` : ''}
                 </span>
-              </td>
-              <td onClick={(e) => e.stopPropagation()}>
+              </div>
+              <p style={{ margin: '8px 0' }}>{r.claim}</p>
+              <div>
                 {(r.verification_status === 'needs_review' || r.verification_status === 'candidate') && (
                   <>
-                    <button className="ghost" disabled={busyId === r.id} onClick={() => review(r.id, 'confirm')}>
-                      通过
-                    </button>
-                    <button className="ghost" disabled={busyId === r.id} onClick={() => doReject(r.id)}>
-                      驳回
-                    </button>
+                    <button disabled={busyId === r.id} onClick={() => review(r.id, 'confirm')}>通过</button>{' '}
+                    <button className="ghost" disabled={busyId === r.id} onClick={() => doReject(r.id)}>驳回</button>{' '}
                   </>
                 )}
-                <button className="ghost" onClick={() => setEditingVp(r)}>修改</button>
+                <button className="ghost" onClick={() => setEditingVp(r)}>修改</button>{' '}
                 <button
                   className="ghost"
-                  onClick={() => setDrawer({ viewpointId: r.id, sourceItemId: r.source_item_id })}
+                  onClick={() => setEvidence({ viewpointId: r.id, sourceItemId: item.id })}
                 >
                   证据
                 </button>
-              </td>
-            </tr>
+              </div>
+            </div>
           ))}
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={8} className="muted pad">
-                {mode === 'review'
-                  ? '复核队列为空（自动复核通过的不进队列）'
-                  : '暂无观点：先在视频库转写内容并点「抽取观点」'}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-      <div className="pager">
-        <button disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</button>
-        <span className="muted">第 {page} 页 / 共 {Math.max(1, Math.ceil(total / pageSize))} 页</span>
-        <button disabled={page * pageSize >= total} onClick={() => setPage(page + 1)}>下一页</button>
+          {vps.length === 0 && <p className="muted pad">该视频暂无观点。</p>}
+        </div>
       </div>
-      <p className="hint">
-        复核操作：点击行选中后按 <b>A</b> 通过 / <b>R</b> 驳回（驳回必填原因）/ <b>E</b> 查证据，ESC 取消选中。
-      </p>
-      {drawer !== null && (
+      {evidence !== null && (
         <ViewpointEvidenceDrawer
-          viewpointId={drawer.viewpointId}
-          sourceItemId={drawer.sourceItemId}
-          onClose={() => setDrawer(null)}
+          viewpointId={evidence.viewpointId}
+          sourceItemId={evidence.sourceItemId}
+          onClose={() => setEvidence(null)}
           onReviewed={reload}
         />
       )}
@@ -1387,12 +1423,97 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
           onDone={() => {
             setEditingVp(null)
             reload()
+            props.onChanged()
           }}
         />
       )}
     </div>
   )
 }
+
+function AssetLibraryPage() {
+  const [rows, setRows] = useState<LibraryItem[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<number | null>(null)
+  const [drawer, setDrawer] = useState<number | null>(null)
+
+  const reload = useCallback(() => {
+    api<LibraryItem[]>('/source-items?asset=true&limit=500')
+      .then(setRows)
+      .catch((e: Error) => setError(e.message))
+  }, [])
+
+  useEffect(() => reload(), [reload])
+
+  const toggleAsset = async (id: number) => {
+    setError(null)
+    try {
+      await api(`/source-items/${id}/asset`, { method: 'POST' })
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="stack">
+      {error && <p className="error">{error}</p>}
+      <div className="toolbar">
+        <h3 className="toolbar-title">资产库（{rows.length}）</h3>
+      </div>
+      <p className="hint">
+        精华内容的永久档案：不参与 30 天生命周期清理，转录与观点随内容永久保留。在视频库点 ☆ 可加入。
+      </p>
+      <table className="board">
+        <thead>
+          <tr>
+            <th>主播</th>
+            <th>平台</th>
+            <th>标题</th>
+            <th>类型</th>
+            <th>状态</th>
+            <th>发布时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <td>{r.display_name}</td>
+              <td>{r.platform}</td>
+              <td className="title-cell" title={r.title ?? ''}>{r.title ?? '-'}</td>
+              <td>{r.item_type === 'live' ? '直播' : '视频'}</td>
+              <td>{statusBadge(r.status)}</td>
+              <td className="muted" style={{ fontSize: 11 }}>{fmtDateTime(r.published_at)}</td>
+              <td>
+                <button className="ghost" onClick={() => setDrawer(r.id)}>文案</button>{' '}
+                <button
+                  className="ghost"
+                  disabled={busyId === r.id}
+                  title="移出资产库（恢复生命周期规则）"
+                  onClick={() => toggleAsset(r.id)}
+                >
+                  取消精华
+                </button>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={7} className="muted pad">
+                资产库为空：到视频库点 ☆ 把重要内容标记为精华（永久保留）。
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      {drawer !== null && <TranscriptDrawer itemId={drawer} onClose={() => setDrawer(null)} />}
+    </div>
+  )
+}
+
 
 function ViewpointEvidenceDrawer(props: {
   viewpointId: number
@@ -2081,6 +2202,7 @@ const NAV = [
   { key: 'overview', label: '总览' },
   { key: 'accounts', label: '主播' },
   { key: 'library', label: '视频库' },
+  { key: 'assets', label: '资产库' },
   { key: 'viewpoints', label: '观点' },
   { key: 'review', label: '复核队列' },
   { key: 'jobs', label: '任务' },
@@ -2116,6 +2238,7 @@ function App() {
         {tab === 'overview' && <OverviewPage go={(t) => setTab(t as Tab)} />}
         {tab === 'accounts' && <AccountsPage />}
         {tab === 'library' && <LibraryPage />}
+        {tab === 'assets' && <AssetLibraryPage />}
         {tab === 'viewpoints' && <ViewpointsPage mode="all" />}
         {tab === 'review' && <ViewpointsPage mode="review" />}
         {tab === 'jobs' && <JobCenterPage />}
