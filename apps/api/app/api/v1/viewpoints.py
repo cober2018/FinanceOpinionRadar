@@ -249,4 +249,5 @@ def patch_viewpoint(viewpoint_id: int, body: ViewpointPatch, session: DbDep):
         after={k: (str(v) if v is not None else None) for k, v in updates.items()},
         reason=body.reason,
     )
+    session.commit()  # 审计单独落库：write_audit 只 add 不 commit，漏提交会被会话关闭回滚
     return {"id": vp.id, "updated": sorted(updates.keys())}
