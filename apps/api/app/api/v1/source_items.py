@@ -188,6 +188,44 @@ def list_source_items(
     for si, vs, n in vp_rows:
         vp_counts.setdefault(si, {})[vs] = n
 
+    # 立场聚合（时间维度 × 立场）：已确认优先，无已确认时回退全部未驳回观点。
+    # 同视频"数周看多 + 长期看空"是两个观点，聚合标签必须带期限才有意义。
+    vp_detail = (
+        session.query(
+            Viewpoint.source_item_id,
+            Viewpoint.horizon,
+            Viewpoint.stance,
+            Viewpoint.verification_status,
+        )
+        .filter(
+            Viewpoint.source_item_id.in_(item_ids or [0]),
+            Viewpoint.verification_status != "rejected",
+        )
+        .all()
+    )
+    horizon_order = ("intraday", "1-3D", "1-4W", "1-3M", "3M+")
+    stance_groups: dict[int, dict[str, dict[str | None, set[str]]]] = {}
+    for si, horizon, stance, status in vp_detail:
+        groups = stance_groups.setdefault(si, {})
+        if status == "confirmed":
+            groups.setdefault("confirmed", {}).setdefault(horizon, set()).add(stance)
+        groups.setdefault("all", {}).setdefault(horizon, set()).add(stance)
+
+    def _stance_summary(item_id: int) -> list[dict]:
+        per_horizon = stance_groups.get(item_id, {}).get("confirmed") or stance_groups.get(
+            item_id, {}
+        ).get("all", {})
+        return [
+            {"horizon": h, "stances": sorted(per_horizon[h])}
+            for h in sorted(
+                per_horizon,
+                key=lambda x: (
+                    horizon_order.index(x) if x in horizon_order else len(horizon_order),
+                    x or "",
+                ),
+            )
+        ]
+
     # 生命周期展示（Plan #6 D7）：精华/非终态无到期；可清理条目 = created_at + TTL
     retention_days = get_settings().content_retention_days
     expiry_eligible = ("transcribed", "failed", "reviewing", "ready")
@@ -223,6 +261,7 @@ def list_source_items(
             "is_asset": item.is_asset,
             "expires_at": _expires_at(item),
             **_viewpoint_stats(item.id),
+            "stance_summary": _stance_summary(item.id),
         }
         for item, account, creator_name in rows
     ]

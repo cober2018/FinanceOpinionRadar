@@ -57,6 +57,7 @@ type VPVideoRow = {
   viewpoint_total: number
   viewpoint_needs_review: number
   viewpoint_confirmed: number
+  stance_summary?: { horizon: string | null; stances: string[] }[]
 }
 
 type DanmakuStats = { total: number; sessions: number; latest_message_at: string | null }
@@ -1206,6 +1207,37 @@ const STANCE_CN: Record<string, string> = {
   unclear: '不明',
 }
 
+const HORIZON_CN: Record<string, string> = {
+  intraday: '日内',
+  '1-3D': '数日',
+  '1-4W': '数周',
+  '1-3M': '1-3月',
+  '3M+': '长期',
+}
+
+// 视频级立场标签：按时间维度聚合（已确认优先），如「数周 看多 · 长期 看空」
+function StanceSummary({ summary }: { summary: VPVideoRow['stance_summary'] }) {
+  if (!summary || summary.length === 0) return <span className="muted">-</span>
+  return (
+    <span>
+      {summary.map((g, i) => (
+        <span key={i}>
+          {i > 0 && ' · '}
+          <span className="muted">{g.horizon ? HORIZON_CN[g.horizon] ?? g.horizon : '未定期限'}</span>{' '}
+          {g.stances.map((s) => {
+            const cls = s.includes('bullish') ? 'ok' : s.includes('bearish') ? 'err' : ''
+            return (
+              <span key={s} className={`badge ${cls}`} style={{ marginRight: 2 }}>
+                {STANCE_CN[s] ?? s}
+              </span>
+            )
+          })}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 const VP_STATUS_CN: Record<string, string> = {
   candidate: '候选',
   needs_review: '待复核',
@@ -1255,6 +1287,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
           <tr>
             <th>主播</th>
             <th>视频标题</th>
+            <th>立场标签</th>
             <th>发布时间</th>
             <th>观点</th>
             <th>内容状态</th>
@@ -1266,6 +1299,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
             <tr key={r.id} className="clickable" onClick={() => setVpDrawer(r)}>
               <td>{r.display_name}</td>
               <td className="title-cell" title={r.title ?? ''}>{r.title ?? '-'}</td>
+              <td><StanceSummary summary={r.stance_summary} /></td>
               <td className="muted" style={{ fontSize: 11 }}>{fmtDateTime(r.published_at)}</td>
               <td>
                 <b>{r.viewpoint_total}</b> 条{' '}
@@ -1285,7 +1319,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={6} className="muted pad">
+              <td colSpan={7} className="muted pad">
                 {mode === 'review'
                   ? '复核队列为空（自动复核通过的不进队列）'
                   : '暂无观点：先在视频库转写内容并点「抽取观点」'}
@@ -1382,6 +1416,7 @@ function VideoViewpointsDrawer(props: {
                 <span className={`badge ${r.stance === 'bullish' ? 'ok' : r.stance === 'bearish' ? 'err' : ''}`}>
                   {STANCE_CN[r.stance] ?? r.stance}
                 </span>{' '}
+                {r.horizon && <span className="badge">{HORIZON_CN[r.horizon] ?? r.horizon}</span>}{' '}
                 <span className={`badge ${r.verification_status === 'confirmed' ? 'ok' : r.verification_status === 'rejected' ? 'err' : 'run'}`}>
                   {VP_STATUS_CN[r.verification_status] ?? r.verification_status}
                 </span>{' '}
