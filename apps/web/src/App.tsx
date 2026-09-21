@@ -2181,6 +2181,151 @@ function LLMSettingsCard() {
   )
 }
 
+// IP 代理池管理（青果长效代理，24h 轮换）：配置凭证 / 查询在用 / 提取新IP / 释放
+function QgProxyCard() {
+  const [key, setKey] = useState('')
+  const [pwd, setPwd] = useState('')
+  const [pwdSaved, setPwdSaved] = useState(false)
+  const [ips, setIps] = useState<{ server: string | null; in_pool: boolean }[]>([])
+  const [pool, setPool] = useState<string[]>([])
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setError(null)
+    try {
+      const cfg = await api<{ key: string; auth_pwd: string }>('/proxy-pool/qg/config')
+      setKey(cfg.key)
+      setPwdSaved(Boolean(cfg.auth_pwd))
+      const d = await api<{ ips: { server: string | null; in_pool: boolean }[]; pool: string[] }>(
+        '/proxy-pool/qg/ips',
+      )
+      setIps(d.ips)
+      setPool(d.pool)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const run = async (name: string, fn: () => Promise<string>) => {
+    setBusy(name)
+    setError(null)
+    setMsg(null)
+    try {
+      setMsg(await fn())
+      await load()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const saveConfig = () =>
+    run('config', async () => {
+      await api('/proxy-pool/qg/config', {
+        method: 'PUT',
+        body: JSON.stringify({ key, auth_pwd: pwd }),
+      })
+      setPwdSaved(true)
+      setPwd('')
+      return '凭证已保存'
+    })
+
+  const extract = () =>
+    run('extract', async () => {
+      const d = await api<{ extracted: { server: string }[]; pool: string[] }>(
+        '/proxy-pool/qg/extract?num=1',
+        { method: 'POST' },
+      )
+      return `已提取 ${d.extracted.length} 个新 IP 并入池`
+    })
+
+  const releaseAll = () =>
+    run('releaseAll', async () => {
+      if (!window.confirm('确定释放全部在用 IP？代理池将移除对应出口（可再提取新 IP）。')) {
+        throw new Error('已取消')
+      }
+      const d = await api<{ released: string[] }>('/proxy-pool/qg/release?all=true', {
+        method: 'POST',
+      })
+      return `已释放 ${d.released.length} 个 IP`
+    })
+
+  const releaseOne = (server: string) =>
+    run(`rel:${server}`, async () => {
+      const d = await api<{ released: string[] }>(
+        `/proxy-pool/qg/release?ip=${encodeURIComponent(server)}`,
+        { method: 'POST' },
+      )
+      return `已释放 ${d.released.join('、')}`
+    })
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>IP 代理池管理（青果长效代理）</h3>
+      </div>
+      <div className="stack">
+        {error && <p className="error">{error}</p>}
+        {msg && <p className="ok">{msg}</p>}
+        <div className="grid-2">
+          <label className="field">
+            AuthKey
+            <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="青果业务 KEY" />
+          </label>
+          <label className="field">
+            AuthPwd {pwdSaved && <span className="muted">（已保存，留空保持不变）</span>}
+            <input
+              type="password"
+              value={pwd}
+              onChange={(e) => setPwd(e.target.value)}
+              placeholder={pwdSaved ? '********' : '青果 AuthPwd'}
+            />
+          </label>
+        </div>
+        <div>
+          <button className="primary" disabled={busy !== '' || !key || (!pwd && !pwdSaved)} onClick={saveConfig}>
+            {busy === 'config' ? '保存中…' : '保存凭证'}
+          </button>{' '}
+          <button disabled={busy !== ''} onClick={extract} title="通道占用时需先释放">
+            {busy === 'extract' ? '提取中…' : '提取新 IP'}
+          </button>{' '}
+          <button className="ghost" disabled={busy !== '' || ips.length === 0} onClick={releaseAll}>
+            {busy === 'releaseAll' ? '释放中…' : '释放全部'}
+          </button>
+        </div>
+        <div>
+          <b style={{ fontSize: 13 }}>在用 IP（{ips.length}）</b>{' '}
+          <button className="ghost" disabled={busy !== ''} onClick={load}>刷新</button>
+        </div>
+        {ips.map((it) => (
+          <div key={it.server ?? 'unknown'} className="vp-item" style={{ padding: '8px 12px', marginBottom: 6 }}>
+            <code style={{ fontSize: 12 }}>{it.server ?? '-'}</code>{' '}
+            <span className={`badge ${it.in_pool ? 'ok' : 'run'}`}>{it.in_pool ? '已入池' : '未入池'}</span>{' '}
+            <button className="ghost" disabled={busy !== ''} onClick={() => it.server && releaseOne(it.server)}>
+              {busy === `rel:${it.server}` ? '释放中…' : '释放'}
+            </button>
+          </div>
+        ))}
+        {ips.length === 0 && <p className="muted" style={{ fontSize: 12 }}>当前无在用 IP：点「提取新 IP」获取。</p>}
+        <label className="field">
+          当前代理池生效列表（提取/释放自动同步；也可在上方「安全」卡手工增删其他出口）
+          <textarea rows={3} value={pool.join('\n')} readOnly style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }} />
+        </label>
+        <p className="hint">
+          24h 轮换产品：同一时间通道持有一个 IP；提取新 IP 前需先释放（到期后通道自动空闲）。出口变更后 worker 下一轮任务即走新 IP。
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function SettingsPage() {
   const [stagger, setStagger] = useState('')
   const [pages, setPages] = useState('')
@@ -2224,6 +2369,7 @@ function SettingsPage() {
   return (
     <div className="settings-grid stack">
       <LLMSettingsCard />
+      <QgProxyCard />
       <div className="panel">
         <div className="panel-head">
           <h3>安全（防风控）</h3>
