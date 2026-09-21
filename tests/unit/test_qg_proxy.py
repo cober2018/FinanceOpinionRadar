@@ -90,3 +90,15 @@ def test_client_query_parses_servers() -> None:
         {"code": "SUCCESS", "data": [{"server": "tunpool-jdqh4.qg.net:17142", "distinct": False}]}
     ).query()
     assert ips[0]["server"] == "tunpool-jdqh4.qg.net:17142"
+
+
+def test_sync_with_empty_reconciles_expired_entries_out() -> None:
+    """自动维护语义：查询为空（到期/释放）时，同凭证条目清出池，手工出口保留。"""
+    session, _ = _session_with_pool(
+        [
+            _prefix("KEY1", "PWD1") + "expired.qg.net:9",
+            "http://127.0.0.1:7890",
+        ]
+    )
+    updated = sync_pool_into_settings(session, [], "KEY1", "PWD1")
+    assert updated == ["http://127.0.0.1:7890"]

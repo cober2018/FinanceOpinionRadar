@@ -45,17 +45,19 @@ def _qg_entries_in_pool(pool: list[str], prefix: str) -> set[str]:
 
 @router.get("/ips")
 def list_ips(session: DbDep):
-    """查询在用 IP（server=代理地址）；附带当前代理池生效列表与是否已入池。"""
+    """查询在用 IP 并**对齐代理池**（刷新语义）：在用的补入池，已过期/释放的清出池。
+
+    手工配置的其他出口不受影响。
+    """
     try:
         client = qg_proxy.get_qg_client(session)
         ips = client.query()
     except QgProxyError as exc:
         _raise_http(exc)
     cfg = qg_proxy.get_qg_config(session)
+    servers = [it["server"] for it in ips if it.get("server")]
+    pool = qg_proxy.sync_pool_into_settings(session, servers, cfg["key"], cfg["auth_pwd"])
     prefix = qg_proxy._prefix(cfg["key"], cfg["auth_pwd"])
-    from app.services.live_status import get_security_settings
-
-    pool = get_security_settings(session).get("proxy_pool") or []
     in_pool = _qg_entries_in_pool(pool, prefix)
     return {
         "ips": [

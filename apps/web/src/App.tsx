@@ -2224,6 +2224,15 @@ function QgProxyCard({ onPoolChange }: { onPoolChange: (pool: string[]) => void 
     setError(null)
     setMsg(null)
     try {
+      // 流程自动化：表单里填了新凭证时，任何操作前先自动保存（不再依赖手动点保存）
+      if (key.trim() && pwd.trim()) {
+        await api('/proxy-pool/qg/config', {
+          method: 'PUT',
+          body: JSON.stringify({ key, auth_pwd: pwd }),
+        })
+        setPwdSaved(true)
+        setPwd('')
+      }
       setMsg(await fn())
       await load()
     } catch (e) {
@@ -2235,6 +2244,7 @@ function QgProxyCard({ onPoolChange }: { onPoolChange: (pool: string[]) => void 
 
   const saveConfig = () =>
     run('config', async () => {
+      if (!pwd.trim() && pwdSaved) return '凭证未变化'
       await api('/proxy-pool/qg/config', {
         method: 'PUT',
         body: JSON.stringify({ key, auth_pwd: pwd }),
@@ -2326,7 +2336,7 @@ function QgProxyCard({ onPoolChange }: { onPoolChange: (pool: string[]) => void 
           <textarea rows={3} value={pool.join('\n')} readOnly style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }} />
         </label>
         <p className="hint">
-          24h 轮换产品：同一时间通道持有一个 IP；提取新 IP 前需先释放（到期后通道自动空闲）。出口变更后 worker 下一轮任务即走新 IP。
+          全自动维护：系统每 10 分钟自动「查询在用 IP → 同步代理池」，通道空闲时自动提取新 IP；点「刷新」立即触发同一流程。唯一需要手动的是更换凭证后填入新 AuthKey/AuthPwd。
         </p>
       </div>
     </div>

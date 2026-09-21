@@ -378,6 +378,51 @@ def retry_failed_prepares() -> int:
         session.close()
 
 
+@celery_app.task(name="qg_proxy_maintain")
+def qg_proxy_maintain() -> dict:
+    """青果长效代理自动维护（beat 每 10 分钟）：查询在用 → 对齐代理池；通道空则自动提取。
+
+    全自动化目标（2026-09-21 与用户对齐）：除更换凭证外无需人工干预——
+    24h 轮换到期、隧道出口变更，最迟一个周期内代理池自动跟上。
+    查询失败（网络/凭证）不动池子，防止瞬时抖动误清出口。
+    """
+    from app.services import qg_proxy
+
+    session = get_session_factory()()
+    try:
+        cfg = qg_proxy.get_qg_config(session)
+        if not cfg.get("key") or not cfg.get("auth_pwd"):
+            return {"skipped": "not_configured"}
+        client = qg_proxy.get_qg_client(session)
+        try:
+            servers = [it["server"] for it in client.query() if it.get("server")]
+        except qg_proxy.QgProxyError as exc:
+            logger.warning("qg_maintain_query_failed", code=exc.code)
+            return {"error": exc.code}
+        pool = qg_proxy.sync_pool_into_settings(session, servers, cfg["key"], cfg["auth_pwd"])
+        extracted = 0
+        if not servers:
+            # 通道空闲（到期/已释放）：尝试自动提取补位；权限不够等错误留给下轮
+            try:
+                ips = client.extract(num=1)
+                new_servers = [it["server"] for it in ips if it.get("server")]
+                pool = qg_proxy.sync_pool_into_settings(
+                    session, new_servers, cfg["key"], cfg["auth_pwd"]
+                )
+                extracted = len(new_servers)
+            except qg_proxy.QgProxyError as exc:
+                logger.warning("qg_maintain_extract_failed", code=exc.code)
+        logger.info(
+            "qg_maintain_done",
+            in_use=len(servers),
+            extracted=extracted,
+            pool_size=len(pool),
+        )
+        return {"in_use": len(servers), "extracted": extracted, "pool_size": len(pool)}
+    finally:
+        session.close()
+
+
 # --- EPIC-04：观点抽取 ---
 
 

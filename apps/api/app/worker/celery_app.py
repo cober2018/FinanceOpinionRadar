@@ -67,4 +67,9 @@ celery_app.conf.beat_schedule = {
         "task": "sweep_content_retention",
         "schedule": get_settings().retention_sweep_interval_sec,
     },
+    # 青果长效代理自动维护：查询在用→对齐代理池，通道空则自动提取（每 10 分钟）
+    "qg-proxy-maintain": {
+        "task": "qg_proxy_maintain",
+        "schedule": 600,
+    },
 }
