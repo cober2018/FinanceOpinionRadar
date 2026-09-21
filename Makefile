@@ -87,6 +87,10 @@ worker-beat: ## 启动 Celery worker + beat（dev：全队列消费 default/medi
 live-status: ## 直播值守看板（每个值守直播间一行：在播/同步/会话/转录）
 	$(PYTHON) scripts/live_dashboard.py
 
+streamcap-keeper: ## 保活 StreamCap 无头浏览器会话（StreamCap 无浏览器会话时探测/录制全停，见脚本头注释）
+	mkdir -p logs
+	./scripts/streamcap_keepalive.sh >> logs/keepalive.log 2>&1 &
+
 seed: ## 写入开发用种子数据
 	$(PYTHON) scripts/seed_dev.py
 
