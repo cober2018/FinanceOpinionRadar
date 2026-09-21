@@ -58,7 +58,7 @@ type VPVideoRow = {
   viewpoint_total: number
   viewpoint_needs_review: number
   viewpoint_confirmed: number
-  stance_summary?: { horizon: string | null; stances: string[] }[]
+  stance_summary?: { horizon: string | null; tags: { stance: string; entity: string | null; count: number }[] }[]
 }
 
 type DanmakuStats = { total: number; sessions: number; latest_message_at: string | null }
@@ -1246,7 +1246,7 @@ function StanceBadge({ stance }: { stance: string }) {
   return <span className={`badge ${cls}`}>{STANCE_CN[stance] ?? stance}</span>
 }
 
-// 视频级立场标签：一个期限一行（1-3D 看多 / 1-4W 看空），期限用原始编码
+// 视频级立场标签：一个期限一行，每个标签 = 标的+立场（一个完整的观点），期限用原始编码
 function StanceSummary({ summary }: { summary: VPVideoRow['stance_summary'] }) {
   if (!summary || summary.length === 0) return <span className="muted">-</span>
   return (
@@ -1254,8 +1254,12 @@ function StanceSummary({ summary }: { summary: VPVideoRow['stance_summary'] }) {
       {summary.map((g, i) => (
         <span key={i}>
           <span className="muted" style={{ marginRight: 4 }}>{g.horizon ?? '未定期限'}</span>
-          {g.stances.map((s) => (
-            <StanceBadge key={s} stance={s} />
+          {g.tags.map((t, j) => (
+            <span key={j} className="stance-tag">
+              {t.entity && <span className="stance-entity">{t.entity}</span>}
+              <StanceBadge stance={t.stance} />
+              {t.count > 1 && <span className="muted" style={{ fontSize: 11 }}>×{t.count}</span>}
+            </span>
           ))}
         </span>
       ))}

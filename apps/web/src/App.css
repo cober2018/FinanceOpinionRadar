@@ -588,6 +588,19 @@ input:focus, select:focus, textarea:focus {
   font-size: 12px;
 }
 
+/* 一个完整立场标签：标的 + 立场徽章（+ 计数） */
+.stance-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+.stance-entity {
+  color: var(--ink-300);
+}
+
 .ok {
   color: var(--ok);
   background: var(--ok-soft);

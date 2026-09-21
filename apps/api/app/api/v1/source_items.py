@@ -188,14 +188,15 @@ def list_source_items(
     for si, vs, n in vp_rows:
         vp_counts.setdefault(si, {})[vs] = n
 
-    # 立场聚合（时间维度 × 立场）：已确认优先，无已确认时回退全部未驳回观点。
-    # 同视频"数周看多 + 长期看空"是两个观点，聚合标签必须带期限才有意义。
+    # 立场聚合（标的 × 时间维度 × 立场）：已确认优先，无已确认时回退全部未驳回观点。
+    # 同视频"对大盘数周看多 + 对纳指长期看空"是两个观点，标签不带标的就不算完整立场。
     vp_detail = (
         session.query(
             Viewpoint.source_item_id,
             Viewpoint.horizon,
             Viewpoint.stance,
             Viewpoint.verification_status,
+            Viewpoint.entity_raw,
         )
         .filter(
             Viewpoint.source_item_id.in_(item_ids or [0]),
@@ -204,24 +205,34 @@ def list_source_items(
         .all()
     )
     horizon_order = ("intraday", "1-3D", "1-4W", "1-3M", "3M+")
-    stance_groups: dict[int, dict[str, dict[str | None, set[str]]]] = {}
-    for si, horizon, stance, status in vp_detail:
+    # key = (horizon, stance, entity)，value = 同组合观点数
+    stance_groups: dict[int, dict[str, dict[tuple[str | None, str, str | None], int]]] = {}
+    for si, horizon, stance, status, entity in vp_detail:
         groups = stance_groups.setdefault(si, {})
+        key = (horizon, stance, entity)
+        bucket_all = groups.setdefault("all", {})
+        bucket_all[key] = bucket_all.get(key, 0) + 1
         if status == "confirmed":
-            groups.setdefault("confirmed", {}).setdefault(horizon, set()).add(stance)
-        groups.setdefault("all", {}).setdefault(horizon, set()).add(stance)
+            bucket_conf = groups.setdefault("confirmed", {})
+            bucket_conf[key] = bucket_conf.get(key, 0) + 1
 
     def _stance_summary(item_id: int) -> list[dict]:
-        per_horizon = stance_groups.get(item_id, {}).get("confirmed") or stance_groups.get(
+        per_key = stance_groups.get(item_id, {}).get("confirmed") or stance_groups.get(
             item_id, {}
         ).get("all", {})
+        by_horizon: dict[str | None, list[dict]] = {}
+        for (h, stance, entity), n in per_key.items():
+            by_horizon.setdefault(h, []).append({"stance": stance, "entity": entity, "count": n})
         return [
-            {"horizon": h, "stances": sorted(per_horizon[h])}
-            for h in sorted(
-                per_horizon,
-                key=lambda x: (
-                    horizon_order.index(x) if x in horizon_order else len(horizon_order),
-                    x or "",
+            {
+                "horizon": h,
+                "tags": sorted(tags, key=lambda t: (t["stance"], t["entity"] or "")),
+            }
+            for h, tags in sorted(
+                by_horizon.items(),
+                key=lambda kv: (
+                    horizon_order.index(kv[0]) if kv[0] in horizon_order else len(horizon_order),
+                    kv[0] or "",
                 ),
             )
         ]
