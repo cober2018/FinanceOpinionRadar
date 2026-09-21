@@ -60,9 +60,9 @@ def test_prepare_task_runs_pipeline(db_session, task_session_factory, monkeypatc
     item = db_session.get(SourceItem, item.id)
     assert item.status == "transcribed"
 
-    # 真实进度钩子：最终阶段 asr_done 落 metadata.progress（前端可视化的数据源）
-    prog = (item.metadata_json or {}).get("progress") or {}
-    assert prog.get("phase") == "asr_done", prog
+    # 成功即清进度：progress 只服务进行中/失败态，成功后不残留进行时文案
+    prog = (item.metadata_json or {}).get("progress")
+    assert not prog, prog
 
 
 def test_sweep_dispatches_discovered_only(db_session, task_session_factory, sent):

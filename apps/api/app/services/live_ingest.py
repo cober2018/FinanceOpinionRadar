@@ -132,9 +132,12 @@ def ingest_live_segments(session, provider=None) -> dict:
         # 收尾判定先行：静默关闭的是上一轮遗留会话，不计入本轮 sessions_active
         _close_stale_sessions(session, s.live_close_grace_sec)
         for sd in scan_live_dir(root):
-            item = _ensure_session(session, sd)
+            item, session_created = _ensure_session_with_flag(session, sd)
             if item is None:
                 continue
+            if session_created:
+                # 开播事件驱动：新直播会话出现 → 立即派弹幕采集，不空等 beat 轮询
+                _dispatch_danmaku_on_live(session, item)
             _warn_gaps(sd, s.live_close_grace_sec)
             if item.status in ("transcribed", "extracting", "reviewing", "ready"):
                 # 已收尾/进入抽取链的会话不再扫描（EPIC-04 状态机扩展后的兼容）
@@ -272,6 +275,30 @@ def _resolve_live_account(session, author: str) -> SourceAccount | None:
         .order_by(SourceAccount.id)
         .first()
     )
+
+
+def _ensure_session_with_flag(session, sd: LiveSessionDir) -> tuple[SourceItem | None, bool]:
+    """_ensure_session + 是否新建：新建=True 用于开播事件（弹幕即时刻派）。"""
+    before_ids = {
+        i
+        for (i,) in session.query(SourceItem.id).filter(SourceItem.item_type == "live").all()
+    }
+    item = _ensure_session(session, sd)
+    return item, (item is not None and item.id not in before_ids)
+
+
+def _dispatch_danmaku_on_live(session, item) -> None:
+    """开播即采集弹幕：派发失败只记日志，不影响转写主链（弹幕是旁路增强）。"""
+    import structlog
+
+    log = structlog.get_logger(__name__)
+    try:
+        from app.services.danmaku.dispatch import dispatch_danmaku_collectors
+
+        result = dispatch_danmaku_collectors(session)
+        log.info("danmaku_dispatched_on_live", session_item=item.id, result=result)
+    except Exception as exc:  # noqa: BLE001 旁路失败不阻断
+        log.warning("danmaku_dispatch_on_live_failed", session_item=item.id, error=str(exc)[:120])
 
 
 def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:

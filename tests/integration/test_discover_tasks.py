@@ -99,18 +99,18 @@ def test_dispatch_due_only_enabled_and_due(
 
     from app.services import live_status
 
-    def _settings_with(stagger: int):
-        return lambda: SimpleNamespace(
-            discover_dispatch_stagger_max_sec=stagger, douyin_discover_max_pages=3
-        )
+    # dispatch 优先读 DB 安全设置（get_security_settings），env 只是 None 回落——
+    # 会话内其他用例可能写过 security 覆盖行，这里直接桩掉读取点保证确定性
+    def _security_with(stagger: int):
+        return lambda session: {"effective": {"discover_dispatch_stagger_max_sec": stagger}}
 
-    monkeypatch.setattr(live_status, "get_settings", _settings_with(0))
+    monkeypatch.setattr(live_status, "get_security_settings", _security_with(0))
     n = worker_tasks.dispatch_due_discoveries.run()
     assert n == 1
     assert sent == [("discover_source_account", {"args": [due.id]})]
 
     # stagger>0：payload 带 0~N 随机 countdown（人类化错峰）
-    monkeypatch.setattr(live_status, "get_settings", _settings_with(60))
+    monkeypatch.setattr(live_status, "get_security_settings", _security_with(60))
     sent.clear()
     worker_tasks.dispatch_due_discoveries.run()
     ((name, kwargs),) = sent
