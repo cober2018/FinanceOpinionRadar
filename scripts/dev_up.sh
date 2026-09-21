@@ -47,7 +47,7 @@ start_deps() {
 }
 
 start_api() {
-  echo "==> 启动 API :$API_PORT（日志 $API_LOG）"
+  echo "==> 启动 API :${API_PORT}（日志 ${API_LOG}）"
   nohup "$PY" -m uvicorn app.main:app --reload --port "$API_PORT" --app-dir apps/api \
     >"$API_LOG" 2>&1 &
   disown
@@ -60,7 +60,7 @@ start_api() {
 }
 
 start_worker() {
-  echo "==> 启动 worker+beat（全队列 default/media/llm/danmaku，日志 $WORKER_LOG）"
+  echo "==> 启动 worker+beat（全队列 default/media/llm/danmaku，日志 ${WORKER_LOG}）"
   nohup "$PY" -m celery -A app.worker.celery_app worker --beat \
     -Q default,media,llm,danmaku --loglevel=info >"$WORKER_LOG" 2>&1 &
   disown

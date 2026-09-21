@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  StreamCap 无头会话保活（scripts/streamcap_keepalive.sh）的 launchd 常驻配置。
+  由 `make streamcap-keeper` 安装到 ~/Library/LaunchAgents（__REPO_DIR__ 会被替换
+  为仓库绝对路径）。开机登录后自动拉起；KeepAlive 保证脚本意外退出后自动重启。
+  停止/卸载：make streamcap-keeper-stop
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.financeopinionradar.streamcap-keeper</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO_DIR__/scripts/streamcap_keepalive.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__REPO_DIR__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd 默认 PATH 不含 brew，docker/pkill 等会找不到 -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>__REPO_DIR__/logs/keepalive.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO_DIR__/logs/keepalive.log</string>
+</dict>
+</plist>

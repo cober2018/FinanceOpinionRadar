@@ -84,12 +84,23 @@ worker: ## 启动 Celery worker
 worker-beat: ## 启动 Celery worker + beat（dev：全队列消费 default/media/llm/danmaku）
 	$(PYTHON) -m celery -A app.worker.celery_app worker --beat -Q default,media,llm,danmaku --loglevel=info
 
+streamcap-keeper: ## 安装并启动 StreamCap 会话保活（launchd 常驻，登录自启，幂等；背景见脚本头注释）
+	mkdir -p logs $(HOME)/Library/LaunchAgents
+	sed -e "s|__REPO_DIR__|$(CURDIR)|g" infra/launchd/com.financeopinionradar.streamcap-keeper.plist \
+		> $(HOME)/Library/LaunchAgents/com.financeopinionradar.streamcap-keeper.plist
+	-launchctl bootout gui/$$(id -u)/com.financeopinionradar.streamcap-keeper 2>/dev/null
+	-pkill -f scripts/streamcap_keepalive.sh 2>/dev/null
+	launchctl bootstrap gui/$$(id -u) $(HOME)/Library/LaunchAgents/com.financeopinionradar.streamcap-keeper.plist
+	@echo "streamcap-keeper 已交给 launchd 常驻（登录自启）。日志: logs/keepalive.log"
+
+streamcap-keeper-stop: ## 停止并卸载 StreamCap 会话保活
+	launchctl bootout gui/$$(id -u)/com.financeopinionradar.streamcap-keeper 2>/dev/null || true
+	pkill -f scripts/streamcap_keepalive.sh 2>/dev/null || true
+	pkill -f "$${TMPDIR:-/tmp}/streamcap-keepalive-profile" 2>/dev/null || true
+	@echo "streamcap-keeper 已停止"
+
 live-status: ## 直播值守看板（每个值守直播间一行：在播/同步/会话/转录）
 	$(PYTHON) scripts/live_dashboard.py
-
-streamcap-keeper: ## 保活 StreamCap 无头浏览器会话（StreamCap 无浏览器会话时探测/录制全停，见脚本头注释）
-	mkdir -p logs
-	./scripts/streamcap_keepalive.sh >> logs/keepalive.log 2>&1 &
 
 seed: ## 写入开发用种子数据
 	$(PYTHON) scripts/seed_dev.py
