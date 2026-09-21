@@ -42,6 +42,7 @@ def _serialize(
         "topic_name": topic.canonical_name if topic else None,
         "entity_id": vp.entity_id,
         "entity_name": entity.canonical_name if entity else None,
+        "entity_raw": vp.entity_raw,
         "claim": vp.claim,
         "stance": vp.stance,
         "horizon": vp.horizon,
@@ -251,3 +252,56 @@ def patch_viewpoint(viewpoint_id: int, body: ViewpointPatch, session: DbDep):
     )
     session.commit()  # 审计单独落库：write_audit 只 add 不 commit，漏提交会被会话关闭回滚
     return {"id": vp.id, "updated": sorted(updates.keys())}
+
+
+def _reextract_item(session: Session, item: SourceItem) -> bool:
+    """删旧观点（级联证据）→ 状态回 extracting → 派发抽取任务。返回是否派发。"""
+    from app.domain.pipeline_states import ensure_transition
+    from app.worker.celery_app import celery_app
+
+    if item.status not in ("transcribed", "extracting", "reviewing", "ready"):
+        return False
+    session.query(Viewpoint).filter(Viewpoint.source_item_id == item.id).delete(
+        synchronize_session=False
+    )
+    if item.status != "extracting":
+        ensure_transition(item.status, "extracting")
+        item.status = "extracting"
+    session.commit()
+    celery_app.send_task("extract_source_item_viewpoints", args=[item.id])
+    return True
+
+
+@router.post("/re-extract/{item_id}", status_code=202)
+def reextract_item(item_id: int, session: DbDep):
+    """单个视频重抽（v2 整体理解）：删旧观点后重新派发抽取。"""
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    if not _reextract_item(session, item):
+        raise HTTPException(status_code=409, detail=f"状态 {item.status} 不可重抽")
+    return {"item_id": item_id, "dispatched": True}
+
+
+@router.post("/re-extract-all", status_code=202)
+def reextract_all(session: DbDep, scope: str = "v1"):
+    """批量重抽：scope=v1 只重抽旧版（extraction@v1）抽过的视频；scope=all 全部可抽的。"""
+    stmt = select(SourceItem).where(SourceItem.item_type.in_(["vod", "live"]))
+    items = session.execute(stmt).scalars().all()
+    dispatched = []
+    for item in items:
+        if scope == "v1":
+            is_v1 = (
+                session.query(Viewpoint.id)
+                .filter(
+                    Viewpoint.source_item_id == item.id,
+                    Viewpoint.prompt_version == "extraction@v1",
+                )
+                .first()
+                is not None
+            )
+            if not is_v1:
+                continue  # 未抽过/已是 v2：新引擎会随自动流跑，无需手动派
+        if _reextract_item(session, item):
+            dispatched.append(item.id)
+    return {"dispatched": len(dispatched), "item_ids": dispatched}

@@ -7,8 +7,9 @@ PIPELINE_TRANSITIONS: dict[str, set[str]] = {
     "transcribing": {"transcribed", "failed"},
     "transcribed": {"extracting", "failed"},  # EPIC-04 起
     "extracting": {"reviewing", "ready", "failed"},  # ready：抽出 0 观点无东西可审
-    "reviewing": {"ready", "failed"},
-    "ready": set(),
+    # reviewing/ready → extracting：人工触发 v2 重抽（删旧观点后回抽取）
+    "reviewing": {"ready", "failed", "extracting"},
+    "ready": {"extracting"},
     "failed": {"resolved", "ignored"},  # retry 从 resolved 重跑 prepare
     "ignored": set(),
 }

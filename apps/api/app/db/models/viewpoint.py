@@ -41,6 +41,9 @@ class Viewpoint(TimestampMixin, IdMixin, Base):
     )
     topic_id: Mapped[int | None] = mapped_column(ForeignKey("topic.id", ondelete="SET NULL"))
     entity_id: Mapped[int | None] = mapped_column(ForeignKey("entity.id", ondelete="SET NULL"))
+    # 抽取时模型给的原始标的名（如「黄金」「中证500」）：entity 词典未命中时
+    # 靠它展示标的，不让观点丢了「对什么」这个维度
+    entity_raw: Mapped[str | None] = mapped_column(String(200))
     claim: Mapped[str] = mapped_column(Text, nullable=False)
     stance: Mapped[str] = mapped_column(String(30), nullable=False)
     horizon: Mapped[str | None] = mapped_column(String(30))  # 未提时间维度则空（合法）

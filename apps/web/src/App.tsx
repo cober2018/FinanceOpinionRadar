@@ -1220,6 +1220,7 @@ type VPRow = {
   creator_name: string | null
   topic_name: string | null
   entity_name: string | null
+  entity_raw?: string | null
   claim: string
   stance: string
   horizon: string | null
@@ -1293,6 +1294,18 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
   const pendingTotal = rows.reduce((s, r) => s + r.viewpoint_needs_review, 0)
   const allTotal = rows.reduce((s, r) => s + r.viewpoint_total, 0)
 
+  const reextractAll = async () => {
+    if (!window.confirm('用 v2 整体理解引擎重抽全部旧版观点？旧观点（含已确认/已驳回）将删除并重新抽取，需人工复核的结果会重来。')) return
+    setError(null)
+    try {
+      const d = await api<{ dispatched: number }>('/viewpoints/re-extract-all?scope=v1', { method: 'POST' })
+      window.alert(`已派发 ${d.dispatched} 个视频的重抽任务，按队列依次执行（可在任务页看进度）`)
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   return (
     <div className="stack">
       {error && <p className="error">{error}</p>}
@@ -1302,6 +1315,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
             ? `复核队列（${rows.length} 个视频 · ${pendingTotal} 条待审观点）`
             : `观点（${rows.length} 个视频 · ${allTotal} 条观点）`}
         </h3>
+        <button className="ghost" onClick={reextractAll}>旧版观点全部重抽（v2）</button>
       </div>
       <p className="hint">
         一个视频一条记录；点行或「观点」查看该视频抽出的全部观点（立场是每条观点自己的属性），「文案」看视频转写原文，证据在观点列表里逐条查看。
@@ -1337,7 +1351,20 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
               <td>{statusBadge(r.status)}</td>
               <td onClick={(e) => e.stopPropagation()}>
                 <button onClick={() => setVpDrawer(r)}>观点</button>{' '}
-                <button className="ghost" onClick={() => setTextDrawer(r)}>文案</button>
+                <button className="ghost" onClick={() => setTextDrawer(r)}>文案</button>{' '}
+                <button
+                  className="ghost"
+                  title="删除旧观点并用 v2 整体理解引擎重新抽取"
+                  onClick={() => {
+                    if (window.confirm(`重抽「${r.title ?? r.id}」的观点？旧观点将删除重新抽取。`)) {
+                      api(`/viewpoints/re-extract/${r.id}`, { method: 'POST' })
+                        .then(() => reload())
+                        .catch((e: Error) => setError(e.message))
+                    }
+                  }}
+                >
+                  重抽
+                </button>
               </td>
             </tr>
           ))}
@@ -1446,7 +1473,7 @@ function VideoViewpointsDrawer(props: {
                 <span className="muted" style={{ fontSize: 11 }}>
                   置信 {r.confidence.toFixed(2)}
                   {r.topic_name ? ` · ${r.topic_name}` : ''}
-                  {r.entity_name ? ` · ${r.entity_name}` : ''}
+                  {(r.entity_name ?? r.entity_raw) ? ` · 标的：${r.entity_name ?? r.entity_raw}` : ''}
                 </span>
               </div>
               <p style={{ margin: '0 0 10px', lineHeight: 1.6 }}>{r.claim}</p>

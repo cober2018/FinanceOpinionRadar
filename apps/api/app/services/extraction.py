@@ -207,6 +207,7 @@ def extract_source_item(
                     continue
                 topic_id = resolve_topic(session, cand.get("topic"))
                 entity_id, _disp = None, "none"
+                entity_raw = None
                 entities_raw = cand.get("entities") or []
                 for ent in entities_raw:
                     eid, disp = normalize_entity(
@@ -215,6 +216,8 @@ def extract_source_item(
                         entity_type=ent.get("entity_type", "other"),
                         first_seen_item_id=item_id,
                     )
+                    if entity_raw is None and (ent.get("raw_name") or "").strip():
+                        entity_raw = ent["raw_name"].strip()[:200]
                     if eid is not None:
                         entity_id = eid
                         break
@@ -223,6 +226,7 @@ def extract_source_item(
                     source_item_id=item_id,
                     topic_id=topic_id,
                     entity_id=entity_id,
+                    entity_raw=entity_raw,
                     claim=cand["claim"].strip(),
                     stance=stance,
                     horizon=cand.get("horizon") or None,
