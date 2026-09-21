@@ -37,6 +37,7 @@ type LibraryItem = {
   duration_ms: number | null
   published_at: string | null
   backfill: boolean
+  members_only?: boolean
   progress: { phase: string; detail: string; at: string } | null
   chat_count: number
   is_asset: boolean
@@ -1031,6 +1032,7 @@ function LibraryPage() {
               <td>{r.item_type === 'live' ? '直播' : '视频'}</td>
               <td>
                 {statusBadgeWithProgress(r.status, r.progress)}
+                {r.members_only && <span className="badge">会员专属</span>}
                 {r.backfill && r.status === 'discovered' && <span className="muted">（旧）</span>}
                 <div className="muted" style={{ fontSize: 11 }}>
                   {r.is_asset

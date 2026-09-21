@@ -15,6 +15,7 @@ from app.services.media.contracts import (
     DiscoveredItem,
     DownloadResult,
     ItemRef,
+    MembersOnlyError,
     NotSingleItemError,
     ResolvedMedia,
     SubtitleResult,
@@ -26,6 +27,9 @@ _STDERR_TAIL_CHARS = 500
 # voice-pro 实战：YouTube 对多数客户端启用 SABR-only 流，默认客户端无 JS runtime 时
 # 会退化到废弃路径吃 HTTP 403；android 客户端可绕开（对非 YouTube 平台是无害 no-op）
 _SABR_ARGS = ("--extractor-args", "youtube:player_client=android")
+# 会员专属内容的两道识别：stderr 精确（YouTube 官方话术）+ 标题启发式（发现层预过滤）
+_MEMBERS_STDERR_RE = re.compile(r"available to .*members|members-only content", re.IGNORECASE)
+_MEMBERS_TITLE_RE = re.compile(r"^【会员|会员专属|会员专享")
 # 存进 metadata 快照的 yt-dlp 键白名单（仅审计用途，schema 见 models/source.py docstring）
 _METADATA_KEYS = ("view_count", "like_count", "language", "description")
 _ENTRY_METADATA_KEYS = ("live_status", "view_count")
@@ -72,6 +76,8 @@ class YtDlpProcess:
             ) from exc
         if proc.returncode != 0:
             tail = proc.stderr.strip()[-_STDERR_TAIL_CHARS:]
+            if _MEMBERS_STDERR_RE.search(tail):
+                raise MembersOnlyError(f"yt-dlp 退出码 {proc.returncode}: {tail or '(无 stderr)'}")
             raise AdapterProcessError(f"yt-dlp 退出码 {proc.returncode}: {tail or '(无 stderr)'}")
         return proc
 
@@ -130,8 +136,15 @@ class GenericYtDlpAdapter:
             ]
         )
         entries = data.get("entries") or []
-        # _type='playlist' 是频道页签（Videos/Shorts/Live）等子播放列表，真条目是 'url'
-        return [_parse_entry(e) for e in entries if e.get("id") and e.get("_type") != "playlist"]
+        # _type='playlist' 是频道页签（Videos/Shorts/Live）等子播放列表，真条目是 'url'；
+        # 会员专属（【会员N/会员专属/会员专享标题）直接不建条目——resolve 必失败，省重试预算
+        return [
+            _parse_entry(e)
+            for e in entries
+            if e.get("id")
+            and e.get("_type") != "playlist"
+            and not _is_members_title(e.get("title"))
+        ]
 
     # --- EPIC-03：字幕 / 媒体下载 ---
 
@@ -233,6 +246,11 @@ def _parse_subtitles(data: dict) -> tuple[SubtitleTrack, ...]:
         if fmts:
             tracks.append(SubtitleTrack(language=lang, is_auto=True))
     return tuple(tracks)
+
+
+def _is_members_title(title: object) -> bool:
+    """标题启发式判定会员专属内容（【会员N/会员专属/会员专享）。"""
+    return bool(isinstance(title, str) and _MEMBERS_TITLE_RE.search(title))
 
 
 def _parse_entry(entry: dict) -> DiscoveredItem:

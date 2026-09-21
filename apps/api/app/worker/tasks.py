@@ -354,7 +354,12 @@ def retry_failed_prepares() -> int:
         now = datetime.now(UTC)
         dispatched = 0
         for item in failed:
-            retry = dict((item.metadata_json or {}).get("retry") or {})
+            meta = item.metadata_json or {}
+            # 会员专属等内容性永久失败：重试永远无意义，不占退避序列
+            err = meta.get("last_error") or {}
+            if meta.get("members_only") or err.get("code") == "MEMBERS_ONLY":
+                continue
+            retry = dict(meta.get("retry") or {})
             count = int(retry.get("count") or 0)
             if count >= 5:
                 continue
@@ -362,7 +367,6 @@ def retry_failed_prepares() -> int:
             wait = spacing[min(count, len(spacing) - 1)]
             if last and now - last < wait:
                 continue
-            meta = dict(item.metadata_json or {})
             meta["retry"] = {"count": count + 1, "last_at": now.isoformat()}
             item.metadata_json = meta
             celery_app.send_task("prepare_source_item", args=[item.id])

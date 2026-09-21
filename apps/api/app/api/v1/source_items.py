@@ -256,6 +256,7 @@ def list_source_items(
             "duration_ms": item.duration_ms,
             "published_at": item.published_at,
             "backfill": bool((item.metadata_json or {}).get("backfill")),
+            "members_only": bool((item.metadata_json or {}).get("members_only")),
             "progress": (item.metadata_json or {}).get("progress"),
             "chat_count": chat_counts.get(item.id, 0),
             "is_asset": item.is_asset,

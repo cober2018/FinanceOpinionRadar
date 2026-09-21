@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 from app.services.media.adapters.yt_dlp import YtDlpProcess
-from app.services.media.contracts import AdapterProcessError, AdapterTimeoutError
+from app.services.media.contracts import (
+    AdapterProcessError,
+    AdapterTimeoutError,
+    MembersOnlyError,
+)
 
 FAKE = str(Path(__file__).resolve().parents[1] / "fixtures" / "media" / "fake_ytdlp.py")
 
@@ -25,6 +29,15 @@ def test_run_returns_parsed_json(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_nonzero_exit_raises_with_stderr_tail(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(AdapterProcessError, match="private"):
         run(monkeypatch, "private")
+
+
+def test_members_only_stderr_raises_members_only_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """会员专属视频 → MembersOnlyError（code=MEMBERS_ONLY），上层跳过自动重试。"""
+    with pytest.raises(MembersOnlyError) as ei:
+        run(monkeypatch, "members")
+    assert ei.value.code == "MEMBERS_ONLY"
 
 
 def test_unsupported_url_raises(monkeypatch: pytest.MonkeyPatch) -> None:

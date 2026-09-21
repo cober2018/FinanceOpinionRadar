@@ -100,6 +100,15 @@ class AdapterProcessError(AdapterError):
     """外部进程失败（非零退出/输出不可解析），message 携带 stderr 尾部。"""
 
 
+class MembersOnlyError(AdapterProcessError):
+    """付费会员专属内容（如 YouTube 频道会员档）——永久性失败，重试无意义。
+
+    preparation 据此打 members_only 标记并让 retry_failed_prepares 永久跳过。
+    """
+
+    code = "MEMBERS_ONLY"
+
+
 class AdapterTimeoutError(AdapterError):
     """外部进程超时被杀。"""
 

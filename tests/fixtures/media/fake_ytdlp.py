@@ -21,10 +21,16 @@ if args_file:
 if behavior == "timeout":
     time.sleep(60)
     sys.exit(0)
-if behavior in ("private", "badurl"):
+if behavior in ("private", "badurl", "members"):
     msg = (
         "ERROR: [private] This video is private."
         if behavior == "private"
+        else (
+            "ERROR: [youtube] VHku1w6_Sm8: This video is available to this channel's members "
+            "on level: VIP (or any higher level). Join this channel to get access to "
+            "members-only content and other exclusive perks."
+        )
+        if behavior == "members"
         else "ERROR: Unsupported URL: some garbage"
     )
     print(msg, file=sys.stderr)

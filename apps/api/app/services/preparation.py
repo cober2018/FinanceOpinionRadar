@@ -403,9 +403,12 @@ def _record_failure(
                     session.rollback()
                     return {"item_id": item_id, "status": fresh.status, "code": code}
             # 已是 failed（重试再败）允许覆写：last_error/progress 必须反映最新一次失败
+            members_only = code == "MEMBERS_ONLY"
+            extra = {"members_only": True} if members_only else {}
             fresh.status = "failed"
             fresh.metadata_json = {
                 **fresh.metadata_json,
+                **extra,
                 "last_error": {
                     "code": code,
                     "stage": stage,
@@ -416,7 +419,9 @@ def _record_failure(
                 "progress": {
                     "phase": "failed",
                     "detail": (
-                        f"{_STAGE_PROGRESS_CN.get(stage, stage)}失败：{str(exc)[:80]}"
+                        "会员专属视频，无法采集（需加入频道会员）；已跳过自动重试"
+                        if members_only
+                        else f"{_STAGE_PROGRESS_CN.get(stage, stage)}失败：{str(exc)[:80]}"
                     ),
                     "at": datetime.now(UTC).isoformat(),
                 },

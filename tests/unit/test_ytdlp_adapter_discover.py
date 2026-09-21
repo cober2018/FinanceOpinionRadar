@@ -49,3 +49,17 @@ def test_discover_rejects_bad_account_url(monkeypatch: pytest.MonkeyPatch) -> No
     bad = AccountRef(platform="youtube", external_id="x", url="https://evil.com/videos")
     with pytest.raises(UrlNotAllowedError):
         make(monkeypatch, "success", PLAYLIST_PAYLOAD).discover(bad)
+
+
+def test_discover_skips_members_only_titles(monkeypatch: pytest.MonkeyPatch) -> None:
+    """【会员N/会员专属/会员专享 标题在发现层即不建条目——resolve 必失败，省重试预算。"""
+    payload = {
+        "entries": [
+            {"id": "v1", "title": "【会员86】融资上杠杆", "_type": "url", "url": "https://www.youtube.com/watch?v=v1"},
+            {"id": "v2", "title": "会员专属：实操复盘", "_type": "url", "url": "https://www.youtube.com/watch?v=v2"},
+            {"id": "v3", "title": "免费视频聊会员制度", "_type": "url", "url": "https://www.youtube.com/watch?v=v3"},
+            {"id": "v4", "title": "普通复盘 #股票", "_type": "url", "url": "https://www.youtube.com/watch?v=v4"},
+        ]
+    }
+    items = make(monkeypatch, "success", payload).discover(ACCOUNT)
+    assert [i.external_item_id for i in items] == ["v3", "v4"]
