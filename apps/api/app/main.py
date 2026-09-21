@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -5,7 +6,22 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import api_router
 
-app = FastAPI(title="Finance Opinion Radar", version="0.1.0")
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    # Plan #7：按 DB 意图对账系统服务开关（launchd agent 被清理后自愈）；失败不阻断启动
+    from app.db.session import get_session_factory
+    from app.services import runtime_control
+
+    try:
+        with get_session_factory()() as session:
+            runtime_control.sync_runtime_on_startup(session)
+    except Exception:  # noqa: BLE001 - 开发环境可能连不上库（如首次未迁移）
+        pass
+    yield
+
+
+app = FastAPI(title="Finance Opinion Radar", version="0.1.0", lifespan=_lifespan)
 app.include_router(api_router)
 
 

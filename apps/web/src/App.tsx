@@ -91,6 +91,12 @@ type SecuritySettings = {
   effective: { discover_dispatch_stagger_max_sec: number; douyin_discover_max_pages: number }
 }
 
+type RuntimeSettings = {
+  autostart: boolean
+  watchdog: boolean
+  installed: { autostart: boolean | null; watchdog: boolean | null }
+}
+
 type LLMTemplate = {
   key: string
   label: string
@@ -2326,6 +2332,97 @@ function QgProxyCard() {
   )
 }
 
+function SystemServiceCard() {
+  const [rt, setRt] = useState<RuntimeSettings | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(() => {
+    api<RuntimeSettings>('/settings/runtime')
+      .then(setRt)
+      .catch((e: Error) => setError(e.message))
+  }, [])
+  useEffect(reload, [reload])
+
+  const toggle = async (flag: 'autostart' | 'watchdog', value: boolean) => {
+    setBusy(true)
+    setError(null)
+    setMsg(null)
+    try {
+      const saved = await api<RuntimeSettings>('/settings/runtime', {
+        method: 'PUT',
+        body: JSON.stringify({ [flag]: value }),
+      })
+      setRt(saved)
+      setMsg(value ? '已开启' : '已关闭')
+    } catch (e) {
+      setError((e as Error).message)
+      reload()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const stateText = (intent: boolean | undefined, installed: boolean | null | undefined) => {
+    if (installed === null || installed === undefined) return '状态未知'
+    if (installed === intent) return installed ? '已生效' : '未启用'
+    return intent ? '启动失败（见后端日志）' : '停止失败（见后端日志）'
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h3>系统服务</h3>
+      </div>
+      <div className="stack">
+        {error && <p className="error">{error}</p>}
+        {msg && <p className="ok">{msg}</p>}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <b>开机自启</b>
+            <p className="muted" style={{ fontSize: 12 }}>
+              登录本机后自动拉起平台：Postgres/Redis/解析服务/API/转写 worker（幂等，已在跑的跳过）。
+            </p>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={rt?.autostart ?? false}
+              disabled={busy || !rt}
+              onChange={(e) => toggle('autostart', e.target.checked)}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <b>看门狗</b>
+            <p className="muted" style={{ fontSize: 12 }}>
+              每 60 秒巡检，组件「运行中掉线」自动拉起。不做冷启动；开启后手动停止的组件会被自动拉起，维护前请先关闭。
+            </p>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={rt?.watchdog ?? false}
+              disabled={busy || !rt}
+              onChange={(e) => toggle('watchdog', e.target.checked)}
+            />
+            <span className="slider" />
+          </label>
+        </div>
+        {rt && (
+          <p className="muted" style={{ fontSize: 12 }}>
+            生效状态：开机自启 {stateText(rt.autostart, rt.installed.autostart)}；看门狗{' '}
+            {stateText(rt.watchdog, rt.installed.watchdog)}。开关状态存库，重启后保持。
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function SettingsPage() {
   const [stagger, setStagger] = useState('')
   const [pages, setPages] = useState('')
@@ -2370,6 +2467,7 @@ function SettingsPage() {
     <div className="settings-grid stack">
       <LLMSettingsCard />
       <QgProxyCard />
+      <SystemServiceCard />
       <div className="panel">
         <div className="panel-head">
           <h3>安全（防风控）</h3>

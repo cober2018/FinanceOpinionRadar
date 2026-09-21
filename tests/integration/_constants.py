@@ -3,7 +3,8 @@
 ALL_TABLES = (
     "creator, source_account, source_item, media_asset, transcript_segment, topic, entity, "
     "viewpoint, viewpoint_evidence, creator_topic_snapshot, topic_consensus_daily, "
-    "prompt_version, job_run, audit_log, live_chat_message, content_summary"
+    "prompt_version, job_run, audit_log, live_chat_message, content_summary, "
+    "app_setting, deleted_item_ref, entity_candidate"
 )
 
 EXPECTED_TABLES = {
@@ -14,6 +15,7 @@ EXPECTED_TABLES = {
     "transcript_segment",
     "topic",
     "entity",
+    "entity_candidate",
     "viewpoint",
     "viewpoint_evidence",
     "creator_topic_snapshot",
@@ -23,6 +25,8 @@ EXPECTED_TABLES = {
     "audit_log",
     "live_chat_message",
     "content_summary",
+    "app_setting",
+    "deleted_item_ref",
 }
 
 

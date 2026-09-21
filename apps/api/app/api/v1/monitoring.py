@@ -6,13 +6,13 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
 from app.db.session import get_db
-from app.services import live_status, llm_config
+from app.services import live_status, llm_config, runtime_control
 
 router = APIRouter(tags=["monitoring"])
 
@@ -42,6 +42,26 @@ def get_security_settings(session: DbDep):
 def put_security_settings(body: SecuritySettingsPayload, session: DbDep):
     try:
         return live_status.put_security_settings(session, body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class RuntimeSettingsPayload(BaseModel):
+    # StrictBool：拒绝 "yes"/1 等宽松强转，开关必须是显式布尔
+    autostart: StrictBool | None = None
+    watchdog: StrictBool | None = None
+
+
+@router.get("/settings/runtime")
+def get_runtime_settings(session: DbDep):
+    """系统服务开关：DB 意图 + launchd 实际加载态（installed，None=launchctl 不可用）。"""
+    return runtime_control.get_runtime_settings(session)
+
+
+@router.put("/settings/runtime")
+def put_runtime_settings(body: RuntimeSettingsPayload, session: DbDep):
+    try:
+        return runtime_control.put_runtime_settings(session, body.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
