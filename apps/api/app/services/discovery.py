@@ -125,11 +125,12 @@ def discover_account(
                 DeletedItemRef.source_account_id == account.id
             )
         }
-        # 首扫 = 旧视频回溯：只采标题建条目（backfill 标记），不投递转录；
+        # 首扫 = 只建条目不投递转录（backfill 标记仅适配适配器拿不到发布时间的条目）；
         # 之后的周期轮询才是"跟踪最新"，仅 auto_poll（视频监控开关开）才自动转录新视频。
         first_scan = account.last_success_at is None
         skipped_deleted = 0
         skipped_cross_account = 0
+        skipped_before_registration = 0
         for discovered in items:
             if (account.id, discovered.external_item_id) in tombstoned:
                 skipped_deleted += 1
@@ -147,6 +148,16 @@ def discover_account(
             )
             if cross_dup is not None:
                 skipped_cross_account += 1
+                continue
+            # 登记即跟踪、不回填（2026-09-22 用户指令）：只入库「账号登记（created_at）
+            # 之后发布」的视频，主播的历史视频一律不导入。发布时间缺失的条目（个别
+            # 适配器拿不到）维持原行为入库，避免误伤正常跟踪。
+            if (
+                discovered.published_at is not None
+                and account.created_at is not None
+                and discovered.published_at < account.created_at
+            ):
+                skipped_before_registration += 1
                 continue
             item, is_new = repo.upsert_by_external(
                 source_account_id=account.id,
@@ -194,10 +205,12 @@ def discover_account(
         auto_prepare=auto_prepare,
         skipped_deleted=skipped_deleted,
         skipped_cross_account=skipped_cross_account,
+        skipped_before_registration=skipped_before_registration,
     )
     return {
         "account_id": account_id,
         "skipped": False,
         "discovered": len(items),
         "created": len(created_ids),
+        "skipped_before_registration": skipped_before_registration,
     }

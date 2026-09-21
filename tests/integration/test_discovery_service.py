@@ -148,6 +148,46 @@ def test_discover_account_upserts_and_marks_success(db_session) -> None:
     assert len(sent) == 2
 
 
+def test_discover_account_skips_videos_published_before_registration(db_session) -> None:
+    """登记即跟踪、不回填（2026-09-22 用户指令）：登记之前发布的视频不导入。"""
+    from datetime import UTC, datetime, timedelta
+
+    account = _make_account(
+        db_session, url="https://www.youtube.com/@x/videos", mode="auto_poll"
+    )
+    account.last_success_at = datetime.now(UTC) - timedelta(hours=1)  # 非首扫
+    account.created_at = datetime.now(UTC) - timedelta(days=7)  # 一周前登记
+    db_session.commit()
+    items = [
+        # 登记前 8 天发布：跳过（历史视频）
+        DiscoveredItem(
+            "old", "旧", "https://www.youtube.com/watch?v=old",
+            datetime.now(UTC) - timedelta(days=8), None, {},
+        ),
+        # 登记后 1 天发布：入库（跟踪新视频）
+        DiscoveredItem(
+            "new", "新", "https://www.youtube.com/watch?v=new",
+            datetime.now(UTC) - timedelta(days=6), None, {},
+        ),
+        # 发布时间缺失：维持原行为入库
+        DiscoveredItem("nodate", "无日期", "https://www.youtube.com/watch?v=nodate", None, None, {}),
+    ]
+    sent: list[tuple] = []
+    adapter = StubAdapter(discovered=items)
+    outcome = discover_account(
+        account.id, db_session, adapter, send=lambda name, **kw: sent.append((name, kw))
+    )
+
+    assert outcome["created"] == 2
+    assert outcome["skipped_before_registration"] == 1
+    ext_ids = {
+        e for (e,) in db_session.query(SourceItem.external_item_id).filter(
+            SourceItem.source_account_id == account.id
+        ).all()
+    }
+    assert ext_ids == {"new", "nodate"}
+
+
 def test_discover_account_skips_missing_or_disabled(db_session) -> None:
     account = _make_account(db_session)
     account.enabled = False
