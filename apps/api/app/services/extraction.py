@@ -186,13 +186,26 @@ def extract_source_item(
             except Exception as exc:  # noqa: BLE001 chunk 级失败容忍（run 报告记账）
                 failed_chunks.append(f"{call_id}: {str(exc)[:120]}")
                 continue
-            # 模型输出容错：裸数组 / 键名漂移（views/items）都归一到 viewpoints
+            # 模型输出容错：裸数组 / 键名漂移（views/items/claims）都归一到候选列表；
+            # 终极兜底：唯一值为对象数组的键也接受（MiniMax 对 schema 键名有自由发挥）
             data = resp.data if isinstance(resp.data, dict) else {"viewpoints": resp.data or []}
             raw_candidates = data.get("viewpoints")
             if raw_candidates is None:
-                raw_candidates = data.get("views") or data.get("items") or data.get("results") or []
+                raw_candidates = next(
+                    (
+                        data[k]
+                        for k in ("views", "items", "results", "claims")
+                        if isinstance(data.get(k), list)
+                    ),
+                    None,
+                )
             if not isinstance(raw_candidates, list):
                 raw_candidates = []
+            if not raw_candidates and isinstance(data, dict):
+                for v in data.values():
+                    if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
+                        raw_candidates = v
+                        break
             chunk_summaries.append(
                 {
                     "chunk": call_id,
