@@ -49,3 +49,6 @@
 - 测试基建修复：`_constants.ALL_TABLES` 漏了 app_setting/deleted_item_ref/entity_candidate，
   集成测试清理不彻底导致跨测试残留（本次 app_setting 残留暴露）；已补齐。
 - 教训：launchd 环境 PATH 不含 brew（plist 需补 EnvironmentVariables.PATH，同 Plan #6.5）。
+- **回归修复（同日）**：launchctl bootout 会 SIGTERM 整个进程组——关闭看门狗时把它
+  revived 的 API 一并杀掉（nohup/disown 只防 SIGHUP）。dev_up.sh 改为 os.setsid()
+  新会话启动 API/worker；复测：看门狗复活 API → 关看门狗 → API 存活（health 200）。

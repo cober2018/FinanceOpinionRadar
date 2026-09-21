@@ -46,11 +46,17 @@ start_deps() {
   docker start "${DTK_CONTAINERS[@]}" >/dev/null 2>&1 || true
 }
 
+# 新会话（setsid）启动后台服务：调用方进程组被整体杀掉时（如 launchd bootout
+# 看门狗），已拉起的服务不受牵连。nohup/disown 只防 SIGHUP，防不了组信号
+# （2026-09-21 实测：关看门狗开关时把它 revived 的 API 一并杀掉了）。
+start_detached() {
+  "$PY" -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@" &
+}
+
 start_api() {
   echo "==> 启动 API :${API_PORT}（日志 ${API_LOG}）"
-  nohup "$PY" -m uvicorn app.main:app --reload --port "$API_PORT" --app-dir apps/api \
-    >"$API_LOG" 2>&1 &
-  disown
+  start_detached "$PY" -m uvicorn app.main:app --reload --port "$API_PORT" --app-dir apps/api \
+    >"$API_LOG" 2>&1
   for _ in $(seq 1 20); do
     api_alive && { echo "    API 就绪"; return 0; }
     sleep 1
@@ -61,9 +67,8 @@ start_api() {
 
 start_worker() {
   echo "==> 启动 worker+beat（全队列 default/media/llm/danmaku，日志 ${WORKER_LOG}）"
-  nohup "$PY" -m celery -A app.worker.celery_app worker --beat \
-    -Q default,media,llm,danmaku --loglevel=info >"$WORKER_LOG" 2>&1 &
-  disown
+  start_detached "$PY" -m celery -A app.worker.celery_app worker --beat \
+    -Q default,media,llm,danmaku --loglevel=info >"$WORKER_LOG" 2>&1
   for _ in $(seq 1 20); do
     worker_alive && { echo "    worker 就绪"; return 0; }
     sleep 1
