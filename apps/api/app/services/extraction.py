@@ -28,8 +28,12 @@ from app.services.entity_normalizer import (
 
 logger = structlog.get_logger(__name__)
 
-EXTRACTOR_VERSION = "v1"
-PROMPT_VERSION = "extraction@v1"
+EXTRACTOR_VERSION = "v2"
+PROMPT_VERSION = "extraction@v2"
+# v2 整体理解：全文单次抽取的上限（≈50 分钟口播）。超长转写（罕见，长直播）
+# 回落 v1 chunked 路径（prompt_version 记实际使用的版本，幂等两者都算已抽）。
+PROMPT_VERSION_CHUNKED = "extraction@v1"
+_WHOLE_DOC_MAX_CHARS = 20_000
 
 _VALID_STANCES = {s.value for s in Stance}
 _VALID_HORIZONS = {h.value for h in Horizon}
@@ -88,13 +92,14 @@ def extract_source_item(
         if item is None:
             return {"item_id": item_id, "skipped": "not_found"}
 
-        # ADR-0004 幂等：同 (item, prompt_version, extractor_version) 已有观点 → 跳过
+        # ADR-0004 幂等：已有观点（v2 全文版 / v1 chunked 版）→ 跳过，不重复抽
         existing = (
             session.query(Viewpoint)
             .filter(
                 Viewpoint.source_item_id == item_id,
-                Viewpoint.prompt_version == prompt_version,
-                Viewpoint.extractor_version == extractor_version,
+                Viewpoint.prompt_version.in_(
+                    [prompt_version, PROMPT_VERSION_CHUNKED]
+                ),
             )
             .count()
         )
@@ -133,23 +138,53 @@ def extract_source_item(
             {"id": seg.id, "start_ms": seg.start_ms, "end_ms": seg.end_ms, "text": seg.text}
             for seg in segments
         ]
-        chunks = chunk_transcript(seg_dicts)
+
+        # v2 整体理解主路径：全文单次抽取（多维立场在完整语境中成形）；
+        # 超长转写回落 v1 chunked（局部语境，跨块结构靠去重兜底）
+        total_chars = sum(len(str(s["text"])) for s in seg_dicts)
+        whole_doc = total_chars <= _WHOLE_DOC_MAX_CHARS
+        if whole_doc:
+            from app.db.models import Creator
+
+            creator_row = session.get(Creator, account.creator_id)
+            creator_name = creator_row.display_name if creator_row else ""
+            full_text = "\n".join(f"[seg:{s['id']}] {s['text']}" for s in seg_dicts)
+            user_prompt = pack.user_template.replace(
+                "__SEG_COUNT__", str(len(seg_dicts))
+            ).replace("__FIRST_SEGMENT_ID__", str(seg_dicts[0]["id"])).replace(
+                "__FULL_TEXT__", full_text
+            ).replace("__TITLE__", (item.title or "")[:80]).replace("__CREATOR__", creator_name)
+            llm_calls = [(f"whole:{run_id[:8]}", user_prompt, set(seg_map.keys()))]
+            used_prompt_version = prompt_version
+        else:
+            chunks = chunk_transcript(seg_dicts)
+            chunked_pack = registry.get(PROMPT_VERSION_CHUNKED)
+            llm_calls = [
+                (
+                    chunk.chunk_id,
+                    chunked_pack.user_template.replace(
+                        "__FIRST_SEGMENT_ID__", str(chunk.segment_ids[0])
+                    ).replace("__CHUNK_TEXT__", chunk.text),
+                    set(chunk.segment_ids),
+                )
+                for chunk in chunks
+            ]
+            used_prompt_version = PROMPT_VERSION_CHUNKED
 
         created_ids: list[int] = []
         rejected: list[dict] = []
         failed_chunks: list[str] = []
         chunk_summaries: list[dict] = []
-        for chunk in chunks:
-            # 模板含 JSON 花括号示例，不能用 str.format——用显式占位符替换
-            user_prompt = pack.user_template.replace(
-                "__FIRST_SEGMENT_ID__", str(chunk.segment_ids[0])
-            ).replace("__CHUNK_TEXT__", chunk.text)
+        for call_id, user_prompt, chunk_ids in llm_calls:
             try:
                 resp = provider.generate_json(
-                    pack.system, user_prompt, pack.schema, temperature=0.2
+                    pack.system if whole_doc else chunked_pack.system,
+                    user_prompt,
+                    pack.schema,
+                    temperature=0.2,
                 )
             except Exception as exc:  # noqa: BLE001 chunk 级失败容忍（run 报告记账）
-                failed_chunks.append(f"{chunk.chunk_id}: {str(exc)[:120]}")
+                failed_chunks.append(f"{call_id}: {str(exc)[:120]}")
                 continue
             # 模型输出容错：裸数组 / 键名漂移（views/items）都归一到 viewpoints
             data = resp.data if isinstance(resp.data, dict) else {"viewpoints": resp.data or []}
@@ -160,16 +195,15 @@ def extract_source_item(
                 raw_candidates = []
             chunk_summaries.append(
                 {
-                    "chunk": chunk.chunk_id,
+                    "chunk": call_id,
                     "candidates": len(raw_candidates),
                     **({"raw_head": getattr(resp, "raw_head", "")} if not raw_candidates else {}),
                 }
             )
-            chunk_ids = set(chunk.segment_ids)
             for cand in raw_candidates:
                 err, stance = _validate_candidate(cand, chunk_ids)
                 if err:
-                    rejected.append({"chunk": chunk.chunk_id, "reason": err})
+                    rejected.append({"chunk": call_id, "reason": err})
                     continue
                 topic_id = resolve_topic(session, cand.get("topic"))
                 entity_id, _disp = None, "none"
@@ -198,7 +232,7 @@ def extract_source_item(
                     as_of_date=item.published_at.date() if item.published_at else None,
                     verification_status="candidate",
                     extractor_version=extractor_version,
-                    prompt_version=prompt_version,
+                    prompt_version=used_prompt_version,
                 )
                 session.add(vp)
                 session.flush()
@@ -232,9 +266,12 @@ def extract_source_item(
             "item_id": item_id,
             "prompt_version": prompt_version,
             "extractor_version": extractor_version,
+            "mode": "whole_doc" if whole_doc else "chunked",
+            "used_prompt_version": used_prompt_version,
+            "transcript_chars": total_chars,
             "chunk_summaries": chunk_summaries,
             "provider": type(provider).__name__,
-            "chunks": len(chunks),
+            "chunks": len(llm_calls),
             "failed_chunks": failed_chunks,
             "rejected": rejected,
             "created_ids": created_ids,

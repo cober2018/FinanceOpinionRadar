@@ -25,6 +25,8 @@ class SecuritySettingsPayload(BaseModel):
     discover_dispatch_stagger_max_sec: int | None = None
     douyin_discover_max_pages: int | None = None
     proxy_pool: list[str] | None = None
+    review_confidence_threshold: float | None = None
+    review_min_evidence_chars: int | None = None
 
 
 @router.get("/live/monitors")

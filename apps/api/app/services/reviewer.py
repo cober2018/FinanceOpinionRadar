@@ -42,10 +42,22 @@ def _evidence_chars(session: Session, viewpoint_id: int) -> tuple[int, int]:
     return len(rows), sum(len(ev.evidence_text or "") for ev in rows)
 
 
+def _thresholds(session: Session) -> tuple[float, int]:
+    """阈值：设置页（DB security 键）优先，回落 env 默认。"""
+    from app.services.live_status import get_security_settings
+
+    sec = get_security_settings(session)
+    eff = sec.get("effective") or {}
+    thr = eff.get("review_confidence_threshold")
+    chars = eff.get("review_min_evidence_chars")
+    return (
+        float(thr) if thr is not None else get_settings().review_confidence_threshold,
+        int(chars) if chars is not None else get_settings().review_min_evidence_chars,
+    )
+
+
 def review_candidate(session: Session, viewpoint: Viewpoint) -> ReviewDecision:
-    s = get_settings()
-    threshold = s.review_confidence_threshold
-    min_chars = s.review_min_evidence_chars
+    threshold, min_chars = _thresholds(session)
     markers = DEFAULT_QUOTED_MARKERS
 
     ev_count, ev_chars = _evidence_chars(session, viewpoint.id)

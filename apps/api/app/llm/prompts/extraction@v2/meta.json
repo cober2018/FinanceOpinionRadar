@@ -1,0 +1,2 @@
+{"version": "extraction@v2", "task": "viewpoint_extraction_whole_doc", "immutable": true,
+ "note": "整体理解式抽取：全文单次输入，多维立场（对象×期限×方向），置信度校准。超长转写回落 extraction@v1 chunked。"}

@@ -88,7 +88,14 @@ type SecuritySettings = {
   discover_dispatch_stagger_max_sec: number | null
   douyin_discover_max_pages: number | null
   proxy_pool: string[]
-  effective: { discover_dispatch_stagger_max_sec: number; douyin_discover_max_pages: number }
+  review_confidence_threshold?: number | null
+  review_min_evidence_chars?: number | null
+  effective: {
+    discover_dispatch_stagger_max_sec: number
+    douyin_discover_max_pages: number
+    review_confidence_threshold?: number
+    review_min_evidence_chars?: number
+  }
 }
 
 type RuntimeSettings = {
@@ -2438,6 +2445,8 @@ function SettingsPage() {
   const [stagger, setStagger] = useState('')
   const [pages, setPages] = useState('')
   const [pool, setPool] = useState('')
+  const [reviewThr, setReviewThr] = useState('')
+  const [reviewChars, setReviewChars] = useState('')
   const [effective, setEffective] = useState<SecuritySettings['effective'] | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -2448,6 +2457,8 @@ function SettingsPage() {
         setStagger(s.discover_dispatch_stagger_max_sec?.toString() ?? '')
         setPages(s.douyin_discover_max_pages?.toString() ?? '')
         setPool(s.proxy_pool.join('\n'))
+        setReviewThr(s.review_confidence_threshold?.toString() ?? '')
+        setReviewChars(s.review_min_evidence_chars?.toString() ?? '')
         setEffective(s.effective)
       })
       .catch((e: Error) => setError(e.message))
@@ -2465,6 +2476,8 @@ function SettingsPage() {
           discover_dispatch_stagger_max_sec: stagger === '' ? null : Number(stagger),
           douyin_discover_max_pages: pages === '' ? null : Number(pages),
           proxy_pool: pool.split('\n').map((s) => s.trim()).filter(Boolean),
+          review_confidence_threshold: reviewThr === '' ? null : Number(reviewThr),
+          review_min_evidence_chars: reviewChars === '' ? null : Number(reviewChars),
         }),
       })
       setEffective(saved.effective)
@@ -2496,6 +2509,18 @@ function SettingsPage() {
             <input type="number" min={1} max={20} value={pages} onChange={(e) => setPages(e.target.value)} placeholder="留空用 .env 默认" />
             {effective && <span className="muted">当前生效：{effective.douyin_discover_max_pages} 页</span>}
           </label>
+          <div className="grid-2">
+            <label className="field">
+              观点自动复核阈值（0.5-1）：大模型置信度 ≥ 此值且证据充分 → 自动通过；低于 → 进人工复核
+              <input type="number" step="0.05" min="0.5" max="1" value={reviewThr} onChange={(e) => setReviewThr(e.target.value)} placeholder="留空用默认" />
+              {effective && <span className="muted">当前生效：{effective.review_confidence_threshold}</span>}
+            </label>
+            <label className="field">
+              证据最小字数（0-2000）：观点的原文证据合计低于此字数 → 进人工复核
+              <input type="number" min="0" max="2000" value={reviewChars} onChange={(e) => setReviewChars(e.target.value)} placeholder="留空用默认" />
+              {effective && <span className="muted">当前生效：{effective.review_min_evidence_chars}</span>}
+            </label>
+          </div>
           <label className="field">
             代理池（每行一条 http/socks5 URL）——已接入媒体下载：同账号恒走同一出口（稳定绑定），失败自动冷却 10 分钟；留空则直连
             <textarea rows={5} value={pool} onChange={(e) => setPool(e.target.value)} placeholder={'http://user:pass@host:port\nsocks5://host:port'} />

@@ -147,6 +147,8 @@ _SECURITY_DEFAULTS: dict[str, object] = {
     "discover_dispatch_stagger_max_sec": None,  # None = 用 env 默认
     "douyin_discover_max_pages": None,
     "proxy_pool": [],  # 预留：下载/解析出口代理池（radar 侧接线挂账 EPIC-04+）
+    "review_confidence_threshold": None,  # 观点自动复核阈值（DB 覆盖 env）
+    "review_min_evidence_chars": None,  # 自动复核证据最小字数（同上）
 }
 
 
@@ -164,13 +166,25 @@ def get_security_settings(session: Session) -> dict:
         "douyin_discover_max_pages": merged["douyin_discover_max_pages"]
         if merged["douyin_discover_max_pages"] is not None
         else s.douyin_discover_max_pages,
+        "review_confidence_threshold": merged["review_confidence_threshold"]
+        if merged["review_confidence_threshold"] is not None
+        else s.review_confidence_threshold,
+        "review_min_evidence_chars": merged["review_min_evidence_chars"]
+        if merged["review_min_evidence_chars"] is not None
+        else s.review_min_evidence_chars,
     }
     return merged
 
 
 def put_security_settings(session: Session, payload: dict) -> dict:
-    """校验 + 落库（全量替换 value；非法值 422 由路由层转 HTTPException）。"""
-    clean: dict[str, object] = dict(_SECURITY_DEFAULTS)
+    """校验 + 落库；未显式传入的字段保留 DB 现值（qg 自动维护会写 proxy_pool，
+    部分保存不能把它清掉）。非法值 422 由路由层转 HTTPException。"""
+    row = session.get(AppSetting, SECURITY_KEY)
+    stored = (row.value if row else {}) or {}
+    clean: dict[str, object] = {
+        **_SECURITY_DEFAULTS,
+        **{k: v for k, v in stored.items() if k in _SECURITY_DEFAULTS},
+    }
     stagger = payload.get("discover_dispatch_stagger_max_sec")
     if stagger is not None:
         if not isinstance(stagger, int) or not 0 <= stagger <= 3600:
@@ -188,6 +202,16 @@ def put_security_settings(session: Session, payload: dict) -> dict:
         ):
             raise ValueError("proxy_pool 需为 http(s)/socks5 URL 列表（≤20 条）")
         clean["proxy_pool"] = pool
+    thr = payload.get("review_confidence_threshold")
+    if thr is not None:
+        if not isinstance(thr, (int, float)) or not 0.5 <= float(thr) <= 1.0:
+            raise ValueError("review_confidence_threshold 需为 0.5–1.0 的数值")
+        clean["review_confidence_threshold"] = float(thr)
+    min_chars = payload.get("review_min_evidence_chars")
+    if min_chars is not None:
+        if not isinstance(min_chars, int) or not 0 <= min_chars <= 2000:
+            raise ValueError("review_min_evidence_chars 需为 0–2000 的整数")
+        clean["review_min_evidence_chars"] = min_chars
     row = session.get(AppSetting, SECURITY_KEY)
     if row is None:
         row = AppSetting(key=SECURITY_KEY, value=clean)

@@ -105,7 +105,7 @@ def test_extraction_happy_path(db_session, tracked_transcribed_item):
     # EPIC-05 reviewer：证据充分（67 字 ≥ 50）+ 置信 0.9 → accept → confirmed
     assert vp.stance == "bullish" and vp.verification_status == "confirmed"
     assert out["review"]["confirmed"] == 1
-    assert vp.extractor_version == "v1" and vp.prompt_version == "extraction@v1"
+    assert vp.extractor_version == "v2" and vp.prompt_version == "extraction@v2"
     assert vp.as_of_date == datetime(2026, 9, 17, tzinfo=UTC).date()
     # 证据绑定：2 条、文本来自转录段
     evs = db_session.query(ViewpointEvidence).filter_by(viewpoint_id=vp.id).all()
