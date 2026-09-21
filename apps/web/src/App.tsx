@@ -2188,7 +2188,7 @@ function LLMSettingsCard() {
 }
 
 // IP 代理池管理（青果长效代理，24h 轮换）：配置凭证 / 查询在用 / 提取新IP / 释放
-function QgProxyCard() {
+function QgProxyCard({ onPoolChange }: { onPoolChange: (pool: string[]) => void }) {
   const [key, setKey] = useState('')
   const [pwd, setPwd] = useState('')
   const [pwdSaved, setPwdSaved] = useState(false)
@@ -2209,6 +2209,7 @@ function QgProxyCard() {
       )
       setIps(d.ips)
       setPool(d.pool)
+      onPoolChange(d.pool) // 同步回「安全」卡的代理池文本框，两处显示一致
     } catch (e) {
       setError((e as Error).message)
     }
@@ -2466,7 +2467,7 @@ function SettingsPage() {
   return (
     <div className="settings-grid stack">
       <LLMSettingsCard />
-      <QgProxyCard />
+      <QgProxyCard onPoolChange={(p) => setPool(p.join('\n'))} />
       <SystemServiceCard />
       <div className="panel">
         <div className="panel-head">
