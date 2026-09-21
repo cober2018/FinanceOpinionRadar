@@ -258,9 +258,15 @@ def extract_source_item(
         )
         item.metadata_json = meta
         flag_modified(item)
-        # 状态推进：extracting → reviewing（EPIC-05 审核流从 reviewing 接手）
-        ensure_transition(item.status, "reviewing")
-        item.status = "reviewing"
+        # 状态推进：extracting → reviewing（EPIC-05 审核流从 reviewing 接手）；
+        # 抽出 0 观点：没有可审的东西，直接 ready——误标「待审核」会让用户在
+        # 观点页找不到这条视频而困惑
+        if created_ids:
+            ensure_transition(item.status, "reviewing")
+            item.status = "reviewing"
+        else:
+            ensure_transition(item.status, "ready")
+            item.status = "ready"
         session.commit()
 
         logger.info(

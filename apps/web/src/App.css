@@ -548,6 +548,38 @@ input:focus, select:focus, textarea:focus {
 .badge.stance-bull { background: var(--live-soft); color: var(--live); }
 .badge.stance-bear { background: var(--ok-soft); color: var(--ok); }
 
+/* 全局操作响应指示：右上角悬浮胶囊 + iOS 风格转圈 */
+.api-busy {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(16, 21, 29, 0.93);
+  border: 1px solid #2a3341;
+  color: #c7d2e2;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+.spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(127, 176, 236, 0.25);
+  border-top-color: #7fb0ec;
+  border-radius: 50%;
+  animation: api-spin 0.7s linear infinite;
+}
+@keyframes api-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* 视频行立场标签：一个期限一行，紧凑可扫读 */
 .stance-summary {
   display: flex;

@@ -6,7 +6,7 @@ PIPELINE_TRANSITIONS: dict[str, set[str]] = {
     "media_ready": {"transcribing", "failed", "ignored"},
     "transcribing": {"transcribed", "failed"},
     "transcribed": {"extracting", "failed"},  # EPIC-04 起
-    "extracting": {"reviewing", "failed"},
+    "extracting": {"reviewing", "ready", "failed"},  # ready：抽出 0 观点无东西可审
     "reviewing": {"ready", "failed"},
     "ready": set(),
     "failed": {"resolved", "ignored"},  # retry 从 resolved 重跑 prepare

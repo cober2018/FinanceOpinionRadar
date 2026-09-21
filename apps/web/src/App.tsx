@@ -119,22 +119,39 @@ type SystemStatus = {
 
 /* ---------------- 基础 ---------------- */
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(`/api/v1${path}`, {
-    headers: { 'content-type': 'application/json' },
-    ...init,
-  })
-  if (!resp.ok) {
-    const body = await resp.text()
-    let detail = body.slice(0, 200)
-    try {
-      detail = JSON.parse(body).detail ?? detail
-    } catch {
-      /* 原样使用 */
-    }
-    throw new Error(detail)
+// 全局在途请求计数：任何非静默 api() 调用都会点亮右上角「处理中」转圈指示
+let apiInFlight = 0
+function emitApiBusy() {
+  window.dispatchEvent(new CustomEvent('api-busy', { detail: apiInFlight }))
+}
+
+async function api<T>(path: string, init?: RequestInit, opts?: { silent?: boolean }): Promise<T> {
+  if (!opts?.silent) {
+    apiInFlight += 1
+    emitApiBusy()
   }
-  return resp.json() as Promise<T>
+  try {
+    const resp = await fetch(`/api/v1${path}`, {
+      headers: { 'content-type': 'application/json' },
+      ...init,
+    })
+    if (!resp.ok) {
+      const body = await resp.text()
+      let detail = body.slice(0, 200)
+      try {
+        detail = JSON.parse(body).detail ?? detail
+      } catch {
+        /* 原样使用 */
+      }
+      throw new Error(detail)
+    }
+    return resp.json() as Promise<T>
+  } finally {
+    if (!opts?.silent) {
+      apiInFlight -= 1
+      emitApiBusy()
+    }
+  }
 }
 
 function fmtAgo(iso: string | null): string {
@@ -366,15 +383,15 @@ function AccountsPage() {
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
 
-  const reload = useCallback(() => {
-    api<LiveMonitor[]>('/live/monitors')
+  const reload = useCallback((silent = false) => {
+    api<LiveMonitor[]>('/live/monitors', undefined, { silent })
       .then(setRows)
       .catch((e: Error) => setError(e.message))
   }, [])
 
   useEffect(() => {
     reload()
-    const t = setInterval(reload, 30_000)
+    const t = setInterval(() => reload(true), 30_000)
     return () => clearInterval(t)
   }, [reload])
 
@@ -1245,18 +1262,18 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
   const [vpDrawer, setVpDrawer] = useState<VPVideoRow | null>(null)
   const [textDrawer, setTextDrawer] = useState<VPVideoRow | null>(null)
 
-  const reload = useCallback(() => {
+  const reload = useCallback((silent = false) => {
     const params = new URLSearchParams({ limit: '500' })
     if (mode === 'review') params.set('pending_review', 'true')
     else params.set('has_viewpoints', 'true')
-    api<VPVideoRow[]>(`/source-items?${params}`)
+    api<VPVideoRow[]>(`/source-items?${params}`, undefined, { silent })
       .then(setRows)
       .catch((e: Error) => setError(e.message))
   }, [mode])
 
   useEffect(() => {
     reload()
-    const t = setInterval(reload, 15000)
+    const t = setInterval(() => reload(true), 15000)
     return () => clearInterval(t)
   }, [reload])
 
@@ -1799,23 +1816,27 @@ function JobCenterPage() {
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<number | null>(null)
 
-  const reload = useCallback(() => {
+  const reload = useCallback((silent = false) => {
     const params = new URLSearchParams()
     if (typeF) params.set('job_type', typeF)
     if (statusF) params.set('status', statusF)
     if (dateFrom) params.set('date_from', dateFrom)
     params.set('limit', '200')
-    api<JobRow[]>(`/jobs?${params}`)
+    api<JobRow[]>(`/jobs?${params}`, undefined, { silent })
       .then(setRows)
       .catch((e: Error) => setError(e.message))
-    api<{ total: number; running: number; success: number; failed: number }>('/jobs/stats')
+    api<{ total: number; running: number; success: number; failed: number }>(
+      '/jobs/stats',
+      undefined,
+      { silent },
+    )
       .then(setStats)
       .catch(() => {})
   }, [typeF, statusF, dateFrom])
 
   useEffect(() => {
     reload()
-    const t = setInterval(reload, 15_000)
+    const t = setInterval(() => reload(true), 15_000)
     return () => clearInterval(t)
   }, [reload])
 
@@ -2236,6 +2257,22 @@ function SettingsPage() {
 
 /* ---------------- 外壳 ---------------- */
 
+// 全局操作响应指示：任何操作请求在途时右上角显示 iOS 风格转圈胶囊（后台轮询静默不触发）
+function ApiBusyIndicator() {
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const handler = (e: Event) => setBusy(((e as CustomEvent).detail as number) > 0)
+    window.addEventListener('api-busy', handler)
+    return () => window.removeEventListener('api-busy', handler)
+  }, [])
+  if (!busy) return null
+  return (
+    <div className="api-busy" role="status">
+      <span className="spinner" /> 处理中…
+    </div>
+  )
+}
+
 // 后端健康横幅：API 不可达时置顶提示（10s 轮询，恢复自动消失）。
 // 解决"进程死了但界面操作静默失败"——用户第一时间看到的是服务挂了，不是自己点错了。
 function BackendHealthBanner() {
@@ -2277,6 +2314,7 @@ function App() {
   const [tab, setTab] = useState<Tab>('overview')
   return (
     <div className="shell">
+      <ApiBusyIndicator />
       <aside className="sidebar">
         <div className="brand">
           <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden>
