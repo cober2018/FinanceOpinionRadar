@@ -374,6 +374,15 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
     hhmm = _first_hhmm(first_index)
     if key != legacy_key and hhmm:
         title = f"{title} {hhmm}"
+    # 标题用主播名（sec_uid 目录名没人认得）：upsert 每轮覆写，存量会话也会被刷过来
+    creator_name = (
+        session.query(Creator.display_name)
+        .join(SourceAccount, SourceAccount.creator_id == Creator.id)
+        .filter(SourceAccount.id == account.id)
+        .scalar()
+    )
+    if creator_name:
+        title = title.replace(sd.author, creator_name, 1)
     item, _created = SourceItemRepository(session).upsert_by_external(
         source_account_id=account.id,
         external_item_id=key,
