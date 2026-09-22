@@ -1,13 +1,31 @@
 {
+  "schema_version": "1.0",
   "case_id": "case_002",
-  "annotator": "样例标注（格式示范，正式标注需人工复核）",
+  "qualification": "demo",
+  "annotation_complete": false,
+  "annotator": {"name": null, "reviewed_at": null},
+  "verification": {
+    "transcript_support": "pending",
+    "audio_video_verified": "not_verified",
+    "external_fact_verified": "not_verified"
+  },
   "viewpoints": [
     {
+      "reference_id": "case_002-ref-001",
       "claim": "人口结构变化将冲击民办高校招生",
+      "statement_type": "prediction",
+      "speaker": null,
       "stance": "bearish",
       "horizon": "3M+",
+      "conditional": false,
+      "condition_text": null,
       "topic": "教育行业",
       "entities": [],
+      "field_status": {
+        "speaker": "unclear",
+        "horizon": "present",
+        "condition": "not_applicable"
+      },
       "evidence_segment_ids": [],
       "evidence_hint": "141万新生凭空消失 相关段落"
     }

@@ -1,13 +1,31 @@
 {
+  "schema_version": "1.0",
   "case_id": "case_001",
-  "annotator": "样例标注（格式示范，正式标注需人工复核）",
+  "qualification": "demo",
+  "annotation_complete": false,
+  "annotator": {"name": null, "reviewed_at": null},
+  "verification": {
+    "transcript_support": "pending",
+    "audio_video_verified": "not_verified",
+    "external_fact_verified": "not_verified"
+  },
   "viewpoints": [
     {
+      "reference_id": "case_001-ref-001",
       "claim": "美联储降息预期利好黄金等避险资产",
+      "statement_type": "prediction",
+      "speaker": null,
       "stance": "bullish",
       "horizon": "1-4W",
+      "conditional": false,
+      "condition_text": null,
       "topic": "美联储利率",
       "entities": [{"raw_name": "黄金", "entity_type": "commodity"}],
+      "field_status": {
+        "speaker": "unclear",
+        "horizon": "present",
+        "condition": "not_applicable"
+      },
       "evidence_segment_ids": [],
       "evidence_hint": "美联储九月必然降息 + 黄金上涨行情 相关段落"
     }

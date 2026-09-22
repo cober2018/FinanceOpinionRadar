@@ -10,7 +10,7 @@
 
 本次产品能力评估及代码依据见 [findings.md](findings.md)，进度见 [progress.md](progress.md)，任务状态见 [task_plan.md](task_plan.md)。评估为静态核对，尚未对线上准确率或实际清理配置进行验收；其中建设顺序为建议，尚未进入开发实施。
 
-第一批 [财经素材标注质量基线提案](openspec/changes/establish-finance-label-quality-baseline/proposal.md)已生成，当前待用户确认。范围为标注规范、本地冻结样本、人工裁决和可信评测；建议新增语义精确率 98% 门槛，现有演示样例不作为正式人审基准。规范入口及使用方式见 [openspec/README.md](openspec/README.md)。
+第一批财经素材标注质量基线已实现：本地冻结样本、人工裁决、诚实分母、版本化报告和 98% 语义精确率门槛均已落地。当前两条真实转录仍是 `demo`，没有真实人工签署、证据定位或独立验收组，因此正式模式会明确返回 `not_evaluated`，不能据此声称当前准确率达标。使用方式见 [tests/golden/README.md](tests/golden/README.md)。
 
 ## 快速开始
 
@@ -30,6 +30,32 @@ curl -fsS localhost:8000/api/v1/health
 ```
 
 前端：`make web`（Vite 开发服务器，http://localhost:5173）。API 交互文档：http://localhost:8000/docs。
+
+### 离线标注质量评测
+
+不连接数据库、不调用模型的演示评分：
+
+```bash
+.venv/bin/python scripts/evaluate_viewpoints.py \
+  --dataset tests/golden \
+  --predictions tests/golden/predictions/demo_legacy.json \
+  --mode demo
+```
+
+正式评分使用 `--mode formal` 并传入人工裁决文件。材料资格或人审不足返回退出码 2；最终处理不完整或完整运行未达门槛返回 1。只有显式使用 `--generate-predictions` 才读取 `LLM_BASE_URL`、`LLM_API_KEY` 并调用现有 provider；该路径只写本地新运行文件，不写业务库。
+
+```mermaid
+flowchart LR
+  A[冻结转录与来源] --> B[人工标注资格与证据校验]
+  A --> C[冻结预测或显式生成新预测]
+  B --> D[人工一对一语义裁决]
+  C --> D
+  D --> E[离线评分与分母核对]
+  E --> F{正式资格与门槛}
+  F -->|材料或人审不足| G[not_evaluated]
+  F -->|完整但未达门槛| H[failed]
+  F -->|全部满足| I[passed]
+```
 
 ### 手工解析一个视频（EPIC-02）
 
@@ -306,8 +332,8 @@ apps/api/            FastAPI + SQLAlchemy 2.x (sync) + Celery
   migrations/        Alembic 迁移（ADR-0003：随 api 工程放置）
 apps/web/            Vite + React + TS，vitest/oxlint
 infra/docker/        Dockerfile.api（两阶段构建）
-scripts/             seed_dev.py 开发种子
-tests/               集成测试（radar_test 库，迁移后逐表截断）
+scripts/             开发/运维脚本及离线观点质量评测
+tests/               集成测试及 tests/golden 冻结质量基准
 docs/adr/            架构决策记录
 openspec/            变更提案、验收规范和归档后的主规范
 .codex/             OpenSpec 为 Codex 生成的项目工作流
@@ -315,7 +341,7 @@ openspec/            变更提案、验收规范和归档后的主规范
 
 ## 已完成
 
-- 2026-09-22：内部内容生产目标与能力评估；首批标注质量基线提案已生成并完成格式校验，实施及业务质量验收尚未进行。
+- 2026-09-22：首批标注质量基线工具已实现并验证；现有两条样例仅完成演示流程，正式业务质量仍为未验收。
 - RAD-001~003：仓库基线、Makefile/pre-commit、CI（6 jobs）、API Dockerfile、docker compose 开发依赖（postgres/redis/minio）
 - RAD-010~013：API 骨架与健康检查、领域枚举、Alembic + 14 张表迁移（含约束/级联/UTC 集成测试）、repository 层、开发种子数据
 - RAD-020~023：媒体 Adapter 契约（yt-dlp 子进程，ADR-0007）、URL 白名单闸、手工解析/创建 API、Celery 账号发现 + beat 到期派发
@@ -325,7 +351,7 @@ openspec/            变更提案、验收规范和归档后的主规范
 
 ## TODO
 
-- 准确性验收：现有 golden 只有两条待人工复核的格式样例，需补齐真实人工标注和证据定位，统一评测口径及 PRD 门槛。
+- 准确性验收：评测口径和门槛已统一；现有 golden 只有两条待人工复核的 demo，仍需补齐至少 20 个独立验收素材、300 条人工观点、5 位人物、10 个主题及三种内容类型。
 - 清洗与语义审核：在已有结构校验、规则审核和人工队列上，补强原文支持关系、讲话人归属、数字、条件、期限及失败/无内容的区分。
 - 素材证据留存：普通内容清理快照目前保留结论，不能替代完整来源证据；完善已引用素材的证据保留规则。
 - 内容中心交付：复用已有检索、详情和证据接口，完善素材交付、版本、更正及采用反馈。具体缺口和建议顺序见 [findings.md](findings.md)。
@@ -341,3 +367,5 @@ openspec/            变更提案、验收规范和归档后的主规范
 | [0005](docs/adr/0005-engine-pool-and-async-threshold.md) | 连接池参数显式化；sync→async 切换阈值量化留待实测 |
 | [0006](docs/adr/0006-audit-log-write-deferral.md) | audit_log 只建表，写入服务推迟至 EPIC-05 |
 | [0007](docs/adr/0007-ytdlp-subprocess-and-sync-adapter.md) | yt-dlp 走子进程 CLI；Adapter 契约同步（偏离执行计划 async 伪码） |
+
+质量基线的关键选择：离线评分不读取业务数据库；模型生成必须显式开启；正式指标只统计 `acceptance` 且完整 `human_verified` 的素材；人工裁决绑定数据、预测和标注哈希；零分母显示不适用；工具完成与业务质量通过分开。

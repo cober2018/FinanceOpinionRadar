@@ -27,3 +27,17 @@
 - 用户已明确确认本提案及 98% 首轮语义精确率门槛。
 - 已按 executing-plans 在 task_plan.md 写出 `///` 实施步骤，OpenSpec 任务 1.1 完成。
 - 下一步：白名单提交已确认规范到功能分支，并创建隔离工作区；`backups/` 不纳入本任务。
+- 隔离工作区已创建于 `/Users/mshengran/.codex/worktrees/finance-label-quality/FinanceOpinionRadar`；现有仓库没有专门的 evaluation 测试文件。
+- 已完成标注手册、两条 demo 资格迁移、来源及转录哈希、正式覆盖要求和实际缺口；OpenSpec 任务 1.2–1.4 完成。
+- 已完成离线评测改造：默认不导入数据库或模型代码；显式生成模式复用现有 provider、提示词和全文/分块策略，最多三次尝试并保留原始输出。
+- 已完成人工裁决、哈希失效、诚实分母、独立验收资格、来源分组、逐条差异、JSON/Markdown 报告及退出码。
+- 静态检查通过：Ruff、Mypy、Python 编译和 `git diff --check`。
+- 真实 demo 离线运行退出 0、状态 `not_evaluated`；同批正式运行退出 2、状态 `not_evaluated`。两次重复评分的 `results` 完全一致且报告未互相覆盖。
+- 临时扰动副本已验证：方向相反进入方向分母并计错；无证据和重复项保留在精确率分母；pending 与过期裁决不输出完整精确率；重试恢复不抹去首次结构失败；最终处理失败优先返回 failed/1；零分母为不适用。临时材料未进入仓库基准。
+- 未配置模型凭据的显式生成入口返回输入无效/3，没有产生预测文件；实际模型生成质量未在本轮声称已验证。
+- 两轮代码审阅发现的输入 schema、调用前计划持久化、原始模型响应、人工裁决绑定、复核材料上下文、来源分组指标、错误报告和正式 provenance 问题均已修复；正在做最终复核。
+- 严格临时正式样本验证：完整模型/提示词/计划 provenance、人工裁决和门槛全部满足时为 `passed/0`；同一计划停在 `planned` 且零次尝试时为处理不完整 `failed/1`。
+- 变更文件的 Ruff、Mypy、编译检查通过；provider 既有单元测试 5/5 通过。全仓 `make lint` 只剩本批未改的 `tests/integration/test_discover_tasks.py:98` 既有未使用 import，本批不扩大范围修复。
+- code-reviewer 与 python-reviewer 最终复核均通过，无剩余高风险问题。
+- 已逐项核对规范、实现与验证证据：质量评测工具完成；当前只有 2 条 demo、无合格人工签署与独立验收覆盖，业务质量状态仍为 `not_evaluated`。
+- 最终复核完成；OpenSpec 已同步主规范并归档至 `openspec/changes/archive/2026-09-22-establish-finance-label-quality-baseline/`。业务人审样本缺口继续保留为 TODO。

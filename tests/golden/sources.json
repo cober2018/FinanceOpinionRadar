@@ -1,4 +1,38 @@
-[
-  {"case_id": "case_001", "platform": "youtube", "url": "https://www.youtube.com/watch?v=HlHAxo6FTH0", "transcript": "transcripts/case_001.json", "annotation": "annotations/case_001.json", "note": "阳光财经《美股：一路讲来一路跌》真实样本（已转写 277 段）"},
-  {"case_id": "case_002", "platform": "bilibili", "url": "https://www.bilibili.com/video/BV1nT8M6vEDB/", "transcript": "transcripts/case_002.json", "annotation": "annotations/case_002.json", "note": "爱德华说《141万新生凭空消失》真实样本（已转写 177 段）"}
-]
+{
+  "schema_version": "1.0",
+  "dataset_version": "finance-golden-v1",
+  "cases": [
+    {
+      "case_id": "case_001",
+      "platform": "youtube",
+      "url": "https://www.youtube.com/watch?v=HlHAxo6FTH0",
+      "creator": "阳光财经",
+      "title": "美股：一路讲来一路跌",
+      "content_type": "long_video",
+      "split": "development",
+      "qualification": "demo",
+      "published_at": null,
+      "captured_at": null,
+      "transcript": "transcripts/case_001.json",
+      "transcript_sha256": "95af8a13e7a500153182693a35a086151bc1b7244a53aa9eaa355bc756f6e252",
+      "annotation": "annotations/case_001.json",
+      "note": "真实转录 277 段；标注仅为格式演示，待人工复核"
+    },
+    {
+      "case_id": "case_002",
+      "platform": "bilibili",
+      "url": "https://www.bilibili.com/video/BV1nT8M6vEDB/",
+      "creator": "爱德华说",
+      "title": "141万新生凭空消失",
+      "content_type": "long_video",
+      "split": "development",
+      "qualification": "demo",
+      "published_at": null,
+      "captured_at": null,
+      "transcript": "transcripts/case_002.json",
+      "transcript_sha256": "3b65405cecdf2fe804aa9966ba6dc31b805d2c0b48c6124526d15683203db7cb",
+      "annotation": "annotations/case_002.json",
+      "note": "真实转录 177 段；标注仅为格式演示，待人工复核"
+    }
+  ]
+}

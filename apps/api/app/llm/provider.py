@@ -21,12 +21,21 @@ class LLMError(Exception):
     pass
 
 
+class LLMResponseParseError(LLMError):
+    def __init__(self, message: str, raw_content: str, provider: str, model: str) -> None:
+        super().__init__(message)
+        self.raw_content = raw_content
+        self.provider = provider
+        self.model = model
+
+
 @dataclass(frozen=True)
 class LLMResponse:
     data: dict[str, Any]
     usage: dict[str, int]
     provider: str
     model: str
+    raw_content: str = ""
     raw_head: str = ""  # 原始 content 头部（空返回诊断用）
 
 
@@ -51,7 +60,11 @@ class MockLLMProvider:
     def generate_json(self, system_prompt, user_prompt, schema, *, model=None, temperature=0.2):
         self.calls.append({"system": system_prompt, "user": user_prompt})
         return LLMResponse(
-            data={"viewpoints": []}, usage={"total_tokens": 0}, provider="mock", model="mock"
+            data={"viewpoints": []},
+            usage={"total_tokens": 0},
+            provider="mock",
+            model="mock",
+            raw_content='{"viewpoints": []}',
         )
 
 
@@ -125,19 +138,24 @@ class OpenAICompatProvider:
             ],
         }
         last_err: str = ""
+        last_error_kind = "call"
+        last_raw_content = ""
         for attempt in range(self._max_retries + 1):
             try:
                 resp = self._post(payload)
             except httpx.HTTPError as exc:
                 last_err = f"请求异常: {exc}"
+                last_error_kind = "call"
                 logger.warning("llm_request_retry", attempt=attempt, error=last_err)
                 time.sleep(2**attempt)
                 continue
             if resp.status_code >= 400:
                 last_err = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                last_error_kind = "call"
                 logger.warning("llm_request_retry", attempt=attempt, error=last_err)
                 time.sleep(2**attempt)
                 continue
+            content = ""
             try:
                 body = resp.json()
                 message = body["choices"][0]["message"]
@@ -147,6 +165,8 @@ class OpenAICompatProvider:
             except (KeyError, json.JSONDecodeError, ValueError) as exc:
                 head = repr(content[:60]) if isinstance(content, str) else "?"
                 last_err = f"响应解析失败: {exc}（content 头部={head}）"
+                last_error_kind = "parse"
+                last_raw_content = content if isinstance(content, str) else ""
                 logger.warning("llm_request_retry", attempt=attempt, error=last_err)
                 time.sleep(2**attempt)
                 continue
@@ -159,6 +179,15 @@ class OpenAICompatProvider:
                 },
                 provider="openai-compat",
                 model=str(payload["model"]),
+                raw_content=content,
                 raw_head=content[:120],
             )
-        raise LLMError(f"LLM 请求失败（重试 {self._max_retries} 次后）: {last_err}")
+        message = f"LLM 请求失败（重试 {self._max_retries} 次后）: {last_err}"
+        if last_error_kind == "parse":
+            raise LLMResponseParseError(
+                message,
+                last_raw_content,
+                provider="openai-compat",
+                model=str(payload["model"]),
+            )
+        raise LLMError(message)

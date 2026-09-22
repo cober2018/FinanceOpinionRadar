@@ -1,8 +1,14 @@
 {
-  "extraction_precision": 0.8,
-  "extraction_recall": 0.7,
-  "stance_accuracy": 0.85,
-  "entity_accuracy": 0.75,
-  "evidence_coverage": 0.9,
-  "schema_pass_rate": 0.98
+  "evidence_missing_rate_max": 0.0,
+  "first_attempt_schema_pass_rate_min": 0.99,
+  "stance_accuracy_min": 0.90,
+  "topic_accuracy_min": 0.95,
+  "entity_accuracy_min": 0.95,
+  "viewpoint_recall_min": 0.85,
+  "semantic_precision_min": 0.98,
+  "minimum_acceptance_cases": 20,
+  "minimum_reference_viewpoints": 300,
+  "minimum_creators": 5,
+  "minimum_topics": 10,
+  "required_content_types": ["live", "short_video", "long_video"]
 }
