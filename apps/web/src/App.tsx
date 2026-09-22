@@ -1469,6 +1469,9 @@ function VideoViewpointsDrawer(props: {
             <div key={r.id} className="vp-item">
               <div className="vp-item-head">
                 <span className="vp-item-no">#{idx + 1}</span>
+                {(r.entity_name ?? r.entity_raw) && (
+                  <span className="badge">{r.entity_name ?? r.entity_raw}</span>
+                )}
                 <StanceBadge stance={r.stance} />
                 {r.horizon && <span className="badge">{r.horizon}</span>}
                 <span className={`badge ${r.verification_status === 'confirmed' ? 'ok' : r.verification_status === 'rejected' ? 'err' : 'run'}`}>
@@ -1477,7 +1480,6 @@ function VideoViewpointsDrawer(props: {
                 <span className="muted" style={{ fontSize: 11 }}>
                   置信 {r.confidence.toFixed(2)}
                   {r.topic_name ? ` · ${r.topic_name}` : ''}
-                  {(r.entity_name ?? r.entity_raw) ? ` · 标的：${r.entity_name ?? r.entity_raw}` : ''}
                 </span>
               </div>
               <p style={{ margin: '0 0 10px', lineHeight: 1.6 }}>{r.claim}</p>
