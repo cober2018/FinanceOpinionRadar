@@ -373,7 +373,7 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
     if open_item is not None:  # 跨零点：目录日期只做目录键，会话身份未收尾优先
         _rename_if_stale(session, open_item, account, sd, first_index)
         return open_item
-    title = _session_title(session, account, sd, suffixed=key != legacy_key, first_index=first_index)
+    title = _session_title(session, account, sd, first_index=first_index)
     item, _created = SourceItemRepository(session).upsert_by_external(
         source_account_id=account.id,
         external_item_id=key,
@@ -384,13 +384,13 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
     return item
 
 
-def _session_title(session, account: SourceAccount, sd: LiveSessionDir, *, suffixed: bool, first_index: int | None) -> str:
-    """直播条目标题：主播名 直播 日期（加播场追加起播 HH:MM）。主播名查不到回退目录名。"""
+def _session_title(session, account: SourceAccount, sd: LiveSessionDir, *, first_index: int | None) -> str:
+    """直播条目标题：主播名 直播 日期 HH:MM（起播时分，用户 2026-09-22 指定格式；
+    分片名无时间语义时退化为 主播名 直播 日期）。主播名查不到回退目录名。"""
     title = f"{sd.author} 直播 {sd.date}"
-    if suffixed:
-        hhmm = _first_hhmm(first_index)
-        if hhmm:
-            title = f"{title} {hhmm}"
+    hhmm = _first_hhmm(first_index or 0)
+    if hhmm:
+        title = f"{title} {hhmm}"
     creator_name = (
         session.query(Creator.display_name)
         .join(SourceAccount, SourceAccount.creator_id == Creator.id)
@@ -403,9 +403,8 @@ def _session_title(session, account: SourceAccount, sd: LiveSessionDir, *, suffi
 
 
 def _rename_if_stale(session, item: SourceItem, account: SourceAccount, sd: LiveSessionDir, first_index: int | None) -> None:
-    """存量会话标题刷成主播名（sec_uid 目录名没人认得）；键里的冒号数区分加播场。"""
-    suffixed = (item.external_item_id or "").count(":") >= 3
-    title = _session_title(session, account, sd, suffixed=suffixed, first_index=first_index)
+    """存量会话标题刷成当前格式（主播名 + 起播时分）。"""
+    title = _session_title(session, account, sd, first_index=first_index)
     if item.title != title:
         item.title = title
 

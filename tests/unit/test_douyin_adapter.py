@@ -12,6 +12,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 from app.services.media.adapters.douyin import DouyinAdapter
+from app.services.media.adapters import douyin as live_adapter
 from app.services.media.contracts import (
     AccountRef,
     AdapterProcessError,
@@ -136,6 +137,19 @@ def test_download_chaos_media_missing_raises_process_error() -> None:
 
 
 # --- discover ---
+
+
+def test_title_falls_back_to_music_when_caption_empty() -> None:
+    """无 caption 视频（2026-09-22 李一恩实录）：抖音本身显示原声名 → 标题回落 music.title。"""
+    no_caption = {
+        **SAMPLE,
+        "content_id": "7688226532678921832",
+        "title": "",
+        "description": "",
+        "music": {"title": "@李一恩创作的原声"},
+    }
+    assert live_adapter._title_of(no_caption) == "@李一恩创作的原声"
+    assert live_adapter._title_of({**SAMPLE, "title": "", "description": "", "music": {}}) is None
 
 
 def test_discover_maps_items_and_paginates() -> None:

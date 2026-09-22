@@ -80,7 +80,7 @@ class DouyinAdapter:
         return ResolvedMedia(
             platform="douyin",
             external_item_id=str(data["content_id"]),
-            title=data.get("title") or data.get("description"),
+            title=_title_of(data),
             canonical_url=data.get("web_url") or url,
             thumbnail_url=None,
             duration_ms=data.get("duration_ms"),
@@ -220,11 +220,22 @@ def _to_discovered(data: dict) -> DiscoveredItem:
         raise AdapterProcessError(f"dtk user/posts 条目缺 content_id: {sorted(data)}")
     return DiscoveredItem(
         external_item_id=str(data["content_id"]),
-        title=data.get("title") or data.get("description"),
+        title=_title_of(data),
         url=data.get("web_url") or "",
         published_at=_parse_created_at(data.get("created_at")),
         duration_ms=data.get("duration_ms"),
         metadata={"is_top": data.get("is_top")},
+    )
+
+
+def _title_of(data: dict) -> str | None:
+    """标题回落链：caption → description → 原声名（抖音对无 caption 视频就显示原声名，
+    2026-09-22 李一恩无字视频实录：description/tags 全空，music.title='@xx创作的原声'）。"""
+    return (
+        data.get("title")
+        or data.get("description")
+        or (data.get("music") or {}).get("title")
+        or None
     )
 
 
