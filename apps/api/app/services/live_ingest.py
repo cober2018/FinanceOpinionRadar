@@ -403,8 +403,19 @@ def _session_title(session, account: SourceAccount, sd: LiveSessionDir, *, first
 
 
 def _rename_if_stale(session, item: SourceItem, account: SourceAccount, sd: LiveSessionDir, first_index: int | None) -> None:
-    """存量会话标题刷成当前格式（主播名 + 起播时分）。"""
-    title = _session_title(session, account, sd, first_index=first_index)
+    """存量会话标题刷成当前格式（主播名 + 起播时分）。
+
+    起播时刻取注册表最早分片（真实起播），不用本次扫描的分片——同一条目被多个
+    子场先后归并时，后者不得把标题时间推后（911 实录：11:33 起播被 11:47 子场覆写）。
+    """
+    live = (item.metadata_json or {}).get("live") or {}
+    idxs = [
+        int(k)
+        for field in ("processed", "deferred", "skipped_segments", "segment_errors", "segment_paths")
+        for k in (live.get(field) or {})
+        if str(k).isdigit()
+    ]
+    title = _session_title(session, account, sd, first_index=min(idxs) if idxs else first_index)
     if item.title != title:
         item.title = title
 
