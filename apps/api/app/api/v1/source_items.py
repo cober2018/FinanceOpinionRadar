@@ -137,7 +137,9 @@ def list_source_items(
         select(SourceItem, SourceAccount, Creator.display_name)
         .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
         .join(Creator, Creator.id == SourceAccount.creator_id)
-        .order_by(SourceItem.id.desc())
+        # 视频库/观点/复核队列/资产库统一按发布时间倒排（越新越靠上）；
+        # 无发布时间的条目（部分直播/失败条目）沉底，再按入库 id 保持稳定
+        .order_by(SourceItem.published_at.desc().nulls_last(), SourceItem.id.desc())
         .limit(min(limit, 500))
     )
     if account_id is not None:
