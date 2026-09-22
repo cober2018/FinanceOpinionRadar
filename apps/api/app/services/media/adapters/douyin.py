@@ -27,6 +27,16 @@ _AWEME_ID_RE = re.compile(r"(?:/video/|/note/|modal_id=)(\d+)")
 # 账号主页 sec_uid（MS4w 开头长串）
 _SEC_UID_RE = re.compile(r"/user/(MS4w[\w-]+)")
 
+# douyinvod CDN 强制 Referer 校验（2026-09-22 起，缺失一律 403）；httpx 兜底路径
+# 无指纹伪装，UA 也需显式给浏览器值。
+_CDN_HEADERS = {
+    "Referer": "https://www.douyin.com/",
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    ),
+}
+
 
 class DouyinAdapter:
     """抖音 VOD：resolve/discover/download 走 dtk；抖音无字幕轨，fetch_subtitle 恒 None。"""
@@ -108,7 +118,10 @@ class DouyinAdapter:
 
     def _download(self, url: str, target: Path, proxy: str | None) -> None:
         """优先 curl_cffi（Chrome TLS 指纹伪装）：CDN 风控识别 JA3，裸 httpx
-        一眼非浏览器；伪装后等同 Chrome 用户直连。未安装则回落 httpx。"""
+        一眼非浏览器；伪装后等同 Chrome 用户直连。未安装则回落 httpx。
+
+        Referer 必带：douyinvod CDN 自 2026-09-22 起强制校验（无 Referer 一律 403，
+        与指纹/频率无关，实测裸 curl 带上即 206）。"""
         curl_requests = None  # curl_cffi 缺席时回落 httpx（Chrome 指纹伪装不可用）
         try:
             from curl_cffi import requests as _cr
@@ -119,7 +132,7 @@ class DouyinAdapter:
 
         if curl_requests is not None:
             with curl_requests.Session(impersonate="chrome", proxy=proxy or None, timeout=300) as s:
-                resp = s.get(url, stream=True)
+                resp = s.get(url, stream=True, headers=_CDN_HEADERS)
                 if resp.status_code != 200:
                     raise AdapterProcessError(
                         f"dtk CDN HTTP {resp.status_code}: 下载失败"
@@ -134,7 +147,7 @@ class DouyinAdapter:
             if not proxy
             else httpx.Client(proxy=proxy, timeout=300, follow_redirects=True)
         )
-        with client.stream("GET", url) as resp:
+        with client.stream("GET", url, headers=_CDN_HEADERS) as resp:
             if resp.status_code != 200:
                 raise AdapterProcessError(f"dtk CDN HTTP {resp.status_code}: 下载失败")
             with target.open("wb") as f:
