@@ -229,6 +229,55 @@ def test_cross_midnight_creates_new_dir_but_extends_open_session(flow, db_sessio
     assert items[0].metadata_json["live"]["processed"].keys() == {"0", "1"}
 
 
+def test_same_day_second_stream_creates_independent_session(flow, db_session):
+    """同日加播（2026-09-22 李一恩午/晚两场实录 bug）：午场收尾后晚场必须新建
+    独立会话继续转写，而不是并进已收尾条目被终态守卫整场跳过。"""
+    import os
+
+    root = flow.tmp_path
+    provider = _provider_of(flow)
+    noon1 = _write_seg(root, "新闻联播", "2026-09-22", "x_2026-09-22_11-33-17", 0)
+    noon2 = _write_seg(root, "新闻联播", "2026-09-22", "x_2026-09-22_11-47-10", 0)
+    os.utime(noon1, (1_000_000, 1_000_000))
+    os.utime(noon2, (1_000_000 + 600, 1_000_000 + 600))  # 场内间隔 600s < grace
+
+    live_ingest.ingest_live_segments(db_session, provider=provider)
+    db_session.expire_all()
+    noon = _live_item(db_session)
+    assert noon.external_item_id == "live:新闻联播:2026-09-22"
+    assert noon.status == "transcribing"
+
+    # 收尾午场：静默超 grace（G1 同款手法）
+    stale = datetime.now(UTC) - timedelta(seconds=3600)
+    meta = dict(noon.metadata_json)
+    noon_meta = dict(meta["live"])
+    noon_meta["last_segment_at"] = stale.isoformat()
+    meta["live"] = noon_meta
+    noon.metadata_json = meta
+    db_session.commit()
+
+    # 晚场：距午场 30161s（> grace）——真实实录的 8.4h 空洞
+    eve1 = _write_seg(root, "新闻联播", "2026-09-22", "x_2026-09-22_20-47-54", 0)
+    os.utime(eve1, (1_000_000 + 30161, 1_000_000 + 30161))
+    live_ingest.ingest_live_segments(db_session, provider=provider)
+    db_session.expire_all()
+
+    items = (
+        db_session.query(SourceItem)
+        .filter(SourceItem.item_type == "live")
+        .order_by(SourceItem.id)
+        .all()
+    )
+    assert len(items) == 2
+    assert items[0].id == noon.id
+    assert items[0].status == "transcribed"  # 午场保持已收尾、未被改动
+    eve = items[1]
+    assert eve.external_item_id == "live:新闻联播:2026-09-22:202609222047540000"
+    assert eve.title == "新闻联播 直播 2026-09-22 20:47"
+    assert eve.status == "transcribing"
+    assert list(eve.metadata_json["live"]["processed"].keys()) == ["202609222047540000"]
+
+
 def test_singleton_lock_rejects_concurrent_ingest(flow, db_session, database_url):
     """E2/G3：抢不到单飞闸立即退出。"""
     root = flow.tmp_path

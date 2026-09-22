@@ -96,3 +96,46 @@ def test_scan_multiple_authors_and_dates(tmp_path: Path) -> None:
 
     sessions = live_ingest.scan_live_dir(tmp_path)
     assert [(s.author, s.date) for s in sessions] == [("主播A", "2026-09-17"), ("主播B", "2026-09-18")]
+
+
+def _seg(index: int, mtime: float) -> live_ingest.LiveSegment:
+    return live_ingest.LiveSegment(index=index, path=Path(f"/x/{index}.ts"), mtime=mtime)
+
+
+def test_split_day_sessions_breaks_at_gap_over_grace() -> None:
+    """同日午/晚两场（李一恩 2026-09-22 实录）：空洞 > grace 切成两场。"""
+    sd = live_ingest.LiveSessionDir(
+        author="MS4wLjABxxx",
+        date="2026-09-22",
+        segments=[
+            _seg(202609221133170000, 1000.0),
+            _seg(202609221147100000, 1060.0),
+            _seg(202609222047540000, 1000.0 + 30161),  # 8.4h 后加播
+            _seg(202609222053450000, 1000.0 + 30161 + 60),
+        ],
+    )
+    parts = live_ingest._split_day_sessions(sd, grace_sec=900)
+    assert len(parts) == 2
+    assert [s.index for s in parts[0].segments] == [202609221133170000, 202609221147100000]
+    assert [s.index for s in parts[1].segments] == [202609222047540000, 202609222053450000]
+
+
+def test_split_day_sessions_single_session_no_gap() -> None:
+    """连续分片（间隔 ≤ grace）不切分；空目录返回单元素（防御）。"""
+    sd = live_ingest.LiveSessionDir(
+        author="a",
+        date="2026-09-22",
+        segments=[_seg(1, 1000.0), _seg(2, 1060.0), _seg(3, 1120.0)],
+    )
+    parts = live_ingest._split_day_sessions(sd, grace_sec=900)
+    assert len(parts) == 1 and len(parts[0].segments) == 3
+    assert live_ingest._split_day_sessions(
+        live_ingest.LiveSessionDir(author="a", date="d", segments=[]), 900
+    ) == []
+
+
+def test_first_hhmm_extracts_time_only_from_timestamped_index() -> None:
+    """合成序号（base 时间戳*1e4+序号）→ HH:MM；裸 _NNN 小序号无时间语义返回空。"""
+    assert live_ingest._first_hhmm(202609222047540000) == "20:47"
+    assert live_ingest._first_hhmm(202609221133170001) == "11:33"
+    assert live_ingest._first_hhmm(3) == ""

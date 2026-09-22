@@ -82,6 +82,24 @@ def scan_live_dir(root: Path) -> list[LiveSessionDir]:
     return sessions
 
 
+def _split_day_sessions(sd: LiveSessionDir, grace_sec: int) -> list[LiveSessionDir]:
+    """同日多次开播切分（2026-09-22 李一恩同日午/晚两场实录 bug）：
+
+    日目录内壁钟空洞 > grace 视为一场新的直播（原 F10 只告警不切分，同日加播被
+    并进已收尾会话、整场分片被主循环终态守卫跳过）。返回 ≥1 个子会话，index 升序。
+    """
+    parts: list[LiveSessionDir] = []
+    cur: list[LiveSegment] = []
+    for seg in sd.segments:
+        if cur and seg.mtime - cur[-1].mtime > grace_sec:
+            parts.append(LiveSessionDir(author=sd.author, date=sd.date, segments=cur))
+            cur = []
+        cur.append(seg)
+    if cur:
+        parts.append(LiveSessionDir(author=sd.author, date=sd.date, segments=cur))
+    return parts
+
+
 def _collect_day(
     grouped: dict[tuple[str, str], list[LiveSegment]], author: str, day_dir: Path
 ) -> None:
@@ -131,33 +149,34 @@ def ingest_live_segments(session, provider=None) -> dict:
     try:
         # 收尾判定先行：静默关闭的是上一轮遗留会话，不计入本轮 sessions_active
         _close_stale_sessions(session, s.live_close_grace_sec)
-        for sd in scan_live_dir(root):
-            item, session_created = _ensure_session_with_flag(session, sd)
-            if item is None:
-                continue
-            if session_created:
-                # 开播事件驱动：新直播会话出现 → 立即派弹幕采集，不空等 beat 轮询
-                _dispatch_danmaku_on_live(session, item)
-            _warn_gaps(sd, s.live_close_grace_sec)
-            if item.status in ("transcribed", "extracting", "reviewing", "ready"):
-                # 已收尾/进入抽取链的会话不再扫描（EPIC-04 状态机扩展后的兼容）
-                continue
-            if item.status != "transcribing":
-                _advance_chain(session, item)  # F3：discovered→…→transcribing 连续推进
-            counters["sessions_active"] += 1
-            # live 注册表以本地 dict 为唯一真源：commit/rollback 后不再回读 ORM 元数据
-            # （expire_on_commit=True 的会话里，回读会触发刷新并放大竞态窗口）
-            base_meta = dict(item.metadata_json or {})
-            live_meta = _normalize_live_meta(base_meta)
-            _persist_live_meta(item, base_meta)
-            session.commit()  # 会话行先落库：分片级 rollback 不得回滚会话本身
-            for seg in sd.segments:
-                outcome = _process_segment(session, item, base_meta, live_meta, seg, s, provider)
-                if outcome == "failed":
-                    counters["segments_failed"] += 1
-            _persist_live_meta(item, base_meta)
-            session.commit()
-            counters["segments_pending"] += _count_pending(live_meta)
+        for day in scan_live_dir(root):
+            for sd in _split_day_sessions(day, s.live_close_grace_sec):
+                item, session_created = _ensure_session_with_flag(session, sd)
+                if item is None:
+                    continue
+                if session_created:
+                    # 开播事件驱动：新直播会话出现 → 立即派弹幕采集，不空等 beat 轮询
+                    _dispatch_danmaku_on_live(session, item)
+                _warn_gaps(sd, s.live_close_grace_sec)
+                if item.status in ("transcribed", "extracting", "reviewing", "ready"):
+                    # 已收尾/进入抽取链的会话不再扫描（EPIC-04 状态机扩展后的兼容）
+                    continue
+                if item.status != "transcribing":
+                    _advance_chain(session, item)  # F3：discovered→…→transcribing 连续推进
+                counters["sessions_active"] += 1
+                # live 注册表以本地 dict 为唯一真源：commit/rollback 后不再回读 ORM 元数据
+                # （expire_on_commit=True 的会话里，回读会触发刷新并放大竞态窗口）
+                base_meta = dict(item.metadata_json or {})
+                live_meta = _normalize_live_meta(base_meta)
+                _persist_live_meta(item, base_meta)
+                session.commit()  # 会话行先落库：分片级 rollback 不得回滚会话本身
+                for seg in sd.segments:
+                    outcome = _process_segment(session, item, base_meta, live_meta, seg, s, provider)
+                    if outcome == "failed":
+                        counters["segments_failed"] += 1
+                _persist_live_meta(item, base_meta)
+                session.commit()
+                counters["segments_pending"] += _count_pending(live_meta)
         session.commit()
     finally:
         _release_singleton(session)
@@ -302,19 +321,43 @@ def _dispatch_danmaku_on_live(session, item) -> None:
 
 
 def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
-    """F2：精确键查重 → 未收尾会话归并（跨零点延续）→ 新建；无对应账号返回 None。"""
+    """F2：会话键精确查重 → 旧键覆盖归并 → 未收尾会话归并（跨零点）→ 新建；无账号 None。
+
+    会话身份（2026-09-22 同日加播修复）：当天第一场沿用日期键（历史存量兼容）；
+    日期键会话已存在但未覆盖本场首分片 = 同日再次开播，以「日期键:首分片序号」
+    新建独立会话——同一天午/晚两场不是同一场直播。
+    """
     account = _resolve_live_account(session, sd.author)
     if account is None:
         logger.warning("live_dir_no_account_skip", author=sd.author, date=sd.date)
         return None
-    key = _SESSION_KEY_FMT.format(external_id=account.external_id, date=sd.date)
-    exact = (
+    legacy_key = _SESSION_KEY_FMT.format(external_id=account.external_id, date=sd.date)
+    first_index = sd.segments[0].index if sd.segments else None
+    legacy = (
         session.query(SourceItem)
-        .filter(SourceItem.source_account_id == account.id, SourceItem.external_item_id == key)
+        .filter(
+            SourceItem.source_account_id == account.id,
+            SourceItem.external_item_id == legacy_key,
+        )
         .one_or_none()
     )
-    if exact is not None:
-        return exact
+    if legacy is None:
+        key = legacy_key
+    elif _live_covers(legacy, first_index):
+        # 未收尾则继续并入；已收尾由主循环终态守卫跳过
+        return legacy
+    else:
+        key = f"{legacy_key}:{first_index}"
+        exact = (
+            session.query(SourceItem)
+            .filter(
+                SourceItem.source_account_id == account.id,
+                SourceItem.external_item_id == key,
+            )
+            .one_or_none()
+        )
+        if exact is not None:
+            return exact
     open_item = (
         session.query(SourceItem)
         .filter(
@@ -327,14 +370,37 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
     )
     if open_item is not None:  # 跨零点：目录日期只做目录键，会话身份未收尾优先
         return open_item
+    title = f"{sd.author} 直播 {sd.date}"
+    hhmm = _first_hhmm(first_index)
+    if key != legacy_key and hhmm:
+        title = f"{title} {hhmm}"
     item, _created = SourceItemRepository(session).upsert_by_external(
         source_account_id=account.id,
         external_item_id=key,
-        title=f"{sd.author} 直播 {sd.date}",
+        title=title,
         item_type="live",
     )
     session.flush()
     return item
+
+
+def _live_covers(item: SourceItem, first_index: int | None) -> bool:
+    """日期键会话是否已覆盖该首分片（升级兼容：判定子会话归属旧会话还是新开播）。"""
+    if first_index is None:
+        return True
+    live = (item.metadata_json or {}).get("live") or {}
+    seen: set[str] = set()
+    for field in ("processed", "deferred", "skipped_segments", "segment_errors", "segment_paths"):
+        seen.update(live.get(field) or {})
+    return str(first_index) in seen
+
+
+def _first_hhmm(index: int) -> str:
+    """合成序号（base 时间戳 * 1e4 + 序号）→ "HH:MM"；裸 _NNN 序号无时间语义返回空。"""
+    s = str(index)
+    if len(s) >= 14 and s.isdigit():
+        return f"{s[8:10]}:{s[10:12]}"
+    return ""
 
 
 def _advance_chain(session, item: SourceItem) -> None:
