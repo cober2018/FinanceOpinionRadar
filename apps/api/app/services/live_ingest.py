@@ -341,11 +341,12 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
         )
         .one_or_none()
     )
+    if legacy is not None and _live_covers(legacy, first_index):
+        # 未收尾则继续并入；已收尾由主循环终态守卫跳过
+        _rename_if_stale(session, legacy, account, sd, first_index)
+        return legacy
     if legacy is None:
         key = legacy_key
-    elif _live_covers(legacy, first_index):
-        # 未收尾则继续并入；已收尾由主循环终态守卫跳过
-        return legacy
     else:
         key = f"{legacy_key}:{first_index}"
         exact = (
@@ -357,6 +358,7 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
             .one_or_none()
         )
         if exact is not None:
+            _rename_if_stale(session, exact, account, sd, first_index)
             return exact
     open_item = (
         session.query(SourceItem)
@@ -369,20 +371,9 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
         .first()
     )
     if open_item is not None:  # 跨零点：目录日期只做目录键，会话身份未收尾优先
+        _rename_if_stale(session, open_item, account, sd, first_index)
         return open_item
-    title = f"{sd.author} 直播 {sd.date}"
-    hhmm = _first_hhmm(first_index)
-    if key != legacy_key and hhmm:
-        title = f"{title} {hhmm}"
-    # 标题用主播名（sec_uid 目录名没人认得）：upsert 每轮覆写，存量会话也会被刷过来
-    creator_name = (
-        session.query(Creator.display_name)
-        .join(SourceAccount, SourceAccount.creator_id == Creator.id)
-        .filter(SourceAccount.id == account.id)
-        .scalar()
-    )
-    if creator_name:
-        title = title.replace(sd.author, creator_name, 1)
+    title = _session_title(session, account, sd, suffixed=key != legacy_key, first_index=first_index)
     item, _created = SourceItemRepository(session).upsert_by_external(
         source_account_id=account.id,
         external_item_id=key,
@@ -391,6 +382,32 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
     )
     session.flush()
     return item
+
+
+def _session_title(session, account: SourceAccount, sd: LiveSessionDir, *, suffixed: bool, first_index: int | None) -> str:
+    """直播条目标题：主播名 直播 日期（加播场追加起播 HH:MM）。主播名查不到回退目录名。"""
+    title = f"{sd.author} 直播 {sd.date}"
+    if suffixed:
+        hhmm = _first_hhmm(first_index)
+        if hhmm:
+            title = f"{title} {hhmm}"
+    creator_name = (
+        session.query(Creator.display_name)
+        .join(SourceAccount, SourceAccount.creator_id == Creator.id)
+        .filter(SourceAccount.id == account.id)
+        .scalar()
+    )
+    if creator_name:
+        title = title.replace(sd.author, creator_name, 1)
+    return title
+
+
+def _rename_if_stale(session, item: SourceItem, account: SourceAccount, sd: LiveSessionDir, first_index: int | None) -> None:
+    """存量会话标题刷成主播名（sec_uid 目录名没人认得）；键里的冒号数区分加播场。"""
+    suffixed = (item.external_item_id or "").count(":") >= 3
+    title = _session_title(session, account, sd, suffixed=suffixed, first_index=first_index)
+    if item.title != title:
+        item.title = title
 
 
 def _live_covers(item: SourceItem, first_index: int | None) -> bool:
