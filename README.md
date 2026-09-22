@@ -4,6 +4,14 @@
 
 需求与设计见 `01_finance_opinion_radar_PRD.md`；任务拆解见 `02_finance_opinion_radar_execution_plan.md`。
 
+## 需求背景与近期目标（2026-09-22）
+
+面向公司内部生产研究，近期优先为 AI 内容中心提供可加工、有出处的素材。当前改进重点是多来源非结构化数据的清洗、标签识别与准确性，允许较慢处理。雷达承担素材与证据交付，内容中心承担最终选题、写作和发布，量化平台提供独立分析材料。
+
+本次产品能力评估及代码依据见 [findings.md](findings.md)，进度见 [progress.md](progress.md)，任务状态见 [task_plan.md](task_plan.md)。评估为静态核对，尚未对线上准确率或实际清理配置进行验收；其中建设顺序为建议，尚未进入开发实施。
+
+第一批 [财经素材标注质量基线提案](openspec/changes/establish-finance-label-quality-baseline/proposal.md)已生成，当前待用户确认。范围为标注规范、本地冻结样本、人工裁决和可信评测；建议新增语义精确率 98% 门槛，现有演示样例不作为正式人审基准。规范入口及使用方式见 [openspec/README.md](openspec/README.md)。
+
 ## 快速开始
 
 前置：Python 3.12、Node ≥ 22、Docker Desktop。
@@ -301,10 +309,13 @@ infra/docker/        Dockerfile.api（两阶段构建）
 scripts/             seed_dev.py 开发种子
 tests/               集成测试（radar_test 库，迁移后逐表截断）
 docs/adr/            架构决策记录
+openspec/            变更提案、验收规范和归档后的主规范
+.codex/             OpenSpec 为 Codex 生成的项目工作流
 ```
 
 ## 已完成
 
+- 2026-09-22：内部内容生产目标与能力评估；首批标注质量基线提案已生成并完成格式校验，实施及业务质量验收尚未进行。
 - RAD-001~003：仓库基线、Makefile/pre-commit、CI（6 jobs）、API Dockerfile、docker compose 开发依赖（postgres/redis/minio）
 - RAD-010~013：API 骨架与健康检查、领域枚举、Alembic + 14 张表迁移（含约束/级联/UTC 集成测试）、repository 层、开发种子数据
 - RAD-020~023：媒体 Adapter 契约（yt-dlp 子进程，ADR-0007）、URL 白名单闸、手工解析/创建 API、Celery 账号发现 + beat 到期派发
@@ -314,7 +325,10 @@ docs/adr/            架构决策记录
 
 ## TODO
 
-- EPIC-04+：观点抽取（chunk/LLM）、共识快照、前端界面、审核流等（见执行计划）
+- 准确性验收：现有 golden 只有两条待人工复核的格式样例，需补齐真实人工标注和证据定位，统一评测口径及 PRD 门槛。
+- 清洗与语义审核：在已有结构校验、规则审核和人工队列上，补强原文支持关系、讲话人归属、数字、条件、期限及失败/无内容的区分。
+- 素材证据留存：普通内容清理快照目前保留结论，不能替代完整来源证据；完善已引用素材的证据保留规则。
+- 内容中心交付：复用已有检索、详情和证据接口，完善素材交付、版本、更正及采用反馈。具体缺口和建议顺序见 [findings.md](findings.md)。
 
 ## 关键决策
 
