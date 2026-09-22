@@ -1472,8 +1472,8 @@ function VideoViewpointsDrawer(props: {
                 {(r.entity_name ?? r.entity_raw) && (
                   <span className="badge">{r.entity_name ?? r.entity_raw}</span>
                 )}
-                <StanceBadge stance={r.stance} />
                 {r.horizon && <span className="badge">{r.horizon}</span>}
+                <StanceBadge stance={r.stance} />
                 <span className={`badge ${r.verification_status === 'confirmed' ? 'ok' : r.verification_status === 'rejected' ? 'err' : 'run'}`}>
                   {VP_STATUS_CN[r.verification_status] ?? r.verification_status}
                 </span>
