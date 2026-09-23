@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     danmaku,
     monitoring,
+    open_admin,
     proxy_pool,
     retention,
     source_accounts,
@@ -19,6 +20,7 @@ api_router.include_router(monitoring.router)
 api_router.include_router(transcripts.router)
 api_router.include_router(viewpoints.router)
 api_router.include_router(taxonomy.router)
+api_router.include_router(open_admin.router)
 api_router.include_router(danmaku.router)
 api_router.include_router(retention.router)
 api_router.include_router(proxy_pool.router)

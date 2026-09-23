@@ -72,4 +72,9 @@ celery_app.conf.beat_schedule = {
         "task": "qg_proxy_maintain",
         "schedule": 600,
     },
+    # Plan #7：确认观点推送——扫描未投递的 confirmed 观点投到飞书/钉钉/webhook
+    "push-confirmed-viewpoints": {
+        "task": "push_confirmed_viewpoints",
+        "schedule": get_settings().open_push_interval_sec,
+    },
 }

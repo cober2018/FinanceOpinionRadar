@@ -4,6 +4,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.api.open import router as open_router
+from app.api.open.deps import audit_middleware
 from app.api.v1 import api_router
 
 
@@ -23,6 +25,9 @@ async def _lifespan(_: FastAPI):
 
 app = FastAPI(title="Finance Opinion Radar", version="0.1.0", lifespan=_lifespan)
 app.include_router(api_router)
+app.include_router(open_router)
+# 开放接口调用审计（仅 /open/ 前缀；鉴权失败也记一行，api_key_id 为空）
+app.middleware("http")(audit_middleware)
 
 
 @app.get("/api/v1/health")

@@ -1829,6 +1829,237 @@ function EditViewpointModal(props: {
   )
 }
 
+/* ---------------- 开放接口（API Key + 推送渠道） ---------------- */
+
+type ApiKeyRow = {
+  id: number
+  name: string
+  prefix: string
+  status: string
+  last_used_at: string | null
+  created_at: string | null
+}
+
+type PushChannelRow = {
+  id: number
+  name: string
+  channel_type: string
+  url: string
+  has_secret: boolean
+  enabled: boolean
+  created_at: string | null
+}
+
+const CHANNEL_TYPE_CN: Record<string, string> = {
+  feishu: '飞书机器人',
+  dingtalk: '钉钉机器人',
+  generic_webhook: '通用 Webhook',
+}
+
+function OpenApiPage() {
+  const [keys, setKeys] = useState<ApiKeyRow[]>([])
+  const [channels, setChannels] = useState<PushChannelRow[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [newKey, setNewKey] = useState<{ name: string; api_key: string } | null>(null)
+  const [keyName, setKeyName] = useState('')
+  const [chForm, setChForm] = useState(false)
+  const [chDraft, setChDraft] = useState({ name: '', channel_type: 'feishu', url: '', secret: '' })
+  const [testing, setTesting] = useState<number | null>(null)
+
+  const reload = useCallback(() => {
+    api<{ items: ApiKeyRow[] }>('/open-admin/api-keys').then((d) => setKeys(d.items)).catch((e: Error) => setError(e.message))
+    api<{ items: PushChannelRow[] }>('/open-admin/push-channels').then((d) => setChannels(d.items)).catch((e: Error) => setError(e.message))
+  }, [])
+  useEffect(reload, [reload])
+
+  const createKey = async () => {
+    if (!keyName.trim()) return
+    setError(null)
+    try {
+      const r = await api<{ id: number; api_key: string }>('/open-admin/api-keys', {
+        method: 'POST',
+        body: JSON.stringify({ name: keyName.trim() }),
+      })
+      setNewKey({ name: keyName.trim(), api_key: r.api_key })
+      setKeyName('')
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const revokeKey = (r: ApiKeyRow) => {
+    if (!window.confirm(`吊销「${r.name}」（${r.prefix}…）？使用该 Key 的下游系统将立即失效。`)) return
+    api(`/open-admin/api-keys/${r.id}`, { method: 'DELETE' }).then(reload).catch((e: Error) => setError(e.message))
+  }
+
+  const createChannel = async () => {
+    setError(null)
+    try {
+      await api('/open-admin/push-channels', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: chDraft.name.trim(),
+          channel_type: chDraft.channel_type,
+          url: chDraft.url.trim(),
+          secret: chDraft.secret.trim() || null,
+        }),
+      })
+      setChForm(false)
+      setChDraft({ name: '', channel_type: 'feishu', url: '', secret: '' })
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const toggleChannel = (r: PushChannelRow) => {
+    api(`/open-admin/push-channels/${r.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled: !r.enabled }),
+    }).then(reload).catch((e: Error) => setError(e.message))
+  }
+
+  const testChannel = async (r: PushChannelRow) => {
+    setTesting(r.id)
+    setError(null)
+    try {
+      await api(`/open-admin/push-channels/${r.id}/test`, { method: 'POST' })
+      window.alert('测试消息已发出，请到群里确认收到')
+    } catch (e) {
+      window.alert((e as Error).message)
+    } finally {
+      setTesting(null)
+    }
+  }
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <h2>开放接口</h2>
+        <p className="muted">
+          对外成果输出（/open/v1）：X-API-Key 鉴权、只读、默认仅已确认观点；推送支持飞书/钉钉/通用 Webhook。
+          本系统是产品矩阵的数据底座，深加工由下游完成。
+        </p>
+      </div>
+      {error && <p className="error">{error}</p>}
+
+      <h3>API Key（{keys.length}）</h3>
+      <div className="toolbar">
+        <input
+          placeholder="Key 名称（如：兄弟产品 A）"
+          value={keyName}
+          onChange={(e) => setKeyName(e.target.value)}
+        />
+        <button className="primary" onClick={createKey} disabled={!keyName.trim()}>创建 Key</button>
+      </div>
+      {newKey && (
+        <div className="callout">
+          <b>「{newKey.name}」已创建。</b> 明文仅显示这一次，请立即交给下游系统保管：
+          <code style={{ userSelect: 'all', display: 'block', margin: '8px 0', wordBreak: 'break-all' }}>
+            {newKey.api_key}
+          </code>
+          <button className="ghost" onClick={() => setNewKey(null)}>我已保存，关闭</button>
+        </div>
+      )}
+      <table className="table">
+        <thead>
+          <tr><th>名称</th><th>前缀</th><th>状态</th><th>最近使用</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          {keys.map((r) => (
+            <tr key={r.id}>
+              <td>{r.name}</td>
+              <td><code>{r.prefix}…</code></td>
+              <td>{r.status === 'active' ? '启用' : '已吊销'}</td>
+              <td className="muted">{r.last_used_at ? fmtDateTime(r.last_used_at) : '从未'}</td>
+              <td>
+                {r.status === 'active' && (
+                  <button className="ghost" onClick={() => revokeKey(r)}>吊销</button>
+                )}
+              </td>
+            </tr>
+          ))}
+          {keys.length === 0 && (
+            <tr><td colSpan={5} className="muted pad">暂无 Key。下游系统凭 X-API-Key 请求头访问 /open/v1/*。</td></tr>
+          )}
+        </tbody>
+      </table>
+
+      <h3 style={{ marginTop: 28 }}>推送渠道（{channels.length}）</h3>
+      <div className="toolbar">
+        <button className="primary" onClick={() => setChForm(!chForm)}>新建渠道</button>
+        <span className="muted">新确认观点每分钟聚合推送到启用中的渠道。</span>
+      </div>
+      {chForm && (
+        <div className="callout">
+          <div className="grid-2">
+            <label className="field">
+              名称
+              <input value={chDraft.name} onChange={(e) => setChDraft({ ...chDraft, name: e.target.value })} placeholder="如：运营群" />
+            </label>
+            <label className="field">
+              类型
+              <select value={chDraft.channel_type} onChange={(e) => setChDraft({ ...chDraft, channel_type: e.target.value })}>
+                {Object.entries(CHANNEL_TYPE_CN).map(([v, cn]) => (
+                  <option key={v} value={v}>{cn}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field" style={{ gridColumn: '1 / -1' }}>
+              Webhook URL
+              <input value={chDraft.url} onChange={(e) => setChDraft({ ...chDraft, url: e.target.value })} placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…" />
+            </label>
+            <label className="field" style={{ gridColumn: '1 / -1' }}>
+              加签 Secret（机器人开了加签才填）
+              <input value={chDraft.secret} onChange={(e) => setChDraft({ ...chDraft, secret: e.target.value })} placeholder="可选" />
+            </label>
+          </div>
+          <div className="form-actions">
+            <button className="primary" onClick={createChannel} disabled={!chDraft.name.trim() || !chDraft.url.trim()}>创建</button>
+            <button onClick={() => setChForm(false)}>取消</button>
+          </div>
+        </div>
+      )}
+      <table className="table">
+        <thead>
+          <tr><th>名称</th><th>类型</th><th>URL</th><th>状态</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          {channels.map((r) => (
+            <tr key={r.id}>
+              <td>{r.name}</td>
+              <td>{CHANNEL_TYPE_CN[r.channel_type] ?? r.channel_type}{r.has_secret ? '（加签）' : ''}</td>
+              <td className="muted" style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r.url}
+              </td>
+              <td>{r.enabled ? '启用' : '停用'}</td>
+              <td>
+                <button className="ghost" disabled={testing === r.id} onClick={() => testChannel(r)}>
+                  {testing === r.id ? '发送中…' : '测试'}
+                </button>{' '}
+                <button className="ghost" onClick={() => toggleChannel(r)}>{r.enabled ? '停用' : '启用'}</button>{' '}
+                <button
+                  className="ghost"
+                  onClick={() => {
+                    if (window.confirm(`删除渠道「${r.name}」？投递日志一并删除。`))
+                      api(`/open-admin/push-channels/${r.id}`, { method: 'DELETE' }).then(reload).catch((e: Error) => setError(e.message))
+                  }}
+                >
+                  删除
+                </button>
+              </td>
+            </tr>
+          ))}
+          {channels.length === 0 && (
+            <tr><td colSpan={5} className="muted pad">暂无渠道。飞书/钉钉群机器人把 Webhook URL 粘进来即可。</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 /* ---------------- 任务中心 ---------------- */
 
 type LedgerRow = {
@@ -2641,6 +2872,7 @@ const NAV = [
   { key: 'viewpoints', label: '观点' },
   { key: 'review', label: '复核队列' },
   { key: 'jobs', label: '任务' },
+  { key: 'open-api', label: '开放接口' },
   { key: 'settings', label: '设置' },
 ] as const
 
@@ -2679,6 +2911,7 @@ function App() {
         {tab === 'viewpoints' && <ViewpointsPage mode="all" />}
         {tab === 'review' && <ViewpointsPage mode="review" />}
         {tab === 'jobs' && <JobCenterPage />}
+        {tab === 'open-api' && <OpenApiPage />}
         {tab === 'settings' && <SettingsPage />}
       </main>
     </div>

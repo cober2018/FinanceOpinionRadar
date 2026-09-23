@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     # 非精华条目保留天数（自 created_at 起算），到期物理删除、只留结论快照；0 = 禁用清理
     content_retention_days: int = 30
     retention_sweep_interval_sec: int = 86400  # beat：每日清理一轮
+    # --- Plan #7 开放数据层（/open/v1 + 推送）---
+    open_push_interval_sec: int = 60  # beat：确认观点推送扫描
+    open_push_max_attempts: int = 5  # 单观点单渠道失败上限，达到后置 dead 不再重试
+    open_push_timeout_sec: float = 10.0  # 推送出站 HTTP 超时
     # --- EPIC-03 ASR（RAD-033/035） ---
     asr_provider: str = "faster_whisper"  # faster_whisper | mlx（Apple Silicon Metal）
     asr_mlx_python: str = ""  # venv_arm64 python 路径（voice-pro，见 README「ASR 引擎」）

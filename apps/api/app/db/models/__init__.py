@@ -4,12 +4,15 @@ from app.db.models.consensus import CreatorTopicSnapshot, TopicConsensusDaily
 from app.db.models.creator import Creator
 from app.db.models.interaction import ContentSummary, LiveChatMessage
 from app.db.models.media import MediaAsset, TranscriptSegment
+from app.db.models.open_api import ApiCallLog, ApiKey, PushChannel, PushDelivery
 from app.db.models.source import DeletedItemRef, SourceAccount, SourceItem
 from app.db.models.system import AppSetting, AuditLog, JobRun, PromptVersion
 from app.db.models.taxonomy import Entity, EntityCandidate, Topic
 from app.db.models.viewpoint import Viewpoint, ViewpointEvidence
 
 __all__ = [
+    "ApiCallLog",
+    "ApiKey",
     "DeletedItemRef",
     "AppSetting",
     "ContentSummary",
@@ -22,6 +25,8 @@ __all__ = [
     "LiveChatMessage",
     "MediaAsset",
     "PromptVersion",
+    "PushChannel",
+    "PushDelivery",
     "SourceAccount",
     "SourceItem",
     "Topic",

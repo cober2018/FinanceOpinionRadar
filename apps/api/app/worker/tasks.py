@@ -499,3 +499,15 @@ def dispatch_pending_extractions() -> int:
         return dispatched
     finally:
         session.close()
+
+
+@celery_app.task(name="push_confirmed_viewpoints")
+def push_confirmed_viewpoints() -> dict:
+    """Plan #7：确认观点推送扫描——未投递的 confirmed 观点按渠道投出。"""
+    from app.services import push
+
+    session = get_session_factory()()
+    try:
+        return push.deliver_pending_pushes(session)
+    finally:
+        session.close()
