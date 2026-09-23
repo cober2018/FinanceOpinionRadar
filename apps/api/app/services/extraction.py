@@ -214,6 +214,15 @@ def extract_source_item(
                 }
             )
             for cand in raw_candidates:
+                # 证据 id 归一：模型偶发把 id 输出成字符串（"108443"），而校验集合
+                # 与 seg_map 均为 int——不归一会全部误判「证据越界」（2026-09-23 实录）
+                evidence_ids: list[int] = []
+                for e in cand.get("evidence_segment_ids") or []:
+                    try:
+                        evidence_ids.append(int(e))
+                    except (TypeError, ValueError):
+                        continue
+                cand["evidence_segment_ids"] = evidence_ids
                 err, stance = _validate_candidate(cand, chunk_ids)
                 if err:
                     rejected.append({"chunk": call_id, "reason": err})

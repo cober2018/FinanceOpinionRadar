@@ -140,6 +140,21 @@ def test_extraction_rejects_invalid_candidates(db_session, tracked_transcribed_i
     assert db_session.query(Viewpoint).count() == 1
 
 
+def test_extraction_string_evidence_ids_normalized(db_session, tracked_transcribed_item):
+    """模型偶发把证据 id 输出成字符串（2026-09-23 实录：19 条候选全被误判越界）。
+
+    字符串数字应归一为 int 正常建观点；混入的非数字项丢弃，不影响其余证据。
+    """
+    str_ids = {**GOOD_CAND, "claim": "观点A", "evidence_segment_ids": ["1", "2"]}
+    mixed = {**GOOD_CAND, "claim": "观点B", "evidence_segment_ids": ["2", None, "x"]}
+    provider = StubLLM([{"viewpoints": [str_ids, mixed]}])
+
+    out = extract_source_item(db_session, tracked_transcribed_item.id, provider=provider)
+    assert out["created"] == 2 and out["rejected"] == 0
+    texts = {ev.evidence_text for ev in db_session.query(ViewpointEvidence).all()}
+    assert len(texts) == 2  # 段1、段2 各被引用；None/"x" 被丢弃
+
+
 def test_extraction_idempotent_same_versions(db_session, tracked_transcribed_item):
     provider = StubLLM([{"viewpoints": [GOOD_CAND]}, {"viewpoints": [GOOD_CAND]}])
     extract_source_item(db_session, tracked_transcribed_item.id, provider=provider)
