@@ -122,6 +122,7 @@ def test_sync_no_restart_when_streamcap_stringified_matches(
         {k: (v if isinstance(v, str) else str(v)) for k, v in rec.items()}
     ]
     on_disk[0]["rec_id"] = "streamcap-owned-id"  # recorder 回写自有 id
+    on_disk[0]["recording_dir"] = "/app/downloads/抖音/MS4w/2026-09-23"  # 开播后物化回写
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(on_disk, ensure_ascii=False))
 
@@ -133,8 +134,10 @@ def test_sync_no_restart_when_streamcap_stringified_matches(
     result = recorder_bridge.sync_live_monitors(Mock(), repo=repo)
     assert result["changed"] is False
     assert calls == []
-    # 既有文件不被重写（recorder 的 rec_id 保留原样）
-    assert json.loads(path.read_text())[0]["rec_id"] == "streamcap-owned-id"
+    # 既有文件不被重写（recorder 的 rec_id / 物化 recording_dir 保留原样）
+    written = json.loads(path.read_text())[0]
+    assert written["rec_id"] == "streamcap-owned-id"
+    assert written["recording_dir"] == "/app/downloads/抖音/MS4w/2026-09-23"
 
 
 def test_sync_keeps_rec_id_for_existing_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

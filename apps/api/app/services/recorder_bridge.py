@@ -119,11 +119,14 @@ def sync_live_monitors(session, repo=None, *, restart: bool = True) -> dict:
     if _strip_volatile(existing) == _strip_volatile(desired):
         return {"changed": False, "monitors": len(desired)}
 
-    # 保留用户侧手工加的字段值：同 URL 的旧条目 rec_id 沿用
+    # 保留 recorder/用户侧自有字段值：同 URL 的旧条目 rec_id、已物化/自定义的 recording_dir 沿用
     old_by_url = {e.get("url"): e for e in existing if isinstance(e, dict)}
     for rec in desired:
-        if rec["url"] in old_by_url and old_by_url[rec["url"]].get("rec_id"):
-            rec["rec_id"] = old_by_url[rec["url"]]["rec_id"]
+        old = old_by_url.get(rec["url"]) or {}
+        if old.get("rec_id"):
+            rec["rec_id"] = old["rec_id"]
+        if old.get("recording_dir"):
+            rec["recording_dir"] = old["recording_dir"]
 
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(path, desired)
@@ -154,8 +157,11 @@ def _restart_recorder(container_name: str) -> None:
         logger.warning("recorder_restart_failed", container=container_name, error=str(exc)[:200])
 
 
-# 录制器自有运行时字段（recorder 指派/回写），不参与 diff
-_VOLATILE_KEYS = frozenset({"rec_id"})
+# 录制器自有运行时字段（recorder 指派/物化回写），不参与 diff：
+#   rec_id —— recorder 为每个监控项指派的 uuid；
+#   recording_dir —— 我们写空串走默认模板，recorder 开播后物化成具体路径回写
+#   （不剔除则每轮 diff 恒判变化，每 10 分钟 restart 打断直播录制）
+_VOLATILE_KEYS = frozenset({"rec_id", "recording_dir"})
 
 
 def _strip_volatile(entries: list) -> list:
