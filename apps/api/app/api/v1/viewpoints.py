@@ -61,6 +61,9 @@ class ViewpointPatch(BaseModel):
     horizon: str | None = None
     topic_id: int | None = None
     entity_id: int | None = None
+    # 按名称改标的：复用抽取的 normalize_entity（命中→entity_id；未命中→entity_raw
+    # 回落并入 candidate 待晋升，与抽取语义一致）；空串=清除标的
+    entity_name: str | None = None
     confidence: float | None = None
     importance: float | None = None
     reason: str | None = None
@@ -236,6 +239,24 @@ def patch_viewpoint(viewpoint_id: int, body: ViewpointPatch, session: DbDep):
         "strong_bullish", "bullish", "neutral", "bearish", "strong_bearish", "unclear",
     }:
         raise HTTPException(status_code=422, detail="stance 非法")
+    if (
+        updates.get("entity_id") is not None
+        and (updates.get("entity_name") or "").strip()
+    ):
+        raise HTTPException(status_code=422, detail="entity_id 与 entity_name 二选一")
+    if "entity_name" in updates:
+        from app.services.entity_normalizer import normalize_entity
+
+        raw = (updates.pop("entity_name") or "").strip()[:200]
+        if not raw:
+            updates["entity_id"] = None
+            updates["entity_raw"] = None
+        else:
+            eid, _disp = normalize_entity(session, raw)
+            updates["entity_id"] = eid
+            updates["entity_raw"] = raw
+    if updates.get("entity_id") is not None and session.get(Entity, updates["entity_id"]) is None:
+        raise HTTPException(status_code=422, detail=f"entity {updates['entity_id']} 不存在")
     before = {k: getattr(vp, k) for k in updates}
     for k, v in updates.items():
         setattr(vp, k, v)

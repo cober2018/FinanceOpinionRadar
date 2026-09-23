@@ -1704,12 +1704,20 @@ function EditViewpointModal(props: {
   const [claim, setClaim] = useState(props.vp.claim)
   const [stance, setStance] = useState(props.vp.stance)
   const [horizon, setHorizon] = useState(props.vp.horizon ?? '')
+  const [entityName, setEntityName] = useState(props.vp.entity_name ?? props.vp.entity_raw ?? '')
+  const [entities, setEntities] = useState<string[]>([])
   const [importance, setImportance] = useState(String(props.vp.importance))
   const [confidence, setConfidence] = useState(String(props.vp.confidence))
   const [reason, setReason] = useState('')
   const [polishing, setPolishing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api<{ items: { canonical_name: string }[] }>('/entities')
+      .then((d) => setEntities(d.items.map((e) => e.canonical_name)))
+      .catch(() => setEntities([])) // 联想失败不阻塞编辑
+  }, [])
 
   const polish = async () => {
     if (!claim.trim()) return
@@ -1739,6 +1747,7 @@ function EditViewpointModal(props: {
           claim: claim.trim(),
           stance,
           horizon: horizon || null,
+          entity_name: entityName.trim(),
           importance: Number(importance),
           confidence: Number(confidence),
           reason: reason || '人工修正' + (claim.trim() !== props.vp.claim ? '（含润色）' : ''),
@@ -1768,12 +1777,18 @@ function EditViewpointModal(props: {
         </label>
         <div className="grid-2">
           <label className="field">
-            立场
-            <select value={stance} onChange={(e) => setStance(e.target.value)}>
-              {Object.entries(STANCE_CN).map(([v, cn]) => (
-                <option key={v} value={v}>{cn}</option>
+            标的（留空 = 清除）
+            <input
+              list="vp-entity-options"
+              value={entityName}
+              onChange={(e) => setEntityName(e.target.value)}
+              placeholder="如：英伟达、标普500"
+            />
+            <datalist id="vp-entity-options">
+              {entities.map((n) => (
+                <option key={n} value={n} />
               ))}
-            </select>
+            </datalist>
           </label>
           <label className="field">
             时间维度
@@ -1781,6 +1796,14 @@ function EditViewpointModal(props: {
               <option value="">未提及</option>
               {['intraday', '1-3D', '1-4W', '1-3M', '3M+'].map((v) => (
                 <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            立场
+            <select value={stance} onChange={(e) => setStance(e.target.value)}>
+              {Object.entries(STANCE_CN).map(([v, cn]) => (
+                <option key={v} value={v}>{cn}</option>
               ))}
             </select>
           </label>

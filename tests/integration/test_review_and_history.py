@@ -165,6 +165,65 @@ def test_confirm_reject_patch_write_audit_and_ready(db_session):
     assert audits[0].actor == "console" and audits[0].before_json["verification_status"] == "needs_review"
 
 
+def test_patch_entity_name_hit_miss_and_clear(db_session):
+    from app.db.models import Entity, EntityCandidate
+    from app.db.session import get_db
+    from app.main import app
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+    db_session.add(Entity(entity_type="stock", canonical_name="英伟达"))
+    db_session.commit()
+    vp, _ = _mk_item_with_vp(db_session)
+
+    # 词典命中 → 挂 entity_id（与抽取一致：raw 保留原始名）
+    r = client.patch(f"/api/v1/viewpoints/{vp.id}", json={"entity_name": "英伟达"})
+    assert r.status_code == 200
+    db_session.expire_all()
+    vp_db = db_session.get(Viewpoint, vp.id)
+    assert vp_db.entity_id is not None and vp_db.entity_raw == "英伟达"
+
+    # 未命中 → entity_id 置空、entity_raw 回落展示，且入 candidate 待晋升
+    r = client.patch(f"/api/v1/viewpoints/{vp.id}", json={"entity_name": "中证500"})
+    assert r.status_code == 200
+    db_session.expire_all()
+    vp_db = db_session.get(Viewpoint, vp.id)
+    assert vp_db.entity_id is None and vp_db.entity_raw == "中证500"
+    cand = (
+        db_session.query(EntityCandidate).filter_by(raw_name="中证500").one_or_none()
+    )
+    assert cand is not None
+
+    # 空串 = 清除标的
+    r = client.patch(f"/api/v1/viewpoints/{vp.id}", json={"entity_name": " "})
+    assert r.status_code == 200
+    db_session.expire_all()
+    vp_db = db_session.get(Viewpoint, vp.id)
+    assert vp_db.entity_id is None and vp_db.entity_raw is None
+
+    # 审计展开为 entity_id/entity_raw 的前后值
+    audits = db_session.query(AuditLog).filter_by(action="patch").all()
+    assert any(
+        set(a.before_json) >= {"entity_id", "entity_raw"} for a in audits
+    )
+
+
+def test_patch_entity_conflict_and_bad_id_rejected(db_session):
+    from app.db.session import get_db
+    from app.main import app
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    client = TestClient(app)
+    vp, _ = _mk_item_with_vp(db_session)
+
+    r = client.patch(
+        f"/api/v1/viewpoints/{vp.id}", json={"entity_id": 1, "entity_name": "英伟达"}
+    )
+    assert r.status_code == 422
+    r = client.patch(f"/api/v1/viewpoints/{vp.id}", json={"entity_id": 99999})
+    assert r.status_code == 422
+
+
 # --- RAD-060 change_type 规则 ---
 
 
