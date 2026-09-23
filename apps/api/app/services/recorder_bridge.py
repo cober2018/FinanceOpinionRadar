@@ -154,12 +154,24 @@ def _restart_recorder(container_name: str) -> None:
         logger.warning("recorder_restart_failed", container=container_name, error=str(exc)[:200])
 
 
+# 录制器自有运行时字段（recorder 指派/回写），不参与 diff
+_VOLATILE_KEYS = frozenset({"rec_id"})
+
+
 def _strip_volatile(entries: list) -> list:
-    """diff 时剔除顺序无关项：按 url 排序后再比，避免条目顺序抖动触发重写。"""
-    return sorted(
-        (e for e in entries if isinstance(e, dict)),
-        key=lambda e: e.get("url", ""),
-    )
+    """diff 归一：剔除录制器自有字段；值统一成字符串比较。
+
+    StreamCap 落盘会把布尔/数字全部字符串化（"segment_record": "True"），而
+    build_recording 写的是原生类型——"True" != True 曾致每轮 diff 恒判变化，
+    每 10 分钟 docker restart 打断直播录制（2026-09-22 李一恩两场直播各丢约
+    一半音频的根因）。按 url 排序消条目顺序抖动。
+    """
+    norm = [
+        {k: str(v) for k, v in e.items() if k not in _VOLATILE_KEYS}
+        for e in entries
+        if isinstance(e, dict)
+    ]
+    return sorted(norm, key=lambda e: e.get("url", ""))
 
 
 def _load_json(path: Path) -> list:

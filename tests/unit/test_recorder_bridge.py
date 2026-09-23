@@ -110,6 +110,33 @@ def test_sync_no_restart_when_unchanged(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert calls == [["docker", "restart", "streamcap"]]  # 仅第一轮重启
 
 
+def test_sync_no_restart_when_streamcap_stringified_matches(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """2026-09-22 实录 bug：StreamCap 落盘把布尔/数字全部字符串化并回写自有 rec_id，
+    "True" != True 致每轮 diff 恒判变化 → 每 10 分钟 docker restart 打断直播录制
+    （李一恩两场直播各丢约一半音频）。归一化后不得再有重启风暴。"""
+    path = _set(monkeypatch, tmp_path)
+    rec = recorder_bridge.build_recording(_account())
+    on_disk = [
+        {k: (v if isinstance(v, str) else str(v)) for k, v in rec.items()}
+    ]
+    on_disk[0]["rec_id"] = "streamcap-owned-id"  # recorder 回写自有 id
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(on_disk, ensure_ascii=False))
+
+    repo = Mock()
+    repo.list_live_monitored.return_value = [_account()]
+    calls: list = []
+    monkeypatch.setattr(recorder_bridge.subprocess, "run", lambda argv, **kw: calls.append(argv))
+
+    result = recorder_bridge.sync_live_monitors(Mock(), repo=repo)
+    assert result["changed"] is False
+    assert calls == []
+    # 既有文件不被重写（recorder 的 rec_id 保留原样）
+    assert json.loads(path.read_text())[0]["rec_id"] == "streamcap-owned-id"
+
+
 def test_sync_keeps_rec_id_for_existing_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     path = _set(monkeypatch, tmp_path)
     old = [recorder_bridge.build_recording(_account())]
