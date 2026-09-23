@@ -139,3 +139,53 @@ def test_first_hhmm_extracts_time_only_from_timestamped_index() -> None:
     assert live_ingest._first_hhmm(202609222047540000) == "20:47"
     assert live_ingest._first_hhmm(202609221133170001) == "11:33"
     assert live_ingest._first_hhmm(3) == ""
+
+
+def test_index_start_utc_parses_local_timestamp_to_utc() -> None:
+    """合成序号前 14 位按本机时区解析转 UTC；裸序号/非法日期返回 None。"""
+    from datetime import UTC, datetime
+
+    start = live_ingest._index_start_utc(202609172222020000)
+    assert start is not None
+    local_tz = datetime.now().astimezone().tzinfo
+    expected_local = datetime(2026, 9, 17, 22, 22, 2, tzinfo=local_tz)
+    assert start == expected_local.astimezone(UTC)
+    assert live_ingest._index_start_utc(3) is None
+    assert live_ingest._index_start_utc(None) is None
+    assert live_ingest._index_start_utc(202613172222020000) is None  # 13 月非法
+
+
+class _FakeItem:
+    """只带 _rename_if_stale 触碰的字段，避免拖起 DB。"""
+
+    def __init__(self, metadata_json, title, published_at=None, duration_ms=None):
+        self.metadata_json = metadata_json
+        self.title = title
+        self.published_at = published_at
+        self.duration_ms = duration_ms
+
+
+class _FakeAccount:
+    id = 1
+    external_id = "sec1"
+
+
+def test_rename_if_stale_sets_published_at_and_duration(monkeypatch) -> None:
+    """标题/起播时刻/时长都从注册表事实刷新（用户 2026-09-23 指定语义）。"""
+    item = _FakeItem(
+        {"live": {"processed": {
+            "202609172222020000": {"duration_ms": 300000},
+            "202609172226380000": {"duration_ms": 310000},
+        }}},
+        title="旧标题",
+    )
+    monkeypatch.setattr(
+        live_ingest, "_session_title", lambda session, account, sd, *, first_index: (
+            f"全能的野人 直播 2026-09-17 {live_ingest._first_hhmm(first_index)}"
+        )
+    )
+    sd = live_ingest.LiveSessionDir(author="全能的野人", date="2026-09-17", segments=[])
+    live_ingest._rename_if_stale(None, item, _FakeAccount(), sd, first_index=999)
+    assert item.title == "全能的野人 直播 2026-09-17 22:22"
+    assert item.duration_ms == 610000  # 分片时长加总
+    assert item.published_at == live_ingest._index_start_utc(202609172222020000)

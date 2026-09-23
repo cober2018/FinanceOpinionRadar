@@ -374,6 +374,18 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
         _rename_if_stale(session, open_item, account, sd, first_index)
         return open_item
     title = _session_title(session, account, sd, first_index=first_index)
+    # 墓碑守卫：该会话键曾被用户删除 → 不重建（否则删除复活死循环，750 实录）
+    from app.db.models import DeletedItemRef
+
+    tombstoned = (
+        session.query(DeletedItemRef.id)
+        .filter_by(source_account_id=account.id, external_item_id=key)
+        .first()
+        is not None
+    )
+    if tombstoned:
+        logger.info("live_session_tombstoned_skip", key=key, date=sd.date)
+        return None
     item, _created = SourceItemRepository(session).upsert_by_external(
         source_account_id=account.id,
         external_item_id=key,
@@ -403,10 +415,12 @@ def _session_title(session, account: SourceAccount, sd: LiveSessionDir, *, first
 
 
 def _rename_if_stale(session, item: SourceItem, account: SourceAccount, sd: LiveSessionDir, first_index: int | None) -> None:
-    """存量会话标题刷成当前格式（主播名 + 起播时分）。
+    """存量会话元数据刷成当前事实：标题（主播名+起播时分）/ published_at / duration_ms。
 
     起播时刻取注册表最早分片（真实起播），不用本次扫描的分片——同一条目被多个
-    子场先后归并时，后者不得把标题时间推后（911 实录：11:33 起播被 11:47 子场覆写）。
+    子场先后归并时，后者不得把标题/发布时间推后（911 实录：11:33 起播被 11:47 子场覆写）。
+    duration_ms = processed 注册表各分片转写时长之和（用户 2026-09-23 指定语义：
+    直播条目时长 = 全部分片时长加总）。
     """
     live = (item.metadata_json or {}).get("live") or {}
     idxs = [
@@ -415,9 +429,20 @@ def _rename_if_stale(session, item: SourceItem, account: SourceAccount, sd: Live
         for k in (live.get(field) or {})
         if str(k).isdigit()
     ]
-    title = _session_title(session, account, sd, first_index=min(idxs) if idxs else first_index)
+    reg_min = min(idxs) if idxs else first_index
+    title = _session_title(session, account, sd, first_index=reg_min)
     if item.title != title:
         item.title = title
+    start = _index_start_utc(reg_min)
+    if start is not None and item.published_at != start:
+        item.published_at = start
+    duration = sum(
+        int(v.get("duration_ms") or 0)
+        for v in (live.get("processed") or {}).values()
+        if isinstance(v, dict)
+    )
+    if duration and item.duration_ms != duration:
+        item.duration_ms = duration
 
 
 def _live_covers(item: SourceItem, first_index: int | None) -> bool:
@@ -437,6 +462,24 @@ def _first_hhmm(index: int) -> str:
     if len(s) >= 14 and s.isdigit():
         return f"{s[8:10]}:{s[10:12]}"
     return ""
+
+
+def _index_start_utc(index: int | None) -> datetime | None:
+    """合成序号前 14 位（本机时区 YYYYMMDDHHMMSS，StreamCap 文件名同源）→ UTC 时刻。
+
+    裸序号/非法日期返回 None（published_at 保持不动）。
+    """
+    if index is None:
+        return None
+    s = str(index)
+    if len(s) < 14 or not s.isdigit():
+        return None
+    try:
+        local = datetime.strptime(s[:14], "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+    tz = datetime.now().astimezone().tzinfo  # 录制器与本机同时区
+    return local.replace(tzinfo=tz).astimezone(UTC)
 
 
 def _advance_chain(session, item: SourceItem) -> None:

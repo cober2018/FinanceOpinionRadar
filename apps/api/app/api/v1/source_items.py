@@ -467,20 +467,40 @@ def toggle_asset(item_id: int, session: DbDep, is_asset: bool | None = None):
 
 @router.delete("/{item_id}", status_code=200)
 def delete_source_item(item_id: int, session: DbDep):
-    """删除单条内容（物理，级联转录/观点/资产）+ 写墓碑防 discover 重导。"""
+    """删除单条内容（物理，级联转录/观点/资产）+ 写墓碑防 discover 重导。
+
+    墓碑幂等：条目曾被删过又被 live ingest 重建时，同键墓碑已存在——跳过插入，
+    不能撞 uq_deleted_item_ref 500（750 实录：删除一直失败）。
+    """
     from app.db.models import DeletedItemRef, SourceItem
 
     item = session.get(SourceItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
-    session.add(
-        DeletedItemRef(
-            source_account_id=item.source_account_id, external_item_id=item.external_item_id
-        )
-    )
+    _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
     session.delete(item)
     session.commit()
     return {"deleted": item_id, "tombstoned": True}
+
+
+def _tombstone_if_absent(session: Session, source_account_id: int | None, external_item_id: str) -> None:
+    if source_account_id is None:
+        return
+    from app.db.models import DeletedItemRef
+
+    exists = (
+        session.query(DeletedItemRef.id)
+        .filter_by(
+            source_account_id=source_account_id, external_item_id=external_item_id
+        )
+        .first()
+    )
+    if exists is None:
+        session.add(
+            DeletedItemRef(
+                source_account_id=source_account_id, external_item_id=external_item_id
+            )
+        )
 
 
 class BatchDeleteRequest(BaseModel):
@@ -490,7 +510,7 @@ class BatchDeleteRequest(BaseModel):
 @router.post("/batch-delete", status_code=200)
 def batch_delete_items(body: BatchDeleteRequest, session: DbDep):
     """批量物理删除（视频库多选）：逐条级联 + 墓碑，返回成功/失败清单。"""
-    from app.db.models import DeletedItemRef, SourceItem
+    from app.db.models import SourceItem
 
     deleted: list[int] = []
     missing: list[int] = []
@@ -499,12 +519,7 @@ def batch_delete_items(body: BatchDeleteRequest, session: DbDep):
         if item is None:
             missing.append(item_id)
             continue
-        session.add(
-            DeletedItemRef(
-                source_account_id=item.source_account_id,
-                external_item_id=item.external_item_id,
-            )
-        )
+        _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
         session.delete(item)
         deleted.append(item_id)
     session.commit()
