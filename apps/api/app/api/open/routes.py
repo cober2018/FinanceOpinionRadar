@@ -123,6 +123,32 @@ def get_transcript(item_id: int, session: DbDep):
     }
 
 
+@router.get("/items/{item_id}/summary")
+def get_item_summary(item_id: int, session: DbDep):
+    """视频观点一句话总结（全部复核确认后由 LLM 整合生成）。"""
+    from app.db.models import SourceItem
+
+    row = (
+        session.query(SourceItem, Creator.display_name)
+        .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+        .join(Creator, Creator.id == SourceAccount.creator_id)
+        .filter(SourceItem.id == item_id)
+        .one_or_none()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    item, creator_name = row
+    return {
+        "item_id": item.id,
+        "title": item.title,
+        "display_name": creator_name,
+        "item_type": item.item_type,
+        "published_at": item.published_at,
+        "summary": item.viewpoint_summary,
+        "generated_at": item.summary_generated_at,
+    }
+
+
 @router.get("/transcripts/search")
 def search_transcripts(q: str, session: DbDep):
     """转录关键词搜索：条目级命中（含摘要片段）。"""

@@ -58,6 +58,7 @@ type VPVideoRow = {
   viewpoint_total: number
   viewpoint_needs_review: number
   viewpoint_confirmed: number
+  viewpoint_summary?: string | null
   stance_summary?: { horizon: string | null; tags: { stance: string; entity: string | null; count: number }[] }[]
 }
 
@@ -784,6 +785,7 @@ function LibraryPage() {
   const [chatDrawer, setChatDrawer] = useState<number | null>(null)
   const [drillAccount, setDrillAccount] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [dayFilter, setDayFilter] = useState<string | null>(null)
 
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
@@ -822,11 +824,15 @@ function LibraryPage() {
       if (statusFilter) params.set('status', statusFilter)
     }
     if (assetFilter !== '') params.set('asset', assetFilter)
+    if (dayFilter) {
+      params.set('date_from', dayFilter)
+      params.set('date_to', dayFilter)
+    }
     params.set('limit', '200')
     api<LibraryItem[]>(`/source-items?${params}`)
       .then(setRows)
       .catch((e: Error) => setError(e.message))
-  }, [accountFilter, statusFilter, drillAccount, assetFilter])
+  }, [accountFilter, statusFilter, drillAccount, assetFilter, dayFilter])
 
   useEffect(() => {
     reload()
@@ -1018,6 +1024,7 @@ function LibraryPage() {
           </button>
         )}
       </div>
+      <WeekBar value={dayFilter} onChange={setDayFilter} />
 
       <table className="board">
         <thead>
@@ -1240,6 +1247,57 @@ const STANCE_CN: Record<string, string> = {
   unclear: '不明',
 }
 
+// 周历日期筛选（仿风险日历一周条）：点选某天只看当天，再点一次清除；箭头切周。
+// value 为 'YYYY-MM-DD' 或 null（看全部）。
+const WEEKBAR_WD = ['一', '二', '三', '四', '五', '六', '日']
+
+function weekbarFmt(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function WeekBar({ value, onChange }: { value: string | null; onChange: (day: string | null) => void }) {
+  const [weekStart, setWeekStart] = useState<Date>(() => {
+    const base = value ? new Date(`${value}T00:00:00`) : new Date()
+    const d = new Date(base)
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // 回到本周一
+    return d
+  })
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + i)
+    return d
+  })
+  const today = weekbarFmt(new Date())
+  const shift = (n: number) =>
+    setWeekStart((s) => {
+      const d = new Date(s)
+      d.setDate(d.getDate() + n * 7)
+      return d
+    })
+  return (
+    <div className="weekbar">
+      <button className="ghost weekbar-nav" onClick={() => shift(-1)} title="上一周">‹</button>
+      {days.map((d, i) => {
+        const day = weekbarFmt(d)
+        return (
+          <button
+            key={day}
+            className={`weekbar-day${value === day ? ' active' : ''}${day === today ? ' today' : ''}`}
+            onClick={() => onChange(value === day ? null : day)}
+          >
+            <span className="wd">{WEEKBAR_WD[i]}</span>
+            <span className="dd">{day.slice(5)}</span>
+          </button>
+        )
+      })}
+      <button className="ghost weekbar-nav" onClick={() => shift(1)} title="下一周">›</button>
+      {value && (
+        <button className="ghost" onClick={() => onChange(null)}>全部</button>
+      )}
+    </div>
+  )
+}
+
 // 立场徽章（A股习惯）：看多族=红、看空族=绿，其余灰
 function StanceBadge({ stance }: { stance: string }) {
   const cls = stance.includes('bullish') ? 'stance-bull' : stance.includes('bearish') ? 'stance-bear' : ''
@@ -1279,15 +1337,20 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
   const [error, setError] = useState<string | null>(null)
   const [vpDrawer, setVpDrawer] = useState<VPVideoRow | null>(null)
   const [textDrawer, setTextDrawer] = useState<VPVideoRow | null>(null)
+  const [dayFilter, setDayFilter] = useState<string | null>(null)
 
   const reload = useCallback((silent = false) => {
     const params = new URLSearchParams({ limit: '500' })
     if (mode === 'review') params.set('pending_review', 'true')
     else params.set('has_viewpoints', 'true')
+    if (dayFilter) {
+      params.set('date_from', dayFilter)
+      params.set('date_to', dayFilter)
+    }
     api<VPVideoRow[]>(`/source-items?${params}`, undefined, { silent })
       .then(setRows)
       .catch((e: Error) => setError(e.message))
-  }, [mode])
+  }, [mode, dayFilter])
 
   useEffect(() => {
     reload()
@@ -1321,6 +1384,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
         </h3>
         <button className="ghost" onClick={reextractAll}>旧版观点全部重抽（v2）</button>
       </div>
+      <WeekBar value={dayFilter} onChange={setDayFilter} />
       <p className="hint">
         一个视频一条记录；点行或「观点」查看该视频抽出的全部观点（立场是每条观点自己的属性），「文案」看视频转写原文，证据在观点列表里逐条查看。
       </p>
@@ -1330,6 +1394,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
             <th>主播</th>
             <th>视频标题</th>
             <th>立场标签</th>
+            <th>总结</th>
             <th>发布时间</th>
             <th>观点</th>
             <th>内容状态</th>
@@ -1342,6 +1407,12 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
               <td>{r.display_name}</td>
               <td className="title-cell" title={r.title ?? ''}>{r.title ?? '-'}</td>
               <td><StanceSummary summary={r.stance_summary} /></td>
+              <td
+                className="summary-cell"
+                title={r.viewpoint_summary ?? '全部复核完成后自动生成'}
+              >
+                {r.viewpoint_summary ?? <span className="muted">-</span>}
+              </td>
               <td className="muted" style={{ fontSize: 11 }}>{fmtDateTime(r.published_at)}</td>
               <td>
                 <b>{r.viewpoint_total}</b> 条{' '}
@@ -1374,7 +1445,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={7} className="muted pad">
+              <td colSpan={8} className="muted pad">
                 {mode === 'review'
                   ? '复核队列为空（自动复核通过的不进队列）'
                   : '暂无观点：先在视频库转写内容并点「抽取观点」'}
@@ -1449,6 +1520,16 @@ function VideoViewpointsDrawer(props: {
     if (reason && reason.trim()) review(id, 'reject', reason.trim())
   }
 
+  const regenerateSummary = async () => {
+    setError(null)
+    try {
+      await api(`/source-items/${item.id}/summarize`, { method: 'POST' })
+      window.alert('已派发重新总结，稍后自动刷新')
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   return (
     <div className="drawer-mask" onClick={props.onClose}>
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
@@ -1463,6 +1544,17 @@ function VideoViewpointsDrawer(props: {
           </div>
           <button className="ghost" onClick={props.onClose}>关闭</button>
         </div>
+        {item.viewpoint_summary && (
+          <div className="summary-box">
+            <div className="summary-head">
+              <b>一句话总结</b>
+              <button className="ghost" style={{ fontSize: 11 }} onClick={regenerateSummary}>
+                重新总结
+              </button>
+            </div>
+            <p style={{ margin: '4px 0 0', lineHeight: 1.7 }}>{item.viewpoint_summary}</p>
+          </div>
+        )}
         {error && <p className="error">{error}</p>}
         <div className="drawer-body">
           {vps.map((r, idx) => (
@@ -1531,12 +1623,18 @@ function AssetLibraryPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [drawer, setDrawer] = useState<number | null>(null)
+  const [dayFilter, setDayFilter] = useState<string | null>(null)
 
   const reload = useCallback(() => {
-    api<LibraryItem[]>('/source-items?asset=true&limit=500')
+    const params = new URLSearchParams({ asset: 'true', limit: '500' })
+    if (dayFilter) {
+      params.set('date_from', dayFilter)
+      params.set('date_to', dayFilter)
+    }
+    api<LibraryItem[]>(`/source-items?${params}`)
       .then(setRows)
       .catch((e: Error) => setError(e.message))
-  }, [])
+  }, [dayFilter])
 
   useEffect(() => reload(), [reload])
 
@@ -1558,6 +1656,7 @@ function AssetLibraryPage() {
       <div className="toolbar">
         <h3 className="toolbar-title">资产库（{rows.length}）</h3>
       </div>
+      <WeekBar value={dayFilter} onChange={setDayFilter} />
       <p className="hint">
         精华内容的永久档案：不参与 30 天生命周期清理，转录与观点随内容永久保留。在视频库点 ☆ 可加入。
       </p>

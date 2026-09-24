@@ -77,7 +77,10 @@ def _get_vp_or_404(session: Session, item_id: int) -> Viewpoint:
 
 
 def _item_ready_when_no_pending(session: Session, item: SourceItem) -> None:
-    """item 无剩余 candidate/needs_review 且状态为 reviewing → ready。"""
+    """item 无剩余 candidate/needs_review 且状态为 reviewing → ready。
+
+    全部复核完成即进入下一环节：自动派发观点一句话总结（用户 2026-09-24）。
+    """
     if item.status != "reviewing":
         return
     pending = (
@@ -94,6 +97,9 @@ def _item_ready_when_no_pending(session: Session, item: SourceItem) -> None:
         ensure_transition(item.status, "ready")
         item.status = "ready"
         session.commit()
+        from app.services.summarizer import dispatch_summarize
+
+        dispatch_summarize(item.id)
 
 
 @router.get("")

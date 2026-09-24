@@ -132,3 +132,15 @@ def test_creators_listing(client, seeded):
     assert len(items) == 1
     assert items[0]["display_name"] == "张三"
     assert items[0]["accounts"][0]["platform"] == "douyin"
+
+
+def test_open_item_summary_endpoint(client, seeded):
+    """GET /open/v1/items/{id}/summary：总结对外输出（X-API-Key 保护由路由级依赖覆盖）。"""
+    r = client.get(f"/open/v1/items/{seeded['item_id']}/summary", headers=HEADERS)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["item_id"] == seeded["item_id"] and body["display_name"] == "张三"
+    assert body["summary"] is None  # 未生成时为 null，下游按需判空
+
+    r404 = client.get("/open/v1/items/999999/summary", headers=HEADERS)
+    assert r404.status_code == 404

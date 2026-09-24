@@ -119,19 +119,30 @@ def list_source_items(
     asset: bool | None = None,
     has_viewpoints: bool | None = None,
     pending_review: bool | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 100,
 ):
     """视频库列表（监控台"视频库"页）：按账号/状态/精华过滤，id 倒序。
 
     has_viewpoints/pending_review：观点页（视频粒度）——只列有观点 / 有待审
     观点（needs_review+candidate）的视频；行内带观点聚合计数。
+    date_from/date_to（YYYY-MM-DD）：按发布日期过滤（周历筛选）；按本机时区
+    取当天边界，避免 PG ::date 按服务器 UTC 截断导致北京日期差 8 小时。
     """
-    from datetime import timedelta
+    from datetime import datetime, timedelta
 
     from sqlalchemy import exists, func, select
 
     from app.core.settings import get_settings
     from app.db.models import Creator, SourceAccount, SourceItem, Viewpoint
+
+    def _day_bounds(day: str) -> tuple[datetime, datetime] | None:
+        try:
+            start = datetime.fromisoformat(day).astimezone()
+        except ValueError:
+            return None
+        return start, start + timedelta(days=1)
 
     stmt = (
         select(SourceItem, SourceAccount, Creator.display_name)
@@ -148,6 +159,14 @@ def list_source_items(
         stmt = stmt.where(SourceItem.status == status)
     if asset is not None:
         stmt = stmt.where(SourceItem.is_asset.is_(asset))
+    if date_from:
+        bounds = _day_bounds(date_from)
+        if bounds:
+            stmt = stmt.where(SourceItem.published_at >= bounds[0])
+    if date_to:
+        bounds = _day_bounds(date_to)
+        if bounds:
+            stmt = stmt.where(SourceItem.published_at < bounds[1])
     if has_viewpoints:
         stmt = stmt.where(
             exists(select(Viewpoint.id).where(Viewpoint.source_item_id == SourceItem.id))
@@ -274,11 +293,27 @@ def list_source_items(
             "chat_count": chat_counts.get(item.id, 0),
             "is_asset": item.is_asset,
             "expires_at": _expires_at(item),
+            "viewpoint_summary": item.viewpoint_summary,
+            "summary_generated_at": item.summary_generated_at,
             **_viewpoint_stats(item.id),
             "stance_summary": _stance_summary(item.id),
         }
         for item, account, creator_name in rows
     ]
+
+
+@router.post("/{item_id}/summarize", status_code=202)
+def summarize_source_item_manual(item_id: int, session: DbDep):
+    """手动（重新）生成观点一句话总结（观点抽屉「重新总结」按钮）。"""
+    from app.db.models import SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    from app.services.summarizer import dispatch_summarize
+
+    dispatch_summarize(item_id)
+    return {"item_id": item_id, "dispatched": True}
 
 
 @router.post("/{item_id}/prepare", status_code=202)

@@ -95,6 +95,10 @@ class SourceItem(TimestampMixin, IdMixin, Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     asset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # --- 视频观点一句话总结（用户 2026-09-24）---
+    # 待审观点清零（item → ready）后由 LLM 整合 confirmed 观点生成；开放 API 对外输出
+    viewpoint_summary: Mapped[str | None] = mapped_column(Text)
+    summary_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DeletedItemRef(Base):

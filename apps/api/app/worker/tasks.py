@@ -531,3 +531,37 @@ def sweep_live_segments_task() -> dict:
     from app.services.live_retention import sweep_live_segments
 
     return sweep_live_segments()
+
+
+@celery_app.task(name="summarize_source_item_viewpoints")
+def summarize_source_item_viewpoints(item_id: int) -> dict:
+    """视频观点一句话总结（最后一个观点复核完自动 / 抽屉手动重生成）。"""
+    from app.db.models import JobRun
+    from app.services import summarizer
+
+    session = get_session_factory()()
+    job_id = None
+    try:
+        job = JobRun(job_type="summarize_viewpoints", source_item_id=item_id, status="running")
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        out = summarizer.summarize_source_item(session, item_id)
+        with get_session_factory()() as s2:
+            row = s2.get(JobRun, job_id)
+            row.status = "success"
+            row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+            row.payload_json = {"result": out}
+            s2.commit()
+        return out
+    except Exception as exc:
+        if job_id:
+            with get_session_factory()() as s2:
+                row = s2.get(JobRun, job_id)
+                row.status = "failed"
+                row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+                row.error_message = str(exc)[:500]
+                s2.commit()
+        raise
+    finally:
+        session.close()
