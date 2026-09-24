@@ -1544,17 +1544,26 @@ function VideoViewpointsDrawer(props: {
           </div>
           <button className="ghost" onClick={props.onClose}>关闭</button>
         </div>
-        {item.viewpoint_summary && (
-          <div className="summary-box">
-            <div className="summary-head">
-              <b>一句话总结</b>
+        <div className="summary-box">
+          <div className="summary-head">
+            <b>视频观点</b>
+            {item.viewpoint_summary && (
               <button className="ghost" style={{ fontSize: 11 }} onClick={regenerateSummary}>
-                重新总结
+                重新生成
               </button>
-            </div>
-            <p style={{ margin: '4px 0 0', lineHeight: 1.7 }}>{item.viewpoint_summary}</p>
+            )}
           </div>
-        )}
+          {item.viewpoint_summary ? (
+            <p style={{ margin: '4px 0 0', lineHeight: 1.7 }}>{item.viewpoint_summary}</p>
+          ) : (
+            <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
+              全部观点复核完成后自动生成；也可现在
+              <button className="ghost" style={{ fontSize: 11, padding: '0 4px' }} onClick={regenerateSummary}>
+                立即生成
+              </button>
+            </p>
+          )}
+        </div>
         {error && <p className="error">{error}</p>}
         <div className="drawer-body">
           {vps.map((r, idx) => (
