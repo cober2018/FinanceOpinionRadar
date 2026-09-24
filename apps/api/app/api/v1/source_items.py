@@ -304,14 +304,23 @@ def list_source_items(
 
 @router.post("/{item_id}/summarize", status_code=202)
 def summarize_source_item_manual(item_id: int, session: DbDep):
-    """手动（重新）生成观点一句话总结（观点抽屉「重新总结」按钮）。"""
+    """手动（重新）生成视频观点（抽屉「立即生成/重新生成」按钮）。
+
+    门禁：全部观点已确认才允许（与自动生成同一条规则，用户 2026-09-24）；
+    不满足当场 409，不等 worker 静默跳过。
+    """
     from app.db.models import SourceItem
+    from app.services.summarizer import dispatch_summarize, unconfirmed_count
 
     item = session.get(SourceItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
-    from app.services.summarizer import dispatch_summarize
-
+    non_confirmed = unconfirmed_count(session, item_id)
+    if non_confirmed:
+        raise HTTPException(
+            status_code=409,
+            detail=f"还有 {non_confirmed} 条观点未确认，全部确认后才能生成视频观点",
+        )
     dispatch_summarize(item_id)
     return {"item_id": item_id, "dispatched": True}
 

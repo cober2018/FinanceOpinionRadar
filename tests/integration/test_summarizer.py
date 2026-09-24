@@ -77,9 +77,38 @@ def test_summarize_skips_without_confirmed(db_session):
     item = _mk_item_with_confirmed(db_session, confirmed=0, pending=1)
     llm = StubLLM({"summary": "x"})
     out = summarize_source_item(db_session, item.id, provider=llm)
-    assert out["status"] == "skipped_no_confirmed" and llm.calls == []
+    assert out["status"] == "skipped_not_all_confirmed" and llm.calls == []
     db_session.expire_all()
     assert db_session.get(SourceItem, item.id).viewpoint_summary is None
+
+
+def test_summarize_gate_rejected_counts_as_unconfirmed(db_session):
+    """门禁：驳回的观点也算未确认——有 rejected 在就不允许生成（用户 2026-09-24）。"""
+    item = _mk_item_with_confirmed(db_session, confirmed=2, pending=0)
+    creator_id = (
+        db_session.query(Viewpoint.creator_id).filter_by(source_item_id=item.id).first()[0]
+    )
+    db_session.add(
+        Viewpoint(
+            creator_id=creator_id,
+            source_item_id=item.id,
+            claim="被驳回的观点",
+            stance="neutral",
+            verification_status="rejected",
+        )
+    )
+    db_session.commit()
+    llm = StubLLM({"summary": "x"})
+    out = summarize_source_item(db_session, item.id, provider=llm)
+    assert out["status"] == "skipped_not_all_confirmed" and out["non_confirmed"] == 1
+    assert llm.calls == []
+
+
+def test_summarize_all_confirmed_passes_gate(db_session):
+    """全部 confirmed（含自动确认场景）→ 门禁放行。"""
+    item = _mk_item_with_confirmed(db_session, confirmed=2, pending=0)
+    out = summarize_source_item(db_session, item.id, provider=StubLLM({"summary": "全确认可生成。"}))
+    assert out["status"] == "done"
 
 
 def test_summarize_key_drift_fallback(db_session):

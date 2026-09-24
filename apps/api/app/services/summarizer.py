@@ -1,14 +1,15 @@
 """视频观点一句话总结（用户 2026-09-24）：confirmed 观点 → LLM 整合 → 写回条目。
 
-触发：最后一个待审观点复核完（item → ready）自动派发；观点抽屉「重新总结」手动
-派发。任务幂等（重复执行只覆盖旧总结），无 confirmed 观点跳过不清旧值。
+触发：最后一个待审观点复核完（item → ready）自动派发；抽屉「立即生成」手动派发。
+门禁（所有通道统一，用户 2026-09-24 指定）：视频下**全部观点都已 confirmed** 才允许
+生成——有待审/驳回/候选的条目一律拒绝（rejected 也算未确认）。
 """
 
 import json
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Entity, SourceItem, Viewpoint
@@ -18,14 +19,39 @@ logger = structlog.get_logger(__name__)
 SUMMARY_PROMPT_VERSION = "summary@v1"
 
 
+def unconfirmed_count(session: Session, item_id: int) -> int:
+    """未确认观点数（candidate/needs_review/rejected 都算）——生成门禁判据。"""
+    return (
+        session.query(func.count(Viewpoint.id))
+        .filter(
+            Viewpoint.source_item_id == item_id,
+            Viewpoint.verification_status != "confirmed",
+        )
+        .scalar()
+        or 0
+    )
+
+
 def summarize_source_item(session: Session, item_id: int, *, provider=None) -> dict:
-    """生成并写回一句话总结。返回 {status: done|skipped_no_confirmed|skipped_no_item, summary?}。"""
+    """生成并写回一句话总结。返回 {status: done|skipped_*, summary?}。"""
     from app.llm.registry import get_prompt_registry
     from app.services.llm_config import build_llm_provider
 
     item = session.get(SourceItem, item_id)
     if item is None:
         return {"item_id": item_id, "status": "skipped_no_item"}
+
+    # 门禁：全部观点已确认（无任何未确认观点），且至少有一条
+    non_confirmed = unconfirmed_count(session, item_id)
+    if non_confirmed:
+        logger.info(
+            "summarize_gate_blocked", item_id=item_id, non_confirmed=non_confirmed
+        )
+        return {
+            "item_id": item_id,
+            "status": "skipped_not_all_confirmed",
+            "non_confirmed": non_confirmed,
+        }
 
     rows = session.execute(
         select(Viewpoint, Entity.canonical_name)
