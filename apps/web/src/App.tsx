@@ -1337,7 +1337,8 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
   const [error, setError] = useState<string | null>(null)
   const [vpDrawer, setVpDrawer] = useState<VPVideoRow | null>(null)
   const [textDrawer, setTextDrawer] = useState<VPVideoRow | null>(null)
-  const [dayFilter, setDayFilter] = useState<string | null>(null)
+  // 进入观点页默认只看当天（用户 2026-09-25）
+  const [dayFilter, setDayFilter] = useState<string | null>(weekbarFmt(new Date()))
 
   const reload = useCallback((silent = false) => {
     const params = new URLSearchParams({ limit: '500' })
