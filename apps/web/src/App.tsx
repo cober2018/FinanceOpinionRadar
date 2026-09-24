@@ -1623,18 +1623,21 @@ function AssetLibraryPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [drawer, setDrawer] = useState<number | null>(null)
-  const [dayFilter, setDayFilter] = useState<string | null>(null)
+  // 时间范围筛选（资产量少，按范围比找具体日期合理——用户 2026-09-24）
+  const [range, setRange] = useState('')
 
   const reload = useCallback(() => {
     const params = new URLSearchParams({ asset: 'true', limit: '500' })
-    if (dayFilter) {
-      params.set('date_from', dayFilter)
-      params.set('date_to', dayFilter)
+    if (range) {
+      const months = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 }[range] ?? 0
+      const from = new Date()
+      from.setMonth(from.getMonth() - months)
+      params.set('date_from', weekbarFmt(from))
     }
     api<LibraryItem[]>(`/source-items?${params}`)
       .then(setRows)
       .catch((e: Error) => setError(e.message))
-  }, [dayFilter])
+  }, [range])
 
   useEffect(() => reload(), [reload])
 
@@ -1655,8 +1658,14 @@ function AssetLibraryPage() {
       {error && <p className="error">{error}</p>}
       <div className="toolbar">
         <h3 className="toolbar-title">资产库（{rows.length}）</h3>
+        <select value={range} onChange={(e) => setRange(e.target.value)}>
+          <option value="">全部时间</option>
+          <option value="1m">近一个月</option>
+          <option value="3m">近三个月</option>
+          <option value="6m">近半年</option>
+          <option value="1y">近一年</option>
+        </select>
       </div>
-      <WeekBar value={dayFilter} onChange={setDayFilter} />
       <p className="hint">
         精华内容的永久档案：不参与 30 天生命周期清理，转录与观点随内容永久保留。在视频库点 ☆ 可加入。
       </p>
