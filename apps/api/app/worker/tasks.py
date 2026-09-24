@@ -511,3 +511,23 @@ def push_confirmed_viewpoints() -> dict:
         return push.deliver_pending_pushes(session)
     finally:
         session.close()
+
+
+@celery_app.task(name="sweep_orphan_media_task")
+def sweep_orphan_media_task() -> dict:
+    """MinIO 孤儿对象每日回收（仅 audio/ 前缀；transcripts 显式触发才清）。"""
+    from app.services.orphan_sweep import sweep_orphan_media
+
+    session = get_session_factory()()
+    try:
+        return sweep_orphan_media(session)
+    finally:
+        session.close()
+
+
+@celery_app.task(name="sweep_live_segments_task")
+def sweep_live_segments_task() -> dict:
+    """直播原始分片 mtime 保留期清理（默认 7 天，0=禁用）。"""
+    from app.services.live_retention import sweep_live_segments
+
+    return sweep_live_segments()

@@ -77,6 +77,9 @@ class ContentSummary(TimestampMixin, IdMixin, Base):
     item_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     item_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     viewpoints: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # 生命周期清理时登记的转录对象 storage_uri（用户语义 2026-09-24：自然过期条目
+    # 的转录文本要保留）——孤儿回收任务据此豁免，不误删已清理条目的转录文件
+    transcript_refs: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
 
 
 __all__ = ["ContentSummary", "LiveChatMessage"]

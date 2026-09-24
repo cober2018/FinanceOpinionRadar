@@ -19,7 +19,7 @@ import structlog
 from sqlalchemy import text
 
 from app.core.settings import get_settings
-from app.db.models import ContentSummary, DeletedItemRef, SourceItem, Viewpoint
+from app.db.models import ContentSummary, DeletedItemRef, MediaAsset, SourceItem, Viewpoint
 
 logger = structlog.get_logger(__name__)
 
@@ -147,6 +147,18 @@ def sweep_expired_content(session, *, dry_run: bool = False, settings=None) -> d
 
         for item in items:
             viewpoints = snapshot_viewpoints(session, item.id)
+            # 转录保留引用（用户语义 2026-09-24）：自然过期条目的转录文件留存，
+            # 登记 storage_uri 供孤儿回收豁免（手动删除的不登记——那类全删）
+            transcript_refs = [
+                uri
+                for (uri,) in session.query(MediaAsset.storage_uri)
+                .filter(
+                    MediaAsset.source_item_id == item.id,
+                    MediaAsset.asset_type == "transcript",
+                )
+                .all()
+                if uri
+            ]
             account = (
                 session.get(SourceAccount, item.source_account_id)
                 if item.source_account_id
@@ -161,6 +173,7 @@ def sweep_expired_content(session, *, dry_run: bool = False, settings=None) -> d
                     item_created_at=item.created_at,
                     item_published_at=item.published_at,
                     viewpoints=viewpoints,
+                    transcript_refs=transcript_refs,
                 )
             )
             counters["snapshots"] += 1

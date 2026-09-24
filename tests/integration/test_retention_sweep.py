@@ -9,6 +9,7 @@ from app.db.models import (
     Creator,
     DeletedItemRef,
     LiveChatMessage,
+    MediaAsset,
     SourceAccount,
     SourceItem,
     Viewpoint,
@@ -90,6 +91,15 @@ def _make_item(
 
 def test_sweep_deletes_expired_and_snapshots_viewpoints(db_session, tmp_path):
     item = _make_item(db_session, with_chat=True)
+    db_session.add(
+        MediaAsset(
+            source_item_id=item.id,
+            asset_type="transcript",
+            storage_uri=f"s3://b/transcripts/{item.id}.e/m.json",
+            size_bytes=1,
+        )
+    )
+    db_session.commit()
     out = sweep_expired_content(db_session, settings=_settings(tmp_path))
     assert out["expired"] == 1 and out["swept"] == 1 and out["snapshots"] == 1
     assert out["tombstones"] == 1
@@ -105,6 +115,8 @@ def test_sweep_deletes_expired_and_snapshots_viewpoints(db_session, tmp_path):
     assert vp["claim"] == "降息周期利好黄金"
     assert vp["stance"] == "bullish"
     assert float(vp["confidence"]) == 0.8
+    # 转录保留引用登记（生命周期清理的转录文件不回收，用户语义 2026-09-24）
+    assert summary.transcript_refs == [f"s3://b/transcripts/{item.id}.e/m.json"]
     # 墓碑防重导
     assert db_session.query(DeletedItemRef).count() == 1
 

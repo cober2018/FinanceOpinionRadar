@@ -80,6 +80,14 @@ class MinioStorage:
         except botocore.exceptions.ClientError:
             return False
 
+    def iter_keys(self):
+        """全量枚举 (key, size)：孤儿回收用；惰性 ensure bucket。"""
+        self._ensure_bucket()
+        paginator = self._s3().get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket):
+            for obj in page.get("Contents", []):
+                yield obj["Key"], obj["Size"]
+
     def delete(self, key: str) -> None:
         self._ensure_bucket()
         try:

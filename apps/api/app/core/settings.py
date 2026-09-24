@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     open_push_interval_sec: int = 60  # beat：确认观点推送扫描
     open_push_max_attempts: int = 5  # 单观点单渠道失败上限，达到后置 dead 不再重试
     open_push_timeout_sec: float = 10.0  # 推送出站 HTTP 超时
+    # --- 磁盘保留（用户 2026-09-24 确认语义）---
+    live_segment_retention_days: int = 7  # 直播原始分片 mtime 保留天数；0 = 禁用
+    orphan_sweep_interval_sec: int = 86400  # beat：MinIO 孤儿对象每日回收（仅 audio/）
     # --- EPIC-03 ASR（RAD-033/035） ---
     asr_provider: str = "faster_whisper"  # faster_whisper | mlx（Apple Silicon Metal）
     asr_mlx_python: str = ""  # venv_arm64 python 路径（voice-pro，见 README「ASR 引擎」）

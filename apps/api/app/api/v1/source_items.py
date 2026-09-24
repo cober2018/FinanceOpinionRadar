@@ -471,16 +471,64 @@ def delete_source_item(item_id: int, session: DbDep):
 
     墓碑幂等：条目曾被删过又被 live ingest 重建时，同键墓碑已存在——跳过插入，
     不能撞 uq_deleted_item_ref 500（750 实录：删除一直失败）。
+    手动删除 = 用户明确「什么都不留」：MinIO 音频/转录对象与直播分片一并物理删除
+    （与生命周期清理语义相反——那类转录要保留，见 retention.transcript_refs）。
     """
-    from app.db.models import DeletedItemRef, SourceItem
+    from app.db.models import SourceItem
 
     item = session.get(SourceItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
     _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
+    _purge_item_files(session, item)
     session.delete(item)
     session.commit()
     return {"deleted": item_id, "tombstoned": True}
+
+
+def _purge_item_files(session: Session, item) -> dict:
+    """条目物理文件清理：MinIO 对象（音频/转录）+ 本地直播分片。失败不阻断删行。"""
+    import structlog
+    from pathlib import Path
+
+    from app.db.models import MediaAsset
+
+    log = structlog.get_logger(__name__)
+    purged = {"s3": 0, "local": 0}
+    uris = [
+        uri
+        for (uri,) in session.query(MediaAsset.storage_uri)
+        .filter(MediaAsset.source_item_id == item.id)
+        .all()
+        if uri
+    ]
+    from app.services.storage.base import StorageError
+
+    for uri in uris:
+        if uri.startswith("s3://"):
+            key = uri.partition("://")[2].partition("/")[2]
+            if not key:
+                continue
+            try:
+                from app.services.storage import get_storage
+
+                get_storage().delete(key)
+                purged["s3"] += 1
+            except StorageError as exc:
+                log.warning("purge_s3_delete_failed", item_id=item.id, key=key[:80], error=str(exc)[:120])
+        else:  # 本地路径：直播转写临时音频多已不存在，静默跳过
+            Path(uri).unlink(missing_ok=True)
+            purged["local"] += 1
+    live = (item.metadata_json or {}).get("live") or {}
+    for p in (live.get("segment_paths") or {}).values():
+        try:
+            Path(p).unlink(missing_ok=True)
+            purged["local"] += 1
+        except OSError as exc:
+            log.warning("purge_segment_unlink_failed", item_id=item.id, error=str(exc)[:120])
+    if purged["s3"] or purged["local"]:
+        log.info("purge_item_files_done", item_id=item.id, **purged)
+    return purged
 
 
 def _tombstone_if_absent(session: Session, source_account_id: int | None, external_item_id: str) -> None:
@@ -520,6 +568,7 @@ def batch_delete_items(body: BatchDeleteRequest, session: DbDep):
             missing.append(item_id)
             continue
         _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
+        _purge_item_files(session, item)
         session.delete(item)
         deleted.append(item_id)
     session.commit()

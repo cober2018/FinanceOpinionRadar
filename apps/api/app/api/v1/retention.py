@@ -21,6 +21,27 @@ def run_sweep(session: DbDep, dry_run: bool = False):
     return sweep_expired_content(session, dry_run=dry_run)
 
 
+@router.post("/orphan-media")
+def run_orphan_sweep(session: DbDep, include_transcripts: bool = False):
+    """手动触发 MinIO 孤儿对象回收。
+
+    默认只清 audio/ 前缀（历史残留约 1.7G 的大头）；include_transcripts=true
+    连转录孤儿一起清（显式确认——生命周期条目的转录有 refs 保护不受影响，
+    但功能上线前的历史孤儿无标记，清了就没了，故要求显式）。
+    """
+    from app.services.orphan_sweep import sweep_orphan_media
+
+    return sweep_orphan_media(session, include_transcripts=include_transcripts)
+
+
+@router.post("/live-segments")
+def run_live_segment_sweep():
+    """手动触发直播分片保留期清理（默认 mtime>7 天，0=禁用）。"""
+    from app.services.live_retention import sweep_live_segments
+
+    return sweep_live_segments()
+
+
 @router.get("/summaries")
 def list_summaries(session: DbDep, limit: int = 100, offset: int = 0):
     """结论快照列表（内容中心数据源预览）：creator + 时间轴倒序。"""

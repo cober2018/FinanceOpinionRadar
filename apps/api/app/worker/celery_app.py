@@ -77,4 +77,13 @@ celery_app.conf.beat_schedule = {
         "task": "push_confirmed_viewpoints",
         "schedule": get_settings().open_push_interval_sec,
     },
+    # 磁盘保留（用户 2026-09-24）：MinIO 孤儿音频回收 + 直播分片 mtime 保留期清理
+    "orphan-media-sweep": {
+        "task": "sweep_orphan_media_task",
+        "schedule": get_settings().orphan_sweep_interval_sec,
+    },
+    "live-segment-retention": {
+        "task": "sweep_live_segments_task",
+        "schedule": get_settings().retention_sweep_interval_sec,
+    },
 }
