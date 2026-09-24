@@ -20,6 +20,36 @@ from app.core.settings import get_settings
 from app.db.models import AppSetting, Creator, SourceAccount, SourceItem, TranscriptSegment
 
 _ROOM_ID_RE = re.compile(r"live\.douyin\.com/(\d+)")
+# 「在播」补判窗口：最近分片在此秒数内且会话 transcribing → 视为在播
+# （2 个分片周期 + 转写延迟；跨过窗口说明录制实质中断）
+_LIVE_FRESH_SEC = 900
+
+
+def _parse_iso(raw: object) -> datetime | None:
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _derive_is_live(
+    probe: bool | None, session_status: str | None, last_segment_at: object, now: datetime
+) -> bool | None:
+    """探测结果 + 会话事实合成在播状态。
+
+    录制中的房间退出 check_if_live 探测循环（日志无探测行）→ 探测退化成 None；
+    用「转写会话进行中 + 最近分片新鲜」补判在播（张心朔 9-24 实录）。
+    """
+    if probe is True:
+        return True
+    if session_status == "transcribing":
+        last_at = _parse_iso(last_segment_at)
+        if last_at and 0 <= (now - last_at).total_seconds() < _LIVE_FRESH_SEC:
+            return True
+    return probe
 _STREAM_DATA_RE = re.compile(
     r"anchor_name='(?P<anchor>[^']*)', is_live=(?P<live>True|False)"
     r".*?live_url='(?P<url>[^']*)'"
@@ -93,12 +123,16 @@ def build_live_monitors(session: Session) -> list[dict]:
     }
 
     rows = []
+    now = datetime.now(UTC)
     for a in accounts:
         room = a.live_room_url or (a.url if a.url and "live.douyin.com/" in a.url else None)
         m = _ROOM_ID_RE.search(room) if room else None
         is_live, anchor = live_states.get(room, (None, "")) if room else (None, "")
         sess_item = latest.get(a.id)
         live_meta = (sess_item.metadata_json or {}).get("live") or {} if sess_item else {}
+        is_live = _derive_is_live(
+            is_live, sess_item.status if sess_item else None, live_meta.get("last_segment_at"), now
+        )
         name = names.get(a.creator_id)
         if not name or name == "未知来源":
             name = anchor or name or f"账号{a.id}"
