@@ -306,8 +306,8 @@ def list_source_items(
 def summarize_source_item_manual(item_id: int, session: DbDep):
     """手动（重新）生成视频观点（抽屉「立即生成/重新生成」按钮）。
 
-    门禁：全部观点已确认才允许（与自动生成同一条规则，用户 2026-09-24）；
-    不满足当场 409，不等 worker 静默跳过。
+    门禁：无未确认（candidate/needs_review）观点即允许（与自动生成同一条规则）；
+    驳回＝误报不算未确认（用户 2026-09-26）。不满足当场 409，不等 worker 静默跳过。
     """
     from app.db.models import SourceItem
     from app.services.summarizer import dispatch_summarize, unconfirmed_count
@@ -523,6 +523,9 @@ def delete_source_item(item_id: int, session: DbDep):
     item = session.get(SourceItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    from app.services.video_summary_feed import erase_deleted_item_history
+
+    erase_deleted_item_history(session, item.id)
     _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
     _purge_item_files(session, item)
     session.delete(item)
@@ -606,11 +609,14 @@ def batch_delete_items(body: BatchDeleteRequest, session: DbDep):
 
     deleted: list[int] = []
     missing: list[int] = []
+    from app.services.video_summary_feed import erase_deleted_item_history
+
     for item_id in body.ids:
         item = session.get(SourceItem, item_id)
         if item is None:
             missing.append(item_id)
             continue
+        erase_deleted_item_history(session, item.id)
         _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
         _purge_item_files(session, item)
         session.delete(item)

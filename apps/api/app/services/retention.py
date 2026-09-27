@@ -146,6 +146,9 @@ def sweep_expired_content(session, *, dry_run: bool = False, settings=None) -> d
                 creator_names[acc_id] = name
 
         for item in items:
+            from app.services.video_summary_feed import withdraw_if_invalid
+
+            withdraw_if_invalid(session, item.id, force=True)
             viewpoints = snapshot_viewpoints(session, item.id)
             # 转录保留引用（用户语义 2026-09-24）：自然过期条目的转录文件留存，
             # 登记 storage_uri 供孤儿回收豁免（手动删除的不登记——那类全删）

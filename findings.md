@@ -1,5 +1,11 @@
 # 配置发现
 
+## 2026-09-26 单视频总结 API 对照
+
+- 现有开放端点 `GET /open/v1/items/{item_id}/summary` 返回 `display_name`、`published_at`、`summary`、`generated_at` 等字段，并由 `X-API-Key` 保护。
+- 直播摄入会把 `SourceItem.published_at` 更新为最早分片对应的开播时刻；普通视频由平台元数据提供发布时间；两者按用户确认的口径共用 `published_at` 作为视频观点的统一时间戳。
+- 总结需该视频观点全部确认后才生成；未生成时字段为 `null`。未核查当前服务部署及外部调用可达性。
+
 - 当前工作区：`FinanceOpinionRadar`
 - 连接器名称：`Codex with ChatGPT · FinanceOpinionRadar`
 - 连接方式：固定域名
@@ -90,3 +96,10 @@
 - 正式运行会按当前全文/分块规则重建逻辑单元，并核对实际模型、提示词内容哈希、用户提示哈希、段落集合及每次尝试。只改 `schema_valid` 布尔值或自行改变分块不能获得正式通过。
 - 进程中断后保留下来的 `planned/running` 文件仍可评分：未调用单元保留在首次结构分母，主状态为处理不完整 `failed/1`，而不是被误报为非法输入。
 - 生产 schema 未要求的 topic、conditional、entities 可以缺失；在人工对齐且字段适用时，缺失值进入字段准确率分母并计错，不会在输入层被排除。
+
+# 2026-09-27 视频总结开放接口核对
+
+- 当前外部单视频接口输出 `display_name`、`published_at`、`summary` 和 `generated_at`；还没有视频总结的列表/增量游标。
+- `summarizer.py` 仅以 confirmed 观点生成总结；candidate/needs_review 阻断，rejected 被视为抽取误报并排除。`SourceItem.viewpoint_summary` 是可更新字段，对外持续交付需要版本与失效记录。
+- 现有 `push.py` 发送逐条 confirmed 观点，`PushDelivery` 按 channel × viewpoint 记账。视频总结推送必须有独立事件与投递状态，避免混淆粒度。
+- 来源时间中，普通视频的 `published_at` 是公开视频时间，不保证等于录制开始；直播可采用有来源的开播时间。对外字段必须说明 `time_basis`，缺失时为 unknown/null，不能填逐句偏移或生成时间。

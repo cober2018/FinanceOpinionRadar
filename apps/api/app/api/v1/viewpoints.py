@@ -76,6 +76,13 @@ def _get_vp_or_404(session: Session, item_id: int) -> Viewpoint:
     return vp
 
 
+def _lock_item_for_review(session: Session, vp: Viewpoint) -> None:
+    session.scalar(
+        select(SourceItem).where(SourceItem.id == vp.source_item_id).with_for_update()
+    )
+    session.refresh(vp)
+
+
 def _item_ready_when_no_pending(session: Session, item: SourceItem) -> None:
     """item 无剩余 candidate/needs_review 且状态为 reviewing → ready。
 
@@ -186,10 +193,14 @@ def get_viewpoint(viewpoint_id: int, session: DbDep):
 def confirm_viewpoint(viewpoint_id: int, session: DbDep, reason: str | None = None):
     """RAD-052：人工确认 → confirmed + 快照构建（RAD-060）+ item ready 检查。"""
     vp = _get_vp_or_404(session, viewpoint_id)
+    _lock_item_for_review(session, vp)
     before = {"verification_status": vp.verification_status}
     if vp.verification_status == "confirmed":
         return {"id": vp.id, "verification_status": "confirmed", "already": True}
     vp.verification_status = "confirmed"
+    from app.services.video_summary_feed import withdraw_if_invalid
+
+    withdraw_if_invalid(session, vp.source_item_id)
     session.commit()
     write_audit(
         session,
@@ -214,8 +225,12 @@ def confirm_viewpoint(viewpoint_id: int, session: DbDep, reason: str | None = No
 def reject_viewpoint(viewpoint_id: int, session: DbDep, reason: str | None = None):
     """RAD-052：人工驳回 → rejected（不删数据）。"""
     vp = _get_vp_or_404(session, viewpoint_id)
+    _lock_item_for_review(session, vp)
     before = {"verification_status": vp.verification_status}
     vp.verification_status = "rejected"
+    from app.services.video_summary_feed import withdraw_if_invalid
+
+    withdraw_if_invalid(session, vp.source_item_id)
     session.commit()
     write_audit(
         session,
@@ -238,6 +253,7 @@ def reject_viewpoint(viewpoint_id: int, session: DbDep, reason: str | None = Non
 def patch_viewpoint(viewpoint_id: int, body: ViewpointPatch, session: DbDep):
     """RAD-052：人工修正（claim/stance/horizon/topic/entity/置信度等），写审计。"""
     vp = _get_vp_or_404(session, viewpoint_id)
+    _lock_item_for_review(session, vp)
     updates = body.model_dump(exclude_unset=True, exclude={"reason"})
     if not updates:
         raise HTTPException(status_code=422, detail="无修改字段")
@@ -266,6 +282,9 @@ def patch_viewpoint(viewpoint_id: int, body: ViewpointPatch, session: DbDep):
     before = {k: getattr(vp, k) for k in updates}
     for k, v in updates.items():
         setattr(vp, k, v)
+    from app.services.video_summary_feed import withdraw_if_invalid
+
+    withdraw_if_invalid(session, vp.source_item_id)
     session.commit()
     write_audit(
         session,
@@ -288,9 +307,13 @@ def _reextract_item(session: Session, item: SourceItem) -> bool:
 
     if item.status not in ("transcribed", "extracting", "reviewing", "ready"):
         return False
+    session.scalar(select(SourceItem).where(SourceItem.id == item.id).with_for_update())
     session.query(Viewpoint).filter(Viewpoint.source_item_id == item.id).delete(
         synchronize_session=False
     )
+    from app.services.video_summary_feed import withdraw_if_invalid
+
+    withdraw_if_invalid(session, item.id, force=True)
     if item.status != "extracting":
         ensure_transition(item.status, "extracting")
         item.status = "extracting"

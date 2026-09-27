@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -65,6 +66,7 @@ class PushChannel(TimestampMixin, IdMixin, Base):
         JSONB, nullable=False, default=dict, server_default="{}"
     )
     enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
+    summary_enabled: Mapped[bool] = mapped_column(nullable=False, default=False)
 
 
 class PushDelivery(TimestampMixin, IdMixin, Base):
@@ -79,3 +81,38 @@ class PushDelivery(TimestampMixin, IdMixin, Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class VideoSummaryEvent(TimestampMixin, IdMixin, Base):
+    """对外视频结论的不可变 ready/withdrawn 事件。"""
+
+    __tablename__ = "video_summary_event"
+    __table_args__ = (
+        UniqueConstraint("item_id", "version", name="uq_video_summary_event_item_version"),
+    )
+
+    item_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False)
+    fingerprint: Mapped[str | None] = mapped_column(String(64))
+    payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+class VideoSummaryDelivery(TimestampMixin, IdMixin, Base):
+    """渠道与事件的投递状态，独立于逐观点 PushDelivery。"""
+
+    __tablename__ = "video_summary_delivery"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "event_id", name="uq_video_summary_delivery_channel_event"),
+    )
+
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("push_channel.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("video_summary_event.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    last_http_status: Mapped[int | None] = mapped_column(Integer)

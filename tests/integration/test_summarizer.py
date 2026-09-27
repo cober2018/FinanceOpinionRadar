@@ -82,8 +82,8 @@ def test_summarize_skips_without_confirmed(db_session):
     assert db_session.get(SourceItem, item.id).viewpoint_summary is None
 
 
-def test_summarize_gate_rejected_counts_as_unconfirmed(db_session):
-    """门禁：驳回的观点也算未确认——有 rejected 在就不允许生成（用户 2026-09-24）。"""
+def test_summarize_gate_ignores_rejected(db_session):
+    """门禁：rejected 不算未确认——驳回（＝不构成观点的误报）不阻塞生成（用户 2026-09-26）。"""
     item = _mk_item_with_confirmed(db_session, confirmed=2, pending=0)
     creator_id = (
         db_session.query(Viewpoint.creator_id).filter_by(source_item_id=item.id).first()[0]
@@ -98,10 +98,31 @@ def test_summarize_gate_rejected_counts_as_unconfirmed(db_session):
         )
     )
     db_session.commit()
+    llm = StubLLM({"summary": "正常生成。"})
+    out = summarize_source_item(db_session, item.id, provider=llm)
+    assert out["status"] == "done" and out["summary"] == "正常生成。"
+    # 取材只含 confirmed：驳回的观点不进 prompt
+    assert "被驳回的观点" not in llm.calls[0][1]
+    assert "大盘0看涨" in llm.calls[0][1]
+
+
+def test_summarize_only_rejected_skips_no_confirmed(db_session):
+    """只有驳回观点（无 confirmed 也无待审）→ 门禁放行但无可总结内容。"""
+    item = _mk_item_with_confirmed(db_session, confirmed=0, pending=0)
+    creator_id = db_session.query(Creator.id).first()[0]
+    db_session.add(
+        Viewpoint(
+            creator_id=creator_id,
+            source_item_id=item.id,
+            claim="被驳回的观点",
+            stance="neutral",
+            verification_status="rejected",
+        )
+    )
+    db_session.commit()
     llm = StubLLM({"summary": "x"})
     out = summarize_source_item(db_session, item.id, provider=llm)
-    assert out["status"] == "skipped_not_all_confirmed" and out["non_confirmed"] == 1
-    assert llm.calls == []
+    assert out["status"] == "skipped_no_confirmed" and llm.calls == []
 
 
 def test_summarize_all_confirmed_passes_gate(db_session):

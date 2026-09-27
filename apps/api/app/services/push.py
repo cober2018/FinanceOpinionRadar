@@ -144,6 +144,7 @@ def deliver_pending_pushes(session: Session, http: httpx.Client | None = None) -
     channels = session.scalars(
         select(PushChannel).where(PushChannel.enabled.is_(True))
     ).all()
+    channels = [c for c in channels if (c.config_json or {}).get("viewpoint_enabled", True)]
     client = http or httpx.Client()
     try:
         for channel in channels:

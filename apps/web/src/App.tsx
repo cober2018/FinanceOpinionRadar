@@ -1965,7 +1965,23 @@ type PushChannelRow = {
   url: string
   has_secret: boolean
   enabled: boolean
+  summary_enabled: boolean
+  viewpoint_enabled: boolean
   created_at: string | null
+}
+
+type VideoSummaryDeliveryRow = {
+  id: number
+  channel_name: string
+  event_id: string
+  item_id: number
+  version: number
+  event_state: string
+  status: string
+  attempt: number
+  last_http_status: number | null
+  error: string | null
+  updated_at: string | null
 }
 
 const CHANNEL_TYPE_CN: Record<string, string> = {
@@ -1977,16 +1993,18 @@ const CHANNEL_TYPE_CN: Record<string, string> = {
 function OpenApiPage() {
   const [keys, setKeys] = useState<ApiKeyRow[]>([])
   const [channels, setChannels] = useState<PushChannelRow[]>([])
+  const [summaryDeliveries, setSummaryDeliveries] = useState<VideoSummaryDeliveryRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [newKey, setNewKey] = useState<{ name: string; api_key: string } | null>(null)
   const [keyName, setKeyName] = useState('')
   const [chForm, setChForm] = useState(false)
-  const [chDraft, setChDraft] = useState({ name: '', channel_type: 'feishu', url: '', secret: '' })
+  const [chDraft, setChDraft] = useState({ name: '', channel_type: 'feishu', url: '', secret: '', viewpoint_enabled: true })
   const [testing, setTesting] = useState<number | null>(null)
 
   const reload = useCallback(() => {
     api<{ items: ApiKeyRow[] }>('/open-admin/api-keys').then((d) => setKeys(d.items)).catch((e: Error) => setError(e.message))
     api<{ items: PushChannelRow[] }>('/open-admin/push-channels').then((d) => setChannels(d.items)).catch((e: Error) => setError(e.message))
+    api<{ items: VideoSummaryDeliveryRow[] }>('/open-admin/video-summary-deliveries').then((d) => setSummaryDeliveries(d.items)).catch((e: Error) => setError(e.message))
   }, [])
   useEffect(reload, [reload])
 
@@ -2021,10 +2039,11 @@ function OpenApiPage() {
           channel_type: chDraft.channel_type,
           url: chDraft.url.trim(),
           secret: chDraft.secret.trim() || null,
+          viewpoint_enabled: chDraft.viewpoint_enabled,
         }),
       })
       setChForm(false)
-      setChDraft({ name: '', channel_type: 'feishu', url: '', secret: '' })
+      setChDraft({ name: '', channel_type: 'feishu', url: '', secret: '', viewpoint_enabled: true })
       reload()
     } catch (e) {
       setError((e as Error).message)
@@ -2035,6 +2054,29 @@ function OpenApiPage() {
     api(`/open-admin/push-channels/${r.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ enabled: !r.enabled }),
+    }).then(reload).catch((e: Error) => setError(e.message))
+  }
+
+  const toggleSummary = (r: PushChannelRow) => {
+    api(`/open-admin/push-channels/${r.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ summary_enabled: !r.summary_enabled }),
+    }).then(reload).catch((e: Error) => setError(e.message))
+  }
+
+  const toggleViewpoints = (r: PushChannelRow) => {
+    api(`/open-admin/push-channels/${r.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ viewpoint_enabled: !r.viewpoint_enabled }),
+    }).then(reload).catch((e: Error) => setError(e.message))
+  }
+
+  const reconcileSummary = (delivery: VideoSummaryDeliveryRow, outcome: 'sent' | 'retry') => {
+    const note = window.prompt(outcome === 'sent' ? '请填写对方确认收到的依据' : '请填写核对后重试的原因')
+    if (!note?.trim()) return
+    api(`/open-admin/video-summary-deliveries/${delivery.id}/reconcile`, {
+      method: 'POST',
+      body: JSON.stringify({ outcome, note: note.trim() }),
     }).then(reload).catch((e: Error) => setError(e.message))
   }
 
@@ -2061,6 +2103,13 @@ function OpenApiPage() {
         </p>
       </div>
       {error && <p className="error">{error}</p>}
+
+      <div className="callout">
+        <b>视频审核后总结：拉取与推送同时支持</b>
+        <p>一条视频一份结论，包含主播名称、视频级时间与来源依据、总结、版本和事件 ID。仅在已确认观点完成总结后产生可用事件；观点变化会产生撤回事件。</p>
+        <p>拉取：<code>GET /open/v1/video-summaries?page_size=50&amp;cursor=0</code>，请求头使用 <code>X-API-Key</code>。保存返回的 <code>next_cursor</code> 用于继续增量拉取。原单视频查询 <code>GET /open/v1/items/&#123;item_id&#125;/summary</code> 保持兼容。</p>
+        <p>推送：对通用 HTTPS Webhook 单独开启“视频总结订阅”。载荷与拉取一致，按 <code>event_id</code> 去重；签名位于 <code>X-Radar-Signature</code>。普通视频时间为来源发布时间，直播为记录的开播时间；缺失时为 null。</p>
+      </div>
 
       <h3>API Key（{keys.length}）</h3>
       <div className="toolbar">
@@ -2132,6 +2181,9 @@ function OpenApiPage() {
               加签 Secret（机器人开了加签才填）
               <input value={chDraft.secret} onChange={(e) => setChDraft({ ...chDraft, secret: e.target.value })} placeholder="可选" />
             </label>
+            <label className="field" style={{ gridColumn: '1 / -1' }}>
+              <input type="checkbox" checked={chDraft.viewpoint_enabled} onChange={(e) => setChDraft({ ...chDraft, viewpoint_enabled: e.target.checked })} /> 同时接收逐条确认观点（仅接收视频总结时请取消）
+            </label>
           </div>
           <div className="form-actions">
             <button className="primary" onClick={createChannel} disabled={!chDraft.name.trim() || !chDraft.url.trim()}>创建</button>
@@ -2141,7 +2193,7 @@ function OpenApiPage() {
       )}
       <table className="table">
         <thead>
-          <tr><th>名称</th><th>类型</th><th>URL</th><th>状态</th><th>操作</th></tr>
+          <tr><th>名称</th><th>类型</th><th>URL</th><th>状态</th><th>逐条观点</th><th>视频总结</th><th>操作</th></tr>
         </thead>
         <tbody>
           {channels.map((r) => (
@@ -2152,6 +2204,8 @@ function OpenApiPage() {
                 {r.url}
               </td>
               <td>{r.enabled ? '启用' : '停用'}</td>
+              <td><button className="ghost" onClick={() => toggleViewpoints(r)}>{r.viewpoint_enabled ? '开启' : '关闭'}</button></td>
+              <td>{r.summary_enabled ? '已订阅' : '未订阅'}{r.channel_type === 'generic_webhook' && r.has_secret && <button className="ghost" onClick={() => toggleSummary(r)}>{r.summary_enabled ? '关闭' : '开启'}</button>}</td>
               <td>
                 <button className="ghost" disabled={testing === r.id} onClick={() => testChannel(r)}>
                   {testing === r.id ? '发送中…' : '测试'}
@@ -2170,8 +2224,25 @@ function OpenApiPage() {
             </tr>
           ))}
           {channels.length === 0 && (
-            <tr><td colSpan={5} className="muted pad">暂无渠道。飞书/钉钉群机器人把 Webhook URL 粘进来即可。</td></tr>
+            <tr><td colSpan={7} className="muted pad">暂无渠道。视频总结推送需新建带签名密钥的通用 HTTPS Webhook。</td></tr>
           )}
+        </tbody>
+      </table>
+
+      <h3 style={{ marginTop: 28 }}>视频总结投递（最近 {summaryDeliveries.length} 条）</h3>
+      <p className="muted">推送可能失败或结果未知；接收方可用增量拉取补漏。订阅开启前的历史事件请先拉取。</p>
+      <table className="table">
+        <thead><tr><th>渠道</th><th>事件</th><th>视频</th><th>状态</th><th>尝试</th><th>处理</th></tr></thead>
+        <tbody>
+          {summaryDeliveries.map((d) => <tr key={d.id}>
+            <td>{d.channel_name}</td>
+            <td><code>{d.event_id}</code> · {d.event_state} v{d.version}</td>
+            <td>{d.item_id}</td>
+            <td>{d.status}{d.last_http_status ? ` (HTTP ${d.last_http_status})` : ''}{d.error ? ` · ${d.error}` : ''}</td>
+            <td>{d.attempt}</td>
+            <td>{['unknown', 'failed', 'dead'].includes(d.status) && <><button className="ghost" onClick={() => reconcileSummary(d, 'sent')}>核对为已收到</button><button className="ghost" onClick={() => reconcileSummary(d, 'retry')}>核对后重试</button></>}</td>
+          </tr>)}
+          {summaryDeliveries.length === 0 && <tr><td colSpan={6} className="muted pad">暂无视频总结投递记录；拉取接口仍可独立使用。</td></tr>}
         </tbody>
       </table>
     </div>

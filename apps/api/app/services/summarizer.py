@@ -1,8 +1,9 @@
 """视频观点一句话总结（用户 2026-09-24）：confirmed 观点 → LLM 整合 → 写回条目。
 
 触发：最后一个待审观点复核完（item → ready）自动派发；抽屉「立即生成」手动派发。
-门禁（所有通道统一，用户 2026-09-24 指定）：视频下**全部观点都已 confirmed** 才允许
-生成——有待审/驳回/候选的条目一律拒绝（rejected 也算未确认）。
+门禁（所有通道统一）：视频下**无未确认（candidate/needs_review）观点**才允许生成。
+rejected（用户 2026-09-26 口径）＝该句不构成观点的抽取误报，不算未确认：不阻塞
+生成、也不进入总结内容（取材仍只取 confirmed）。
 """
 
 import json
@@ -20,12 +21,16 @@ SUMMARY_PROMPT_VERSION = "summary@v1"
 
 
 def unconfirmed_count(session: Session, item_id: int) -> int:
-    """未确认观点数（candidate/needs_review/rejected 都算）——生成门禁判据。"""
+    """未确认观点数（candidate/needs_review）——生成门禁判据。
+
+    rejected 不算：驳回＝该句不构成观点（与 _item_ready_when_no_pending 的
+    pending 口径一致），否则一条误报会永久卡死该视频的总结。
+    """
     return (
         session.query(func.count(Viewpoint.id))
         .filter(
             Viewpoint.source_item_id == item_id,
-            Viewpoint.verification_status != "confirmed",
+            Viewpoint.verification_status.in_(["candidate", "needs_review"]),
         )
         .scalar()
         or 0
@@ -61,6 +66,9 @@ def summarize_source_item(session: Session, item_id: int, *, provider=None) -> d
     ).all()
     if not rows:
         return {"item_id": item_id, "status": "skipped_no_confirmed"}
+    from app.services.video_summary_feed import _review_state, record_ready_summary
+
+    _pending, _confirmed, source_fingerprint = _review_state(session, item_id)
 
     provider = provider or build_llm_provider(session)
     pack = get_prompt_registry().get(SUMMARY_PROMPT_VERSION)
@@ -91,8 +99,19 @@ def summarize_source_item(session: Session, item_id: int, *, provider=None) -> d
         logger.warning("summarize_empty_output", item_id=item_id, raw_head=getattr(resp, "raw_head", "")[:120])
         return {"item_id": item_id, "status": "skipped_empty_output"}
 
+    session.scalar(select(SourceItem).where(SourceItem.id == item_id).with_for_update())
+    session.expire_all()
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        session.rollback()
+        return {"item_id": item_id, "status": "skipped_no_item"}
+    pending, confirmed, current_fingerprint = _review_state(session, item_id)
+    if pending or not confirmed or current_fingerprint != source_fingerprint:
+        session.rollback()
+        return {"item_id": item_id, "status": "skipped_stale_input"}
     item.viewpoint_summary = summary[:500]
     item.summary_generated_at = datetime.now(UTC)
+    record_ready_summary(session, item, expected_fingerprint=source_fingerprint)
     session.commit()
     logger.info("summarize_done", item_id=item_id, chars=len(summary))
     return {"item_id": item_id, "status": "done", "summary": summary}

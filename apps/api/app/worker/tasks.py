@@ -513,6 +513,17 @@ def push_confirmed_viewpoints() -> dict:
         session.close()
 
 
+@celery_app.task(name="push_reviewed_video_summaries")
+def push_reviewed_video_summaries() -> dict:
+    from app.services.video_summary_push import deliver_pending_summary_events
+
+    session = get_session_factory()()
+    try:
+        return deliver_pending_summary_events(session)
+    finally:
+        session.close()
+
+
 @celery_app.task(name="sweep_orphan_media_task")
 def sweep_orphan_media_task() -> dict:
     """MinIO 孤儿对象每日回收（仅 audio/ 前缀；transcripts 显式触发才清）。"""
