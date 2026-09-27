@@ -104,3 +104,4 @@
 - 现有 `push.py` 发送逐条 confirmed 观点，`PushDelivery` 按 channel × viewpoint 记账。视频总结推送必须有独立事件与投递状态，避免混淆粒度。
 - 来源时间中，普通视频的 `published_at` 是公开视频时间，不保证等于录制开始；直播可采用有来源的开播时间。对外字段必须说明 `time_basis`，缺失时为 unknown/null，不能填逐句偏移或生成时间。
 - 本地隔离测试库的现有相关单元/集成检查 53 项通过；API 实际拉取与模拟 Webhook 接收验证过相同载荷、签名、幂等和撤回。尚未用真实下游地址联调，也未做生产验收。
+- 2026-09-27 本机 `:8010` 运行库只读核对：`public` 有 25 张应用表和 `alembic_version`，25 张应用表均在当前 SQLAlchemy 模型中；视频总结迁移只新增 `video_summary_event`、`video_summary_delivery`，未替换或废弃旧表。旧 `push_delivery` 虽为空，仍是逐观点推送当前代码使用的表，不能删除。`prompt_version` 表当前为空，且未见运行时代码查询，但仍在 ORM、初始迁移和 PRD 中，需要单独确认是否按全项目范围退役。
