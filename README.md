@@ -59,7 +59,7 @@ flowchart LR
 
 ### 对外获取单条视频的观点总结
 
-本地版已增加 `GET /open/v1/video-summaries`：使用 `X-API-Key`，按 `cursor` 和 `page_size` 拉取 `ready`、`withdrawn` 事件，返回 `next_cursor` 与 `has_more`。每个事件包含稳定 `event_id`、视频 `item_id`、版本、主播、视频级时间及依据、总结和状态；只交付新生成且符合复核资格的总结，历史旧总结不自动补发。旧接口 `GET /open/v1/items/{item_id}/summary` 保留，失效时 `summary` 返回 `null`。
+本地版已增加 `GET /open/v1/video-summaries`：使用 `X-API-Key`，按 `cursor` 和 `page_size` 拉取 `ready`、`withdrawn` 事件，返回 `next_cursor` 与 `has_more`。新生成事件包含稳定 `event_id`、视频 `item_id`、`source_account_id`、版本、主播、视频级时间及依据、总结和状态；`source_account_id` 对应 `/open/v1/creators` 的 `accounts[].account_id`，供下游准确匹配关注关系。已有历史事件仍按原载荷返回，不反向补写身份。只交付新生成且符合复核资格的总结，历史旧总结不自动补发。旧接口 `GET /open/v1/items/{item_id}/summary` 保留，失效时 `summary` 返回 `null`。
 
 开放接口控制台可将通用 HTTPS Webhook 显式订阅视频总结事件，推送与拉取使用相同载荷；请求附 `X-Radar-Event-ID`、`X-Radar-Timestamp` 和 HMAC-SHA256 的 `X-Radar-Signature`。投递失败有有限重试，结果未知时需人工对账；下游可用 `event_id` 去重，并以拉取接口补漏。使用前需执行 Alembic 迁移并启动 worker+beat。本地 API/模拟下游联调已通过，真实下游与生产环境尚未验收。规范见 `openspec/changes/expose-reviewed-video-summaries/`。
 
