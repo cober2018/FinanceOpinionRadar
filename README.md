@@ -67,7 +67,7 @@ flowchart LR
 
 本机 `:8010/console/` 的开放接口页面现已分别展示视频总结数据 API、Webhook 事件契约及当前有效订阅数；沿用原有 API Key、渠道管理和最近投递列表。规范位于 `openspec/changes/archive/2026-09-27-catalog-video-summary-open-interfaces/`，前端说明见 `apps/web/README.md`。页面展示不表示已有总结事件或下游已经消费。
 
-网关式开放接口已在隔离工作区实现：“视频审核后总结”是一个服务条目，详情页通过“拉取 / 推送”切换，分别展示 GET 接口与 Webhook 订阅、投递。切换仅改变显示；拉取的 Key 创建/暂停/启用/吊销和推送的订阅/渠道启停在各自详情内操作。Key 停用影响该 Key 对全部 `/open/v1/*` 的访问，吊销不可恢复。当前本机 `:8010` 运行页面尚未更新到这版；规范见 `openspec/changes/archive/2026-09-27-build-video-summary-service-gateway/`，前端说明见 `apps/web/README.md`。
+网关式开放接口已合入本地 `main` 并推送至远端：一个“视频审核后总结”服务条目通过“拉取 / 推送”切换详情，分别展示 GET 接口与 Webhook 订阅、投递。切换仅改变显示；拉取的 Key 创建/暂停/启用/吊销和推送的订阅/渠道启停在各自详情内操作。Key 停用影响该 Key 对全部 `/open/v1/*` 的访问，吊销不可恢复。当前本机 `:8010` 运行页面尚未更新到这版；规范见 `openspec/changes/archive/2026-09-27-build-video-summary-service-gateway/`，前端说明见 `apps/web/README.md`。
 
 已有只读接口 `GET /open/v1/items/{item_id}/summary`，使用 `X-API-Key` 鉴权。调用方通过视频的 `item_id` 获取该主播在这条视频中的整体观点；接口还返回视频标题与类型。
 

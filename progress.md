@@ -71,5 +71,5 @@
 - 已只读核对 `/Users/mshengran/Project/DreamOAgents/frontend/src/views/DataManagement/APIs/index.vue`。参考项目目录/详情由真实服务注册表驱动；代理端点不能页面试读，发布审批和监控卡片含演示状态。雷达提案仅借鉴目录/详情/试读交互，复用自身真实 API、渠道和投递，等待确认。
 - 已修订 `build-video-summary-service-gateway` 的 proposal、design、spec 和 tasks：同一服务中切换 GET 拉取与 Webhook 推送；本轮未改业务代码。
 - 用户确认切换只负责显示，启停在各自详情内。核对发现拉取 Key 目前只有创建/吊销；已在提案中补入经审计的单 Key 暂停/恢复管理动作，永久吊销不可恢复。推送沿用渠道/订阅启停；整体提案仍待明确确认。
-- 用户已确认提案，隔离分支 `codex/video-summary-service-gateway` 实施完成页面重排及 Key 状态管理。隔离测试库的现有后端集成测试 3/3 通过，手工 Key 状态联调路径 8 步通过；前端 build、lint、现有测试 1/1 通过（lint 仍有 5 条未改位置的 warning）。浏览器已核对两种详情切换；本机 API :8010 不可达，未验证当前运行服务页面与真实下游。未合并、未推送、未部署。
+- 用户已确认提案，隔离分支 `codex/video-summary-service-gateway` 实施完成页面重排及 Key 状态管理。隔离测试库的现有后端集成测试 3/3 通过，手工 Key 状态联调路径 8 步通过；前端 build、lint、现有测试 1/1 通过（lint 仍有 5 条未改位置的 warning）。浏览器已核对两种详情切换；本机 API :8010 不可达，未验证当前运行服务页面与真实下游。代码已合入本地 `main` 并推送远端，尚未部署。
 - OpenSpec `build-video-summary-service-gateway` 的 6/6 项任务已完成，主规范已同步，归档于 `openspec/changes/archive/2026-09-27-build-video-summary-service-gateway/`。

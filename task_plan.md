@@ -102,3 +102,9 @@
 /// 2. 增加 Key 的 active/disabled 管理动作，拒绝恢复 revoked；保留现有审计与鉴权逻辑。
 /// 3. 将 OpenApiPage 重排为单服务目录和拉取/推送纯展示切换，分别呈现详情与操作。
 /// 4. 核对字段、构建、lint、现有测试与页面，再更新文档并归档提案。
+
+## 2026-09-27 本地 main 合入与远端同步
+
+- [x] 保留原有未提交草稿，快进合入 `codex/video-summary-service-gateway`。
+- [x] 在合入后的 `main` 复测并推送 `origin/main`，读回远端提交一致。
+- [x] 同步合入状态到 README/进度并推送该文档提交。
