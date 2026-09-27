@@ -99,7 +99,8 @@
 
 # 2026-09-27 视频总结开放接口核对
 
-- 当前外部单视频接口输出 `display_name`、`published_at`、`summary` 和 `generated_at`；还没有视频总结的列表/增量游标。
+- 当前本地版已增加 `/open/v1/video-summaries` 的列表/增量游标；旧单视频接口仍在，失效总结不再作为可用正文返回。
 - `summarizer.py` 仅以 confirmed 观点生成总结；candidate/needs_review 阻断，rejected 被视为抽取误报并排除。`SourceItem.viewpoint_summary` 是可更新字段，对外持续交付需要版本与失效记录。
 - 现有 `push.py` 发送逐条 confirmed 观点，`PushDelivery` 按 channel × viewpoint 记账。视频总结推送必须有独立事件与投递状态，避免混淆粒度。
 - 来源时间中，普通视频的 `published_at` 是公开视频时间，不保证等于录制开始；直播可采用有来源的开播时间。对外字段必须说明 `time_basis`，缺失时为 unknown/null，不能填逐句偏移或生成时间。
+- 本地隔离测试库的现有相关单元/集成检查 53 项通过；API 实际拉取与模拟 Webhook 接收验证过相同载荷、签名、幂等和撤回。尚未用真实下游地址联调，也未做生产验收。
