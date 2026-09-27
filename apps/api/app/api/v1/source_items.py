@@ -306,8 +306,8 @@ def list_source_items(
 def summarize_source_item_manual(item_id: int, session: DbDep):
     """手动（重新）生成视频观点（抽屉「立即生成/重新生成」按钮）。
 
-    门禁：全部观点已确认才允许（与自动生成同一条规则，用户 2026-09-24）；
-    不满足当场 409，不等 worker 静默跳过。
+    门禁：无未确认（candidate/needs_review）观点即允许（与自动生成同一条规则）；
+    驳回＝误报不算未确认（用户 2026-09-26）。不满足当场 409，不等 worker 静默跳过。
     """
     from app.db.models import SourceItem
     from app.services.summarizer import dispatch_summarize, unconfirmed_count
