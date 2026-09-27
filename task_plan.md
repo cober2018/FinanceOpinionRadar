@@ -48,7 +48,8 @@
 - [x] 形成 `expose-reviewed-video-summaries` OpenSpec proposal、design、specs、tasks
 - [x] 用户确认 proposal，进入 `expose-reviewed-video-summaries` 实施
 - [ ] 实现并验收统一版本、增量拉取、Webhook 推送和控制台，再归档
-- [ ] 将来源更正撤回修正与文档补充并入本地 `main`；真实下游联调与 OpenSpec 收尾另行验收。
+- [x] 将来源更正撤回修正与文档补充并入本地 `main`。
+- [ ] 真实下游联调与 OpenSpec 收尾另行验收。
 
 /// 1. 保留现有复核与总结行为，新增可审计的视频总结版本/事件/投递结构。
 /// 2. 在总结生成、观点复核变更、重抽和来源删除时维护 ready/withdrawn 事件。
