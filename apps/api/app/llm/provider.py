@@ -111,12 +111,15 @@ class OpenAICompatProvider:
         self._max_tokens = max_tokens
 
     def _post(self, payload: dict) -> httpx.Response:
-        return httpx.post(
-            f"{self._base}{self._chat_path}",
-            headers={"Authorization": f"Bearer {self._key}"},
-            json=payload,
-            timeout=self._timeout,
-        )
+        # trust_env=False：不继承环境代理（no_proxy 含 IPv6 CIDR 时 httpx 构造即崩，
+        # 2026-09-27 实录全 LLM 管线瘫痪）；LLM 出口由部署环境直连
+        with httpx.Client(trust_env=False) as client:
+            return client.post(
+                f"{self._base}{self._chat_path}",
+                headers={"Authorization": f"Bearer {self._key}"},
+                json=payload,
+                timeout=self._timeout,
+            )
 
     def generate_json(
         self,

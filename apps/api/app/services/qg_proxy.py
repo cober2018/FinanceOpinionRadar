@@ -87,7 +87,7 @@ class QgLongtermClient:
     def __init__(self, key: str, auth_pwd: str, base: str = _DEFAULT_BASE, timeout: float = 15.0):
         self._key = key
         self._auth_pwd = auth_pwd
-        self._client = httpx.Client(base_url=base, timeout=timeout)
+        self._client = httpx.Client(base_url=base, timeout=timeout, trust_env=False)
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         try:

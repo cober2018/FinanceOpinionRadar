@@ -127,7 +127,7 @@ def send_test_message(session: Session, channel_id: int, http: httpx.Client | No
     channel = session.get(PushChannel, channel_id)
     if channel is None:
         raise LookupError(f"push_channel {channel_id} 不存在")
-    client = http or httpx.Client()
+    client = http or httpx.Client(trust_env=False)  # 不继承环境代理（no_proxy IPv6 CIDR 触发 httpx 崩溃）
     try:
         url, body = _build_payload(channel, [], test=True)
         _send(channel, url, body, client)
@@ -145,7 +145,7 @@ def deliver_pending_pushes(session: Session, http: httpx.Client | None = None) -
         select(PushChannel).where(PushChannel.enabled.is_(True))
     ).all()
     channels = [c for c in channels if (c.config_json or {}).get("viewpoint_enabled", True)]
-    client = http or httpx.Client()
+    client = http or httpx.Client(trust_env=False)  # 不继承环境代理（no_proxy IPv6 CIDR 触发 httpx 崩溃）
     try:
         for channel in channels:
             rows = (

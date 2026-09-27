@@ -27,6 +27,7 @@ class DouyinApiClient:
             base_url=base_url.rstrip("/"),
             headers={"X-API-Key": api_key},
             timeout=timeout_sec,
+            trust_env=False,  # 不继承环境代理（no_proxy IPv6 CIDR 触发 httpx 崩溃）
         )
 
     def fetch_one_video(self, aweme_id: str) -> dict:

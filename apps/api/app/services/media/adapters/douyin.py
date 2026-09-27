@@ -59,7 +59,7 @@ class DouyinAdapter:
         self._discover_max_pages = discover_max_pages
         self._page_size = page_size
         # 短链跟随与 CDN 下载共用；测试注入 MockTransport
-        self._http = http or httpx.Client(timeout=60, follow_redirects=True)
+        self._http = http or httpx.Client(timeout=60, follow_redirects=True, trust_env=False)
         # 代理池（设置页「安全」）：下载走稳定出口；None = 直连
         self._proxy = proxy
         self._proxy_key = proxy_key
@@ -145,7 +145,7 @@ class DouyinAdapter:
         client = (
             self._http
             if not proxy
-            else httpx.Client(proxy=proxy, timeout=300, follow_redirects=True)
+            else httpx.Client(proxy=proxy, timeout=300, follow_redirects=True, trust_env=False)
         )
         with client.stream("GET", url, headers=_CDN_HEADERS) as resp:
             if resp.status_code != 200:
