@@ -17,6 +17,7 @@
 
 ## 待完成 / TODO
 
+- `changes/query-video-summaries-and-control-push/`：按视频时间的三种当前总结查询，以及单视频自动/手动推送提案；规范已校验，待用户确认，尚未实施。
 - 真实人工基准覆盖与质量验收按实际材料状态推进，不因工具完成而标成通过。
 - `changes/archive/2026-09-27-catalog-video-summary-open-interfaces/`：已确认并实施的视频总结 API 与推送事件目录展示。
 - `changes/archive/2026-09-27-build-video-summary-service-gateway/`：单个视频总结服务的拉取/推送详情切换与各自管理操作，已合入本地及远端 `main` 并归档；尚未部署到本机运行服务。

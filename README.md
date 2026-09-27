@@ -63,6 +63,14 @@ flowchart LR
 
 开放接口控制台可将通用 HTTPS Webhook 显式订阅视频总结事件，推送与拉取使用相同载荷；请求附 `X-Radar-Event-ID`、`X-Radar-Timestamp` 和 HMAC-SHA256 的 `X-Radar-Signature`。投递失败有有限重试，结果未知时需人工对账；下游可用 `event_id` 去重，并以拉取接口补漏。使用前需执行 Alembic 迁移并启动 worker+beat。本地 API/模拟下游联调已通过，真实下游与生产环境尚未验收。规范见 `openspec/changes/expose-reviewed-video-summaries/`。
 
+#### 对接另一个系统：视频总结推送使用说明
+
+这是服务器主动向接收方发起的 HTTP POST。**雷达侧**先确认 API、数据库迁移、worker 和 beat 正常；在“开放接口 → 推送”中新建 `generic_webhook` 渠道，填写接收方的公网 HTTPS 443 地址及双方约定的签名 Secret。只接收整视频总结时关闭“逐条观点”，再启用渠道并开启“视频总结”订阅。订阅从开启时的最新事件开始，只接收之后产生的事件；此前的内容由接收方用开放 API 增量拉取，不会自动补推。总结需在观点审核后生成，形成 `ready` 事件；后续失效或更正产生 `withdrawn` 事件。beat 默认每 60 秒扫描投递，实际延迟取决于任务运行和网络状态。
+
+**接收方**提供能接收 POST 的公网 HTTPS 443 URL；与雷达安全交换签名 Secret；按 `X-Radar-Timestamp` + `.` + 原始请求体计算 HMAC-SHA256，并与 `X-Radar-Signature` 做安全比较，同时检查时间戳合理性。消息含 `event_id`、`item_id`、`version`、`state`、`display_name`、`video_time`、`time_basis`、`summary` 等字段。接收方按 `event_id` 去重，按 `item_id`/`version` 维护最新状态：`ready` 保存总结；`withdrawn`（`summary=null`，带 `withdraws_version`）使旧总结失效。接收方持久化成功后返回 HTTP 2xx；非 2xx 会触发有限重试，网络结果未知需人工对账。为防漏消息，用 `X-API-Key` 定期拉取 `/open/v1/video-summaries` 的事件游标流并保存 `next_cursor`。
+
+**联调顺序**：先用渠道“测试”验证地址可达（测试消息不是视频总结事件），再用一条真实审核后总结验证 `ready` 的接收、签名、去重和投递记录，最后验证失效时的 `withdrawn`。投递记录的 2xx 仅证明接收端返回成功，接收方仍需读回其已保存的数据。当前代码只支持上述**自动订阅推送**；观点页针对单条视频点击“手动推送”仍处于 `query-video-summaries-and-control-push` 提案阶段，尚未实现。现有 Webhook 限公网 HTTPS 标准 443 端口，不接受内网地址。
+
 本机局域网 `:8010/console/` 已切换到包含上述入口的前端构建，worker+beat 已重启并注册视频总结推送任务。当前未配置总结推送渠道，也没有对外总结事件；真实接收方仍需提供 Webhook 后联调。数据库清理须先核对表的实际引用和保留要求，不能按“空表”直接删除。
 
 本机 `:8010/console/` 的开放接口页面现已分别展示视频总结数据 API、Webhook 事件契约及当前有效订阅数；沿用原有 API Key、渠道管理和最近投递列表。规范位于 `openspec/changes/archive/2026-09-27-catalog-video-summary-open-interfaces/`，前端说明见 `apps/web/README.md`。页面展示不表示已有总结事件或下游已经消费。
@@ -374,6 +382,7 @@ openspec/            变更提案、验收规范和归档后的主规范
 
 ## TODO
 
+- 开放接口下一步提案：按视频时间提供范围、主播日期、今日最近 N 条查询；在观点总结处区分未来自动订阅与当前视频手动推送。规范见 [OpenSpec 提案](openspec/changes/query-video-summaries-and-control-push/proposal.md)，尚待确认、未实施。
 - 准确性验收：评测口径和门槛已统一；现有 golden 只有两条待人工复核的 demo，仍需补齐至少 20 个独立验收素材、300 条人工观点、5 位人物、10 个主题及三种内容类型。
 - 清洗与语义审核：在已有结构校验、规则审核和人工队列上，补强原文支持关系、讲话人归属、数字、条件、期限及失败/无内容的区分。
 - 素材证据留存：普通内容清理快照目前保留结论，不能替代完整来源证据；完善已引用素材的证据保留规则。
