@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import structlog
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.settings import get_settings
@@ -160,6 +160,7 @@ def ingest_live_segments(session, provider=None) -> dict:
                 _warn_gaps(sd, s.live_close_grace_sec)
                 if item.status in ("transcribed", "extracting", "reviewing", "ready"):
                     # 已收尾/进入抽取链的会话不再扫描（EPIC-04 状态机扩展后的兼容）
+                    session.commit()
                     continue
                 if item.status != "transcribing":
                     _advance_chain(session, item)  # F3：discovered→…→transcribing 连续推进
@@ -431,11 +432,35 @@ def _rename_if_stale(session, item: SourceItem, account: SourceAccount, sd: Live
     ]
     reg_min = min(idxs) if idxs else first_index
     title = _session_title(session, account, sd, first_index=reg_min)
+    start = _index_start_utc(reg_min)
+    if session is not None and (
+        item.title != title or (start is not None and item.published_at != start)
+    ):
+        session.scalar(select(SourceItem).where(SourceItem.id == item.id).with_for_update())
+        session.refresh(item)
+        live = (item.metadata_json or {}).get("live") or {}
+        idxs = [
+            int(k)
+            for field in (
+                "processed", "deferred", "skipped_segments", "segment_errors", "segment_paths"
+            )
+            for k in (live.get(field) or {})
+            if str(k).isdigit()
+        ]
+        reg_min = min(idxs) if idxs else first_index
+        title = _session_title(session, account, sd, first_index=reg_min)
+        start = _index_start_utc(reg_min)
+    summary_source_changed = False
     if item.title != title:
         item.title = title
-    start = _index_start_utc(reg_min)
+        summary_source_changed = True
     if start is not None and item.published_at != start:
         item.published_at = start
+        summary_source_changed = True
+    if summary_source_changed and session is not None:
+        from app.services.video_summary_feed import withdraw_if_invalid
+
+        withdraw_if_invalid(session, item.id)
     duration = sum(
         int(v.get("duration_ms") or 0)
         for v in (live.get("processed") or {}).values()

@@ -59,7 +59,9 @@ flowchart LR
 
 ### 对外获取单条视频的观点总结
 
-下一阶段提案：第一版同时支持“每视频一条审核后总结”的增量拉取与 Webhook 推送，统一版本、视频时间依据、撤回和投递状态；OpenSpec 见 `openspec/changes/expose-reviewed-video-summaries/`。目前仅完成提案，下面描述的现有单视频查询保持原状，增量列表与总结推送尚未实现。
+本地版已增加 `GET /open/v1/video-summaries`：使用 `X-API-Key`，按 `cursor` 和 `page_size` 拉取 `ready`、`withdrawn` 事件，返回 `next_cursor` 与 `has_more`。每个事件包含稳定 `event_id`、视频 `item_id`、版本、主播、视频级时间及依据、总结和状态；只交付新生成且符合复核资格的总结，历史旧总结不自动补发。旧接口 `GET /open/v1/items/{item_id}/summary` 保留，失效时 `summary` 返回 `null`。
+
+开放接口控制台可将通用 HTTPS Webhook 显式订阅视频总结事件，推送与拉取使用相同载荷；请求附 `X-Radar-Event-ID`、`X-Radar-Timestamp` 和 HMAC-SHA256 的 `X-Radar-Signature`。投递失败有有限重试，结果未知时需人工对账；下游可用 `event_id` 去重，并以拉取接口补漏。使用前需执行 Alembic 迁移并启动 worker+beat。本地 API/模拟下游联调已通过，真实下游与生产环境尚未验收。规范见 `openspec/changes/expose-reviewed-video-summaries/`。
 
 已有只读接口 `GET /open/v1/items/{item_id}/summary`，使用 `X-API-Key` 鉴权。调用方通过视频的 `item_id` 获取该主播在这条视频中的整体观点；接口还返回视频标题与类型。
 

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
-from app.db.models import Creator, SourceAccount
+from app.db.models import Creator, SourceAccount, SourceItem
 from app.db.session import get_db
 from app.repositories.source_accounts import SourceAccountRepository
 from app.services import discovery
@@ -202,6 +202,17 @@ def create_source_account(body: CreateSourceAccountRequest, session: DbDep):
             FALLBACK_CREATOR_NAME,
         ):
             creator.display_name = body.display_name
+            from app.services.video_summary_feed import withdraw_if_invalid
+
+            item_ids = session.scalars(
+                select(SourceItem.id)
+                .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+                .where(SourceAccount.creator_id == creator.id)
+                .order_by(SourceItem.id)
+                .with_for_update(of=SourceItem)
+            ).all()
+            for item_id in item_ids:
+                withdraw_if_invalid(session, item_id)
     account.poll_interval_sec = body.poll_interval_sec
     account.poll_interval_min_sec = body.poll_interval_min_sec
     account.poll_interval_max_sec = body.poll_interval_max_sec
