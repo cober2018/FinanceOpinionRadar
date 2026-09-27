@@ -1993,6 +1993,7 @@ const CHANNEL_TYPE_CN: Record<string, string> = {
 function OpenApiPage() {
   const [keys, setKeys] = useState<ApiKeyRow[]>([])
   const [channels, setChannels] = useState<PushChannelRow[]>([])
+  const [channelsStatus, setChannelsStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [summaryDeliveries, setSummaryDeliveries] = useState<VideoSummaryDeliveryRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [newKey, setNewKey] = useState<{ name: string; api_key: string } | null>(null)
@@ -2000,10 +2001,19 @@ function OpenApiPage() {
   const [chForm, setChForm] = useState(false)
   const [chDraft, setChDraft] = useState({ name: '', channel_type: 'feishu', url: '', secret: '', viewpoint_enabled: true })
   const [testing, setTesting] = useState<number | null>(null)
+  const summarySubscribers = channels.filter((channel) =>
+    channel.channel_type === 'generic_webhook' && channel.has_secret && channel.enabled && channel.summary_enabled
+  )
 
   const reload = useCallback(() => {
     api<{ items: ApiKeyRow[] }>('/open-admin/api-keys').then((d) => setKeys(d.items)).catch((e: Error) => setError(e.message))
-    api<{ items: PushChannelRow[] }>('/open-admin/push-channels').then((d) => setChannels(d.items)).catch((e: Error) => setError(e.message))
+    api<{ items: PushChannelRow[] }>('/open-admin/push-channels').then((d) => {
+      setChannels(d.items)
+      setChannelsStatus('ready')
+    }).catch((e: Error) => {
+      setChannelsStatus('error')
+      setError(e.message)
+    })
     api<{ items: VideoSummaryDeliveryRow[] }>('/open-admin/video-summary-deliveries').then((d) => setSummaryDeliveries(d.items)).catch((e: Error) => setError(e.message))
   }, [])
   useEffect(reload, [reload])
@@ -2104,11 +2114,25 @@ function OpenApiPage() {
       </div>
       {error && <p className="error">{error}</p>}
 
+      <h3>数据 API · 视频审核后总结</h3>
       <div className="callout">
-        <b>视频审核后总结：拉取与推送同时支持</b>
-        <p>一条视频一份结论，包含主播名称、视频级时间与来源依据、总结、版本和事件 ID。仅在已确认观点完成总结后产生可用事件；观点变化会产生撤回事件。</p>
-        <p>拉取：<code>GET /open/v1/video-summaries?page_size=50&amp;cursor=0</code>，请求头使用 <code>X-API-Key</code>。保存返回的 <code>next_cursor</code> 用于继续增量拉取。原单视频查询 <code>GET /open/v1/items/&#123;item_id&#125;/summary</code> 保持兼容。</p>
-        <p>推送：对通用 HTTPS Webhook 单独开启“视频总结订阅”。载荷与拉取一致，按 <code>event_id</code> 去重；签名位于 <code>X-Radar-Signature</code>。普通视频时间为来源发布时间，直播为记录的开播时间；缺失时为 null。</p>
+        <p><b>增量拉取</b> <code>GET /open/v1/video-summaries?cursor=0&amp;page_size=50</code></p>
+        <p>请求头：<code>X-API-Key</code>。响应包含 <code>items</code>、<code>next_cursor</code>、<code>has_more</code>；保存游标继续拉取。每项是一个视频总结版本事件，包含 <code>event_id</code>、<code>item_id</code>、<code>version</code>、<code>state</code>、<code>display_name</code>、<code>video_time</code>、<code>time_basis</code>、<code>summary</code> 和 <code>updated_at</code>。</p>
+        <p><b>单视频查询</b> <code>GET /open/v1/items/&#123;item_id&#125;/summary</code>：按视频 ID 查询当前总结，沿用 <code>X-API-Key</code>；无可用总结或总结已撤回时 <code>summary</code> 为 null，并通过 <code>export_state</code> 区分状态。</p>
+        <p>只有视频至少有一条已确认观点、没有待审观点，且总结对应当前已确认观点时，才有可用的 <code>ready</code> 版本。接口已提供；是否有返回数据取决于实际审核与总结状态。</p>
+      </div>
+
+      <h3>推送事件 · 视频审核后总结</h3>
+      <div className="callout">
+        <p><b>事件定义</b>：通用 HTTPS Webhook 推送与增量拉取相同的视频总结事件载荷。<code>ready</code> 表示新总结版本可用，<code>withdrawn</code> 表示先前版本失效，此时 <code>summary</code> 为 null，并携带 <code>withdraws_version</code>。</p>
+        <p>接收方按稳定的 <code>event_id</code> 去重；请求头包含 <code>X-Radar-Event-ID</code>、<code>X-Radar-Timestamp</code>、<code>X-Radar-Signature</code>（HMAC-SHA256）。<code>video_time</code> 是视频级时间：普通视频取来源发布时间，直播取记录的开播时间；缺失时为 null，<code>time_basis</code> 为 <code>unknown</code>。</p>
+        <p><b>当前有效订阅：{channelsStatus === 'ready' ? `${summarySubscribers.length} 个` : '待确认'}。</b> {channelsStatus === 'loading'
+          ? '正在读取渠道配置。'
+          : channelsStatus === 'error'
+            ? '渠道配置读取失败，请刷新页面重试。'
+            : summarySubscribers.length > 0
+              ? `接收渠道：${summarySubscribers.map((channel) => channel.name).join('、')}。可在下方管理订阅并查看最近投递。`
+              : '尚未配置启用中的视频总结接收渠道；事件定义与拉取 API 仍可查看，拉取不依赖推送订阅。'}</p>
       </div>
 
       <h3>API Key（{keys.length}）</h3>
@@ -2223,8 +2247,11 @@ function OpenApiPage() {
               </td>
             </tr>
           ))}
-          {channels.length === 0 && (
+          {channelsStatus === 'ready' && channels.length === 0 && (
             <tr><td colSpan={7} className="muted pad">暂无渠道。视频总结推送需新建带签名密钥的通用 HTTPS Webhook。</td></tr>
+          )}
+          {channelsStatus !== 'ready' && (
+            <tr><td colSpan={7} className="muted pad">{channelsStatus === 'loading' ? '正在读取渠道配置…' : '渠道配置读取失败，请刷新页面重试。'}</td></tr>
           )}
         </tbody>
       </table>

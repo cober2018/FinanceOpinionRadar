@@ -68,3 +68,14 @@
 - [x] 更新前端并验证页面。
 - [x] 重启 worker 并核对任务注册。
 - [ ] 完成旧表只读清单和 OpenSpec 提案。
+
+## 2026-09-27 开放接口目录展示提案
+
+- [x] 核对现有视频总结 API、Webhook 事件及开放接口页面。
+- [x] 形成 `catalog-video-summary-open-interfaces` 的 OpenSpec proposal、design、spec 与 tasks。
+- [x] 用户确认展示与现有订阅管理的范围，进入 apply。
+- [x] 完成页面、文档和构建核对，归档 OpenSpec。
+
+/// 1. 根据已发布后端契约，在开放接口页面分别呈现拉取 API 与推送事件。
+/// 2. 从现有渠道数据汇总视频总结订阅状态，保持已有管理操作。
+/// 3. 核对契约文案、构建、README 和进度，完成变更归档。

@@ -65,6 +65,8 @@ flowchart LR
 
 本机局域网 `:8010/console/` 已切换到包含上述入口的前端构建，worker+beat 已重启并注册视频总结推送任务。当前未配置总结推送渠道，也没有对外总结事件；真实接收方仍需提供 Webhook 后联调。数据库清理须先核对表的实际引用和保留要求，不能按“空表”直接删除。
 
+开放接口页面现已分别展示视频总结数据 API、Webhook 事件契约及当前有效订阅数；沿用原有 API Key、渠道管理和最近投递列表。规范位于 `openspec/changes/archive/2026-09-27-catalog-video-summary-open-interfaces/`，前端说明见 `apps/web/README.md`。页面展示不表示已有总结事件或下游已经消费。
+
 已有只读接口 `GET /open/v1/items/{item_id}/summary`，使用 `X-API-Key` 鉴权。调用方通过视频的 `item_id` 获取该主播在这条视频中的整体观点；接口还返回视频标题与类型。
 
 | 返回字段 | 含义 |
