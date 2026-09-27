@@ -1,32 +1,29 @@
-# React + TypeScript + Vite
+# 财经观点雷达控制台
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+## PRD / 需求背景
 
-Currently, two official plugins are available:
+内部研究人员在控制台审核观点，并在“开放接口”查看视频审核后总结的拉取 API、推送事件、订阅渠道和最近投递。产品需求与时间口径见仓库根目录 `01_finance_opinion_radar_PRD.md` 和 `README.md`。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 目录结构
 
-## React Compiler
+- `src/App.tsx`：控制台页面与开放接口展示、现有渠道管理。
+- `src/`：前端入口和样式。
+- `landing/`：落地页静态资源。
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 已完成
 
-## Expanding the Oxlint configuration
+- 开放接口页面分别展示视频总结增量拉取、单视频查询和 Webhook 事件契约。
+- 基于现有渠道状态显示有效视频总结订阅数，沿用渠道开关和投递记录。
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## 待完成 / TODO
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+- 接入真实下游接收地址后，验证推送接收与消费；当前页面展示不代表下游已经消费。
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## 关键设计决策
+
+- 接口与事件定义随代码维护；页面只展示已实现契约，不提供运行时编辑或发布。
+- “有效订阅”仅统计启用中、已订阅视频总结且配置签名密钥的通用 Webhook。
+
+## 依赖 & 启动方式
+
+Node.js ≥ 22.12，依赖见 `package.json`。在本目录运行 `npm install`、`npm run dev`；验证使用 `npm run build`、`npm run lint` 和 `npm test`。

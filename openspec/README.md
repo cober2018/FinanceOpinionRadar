@@ -18,6 +18,7 @@
 ## 待完成 / TODO
 
 - 真实人工基准覆盖与质量验收按实际材料状态推进，不因工具完成而标成通过。
+- `changes/archive/2026-09-27-catalog-video-summary-open-interfaces/`：已确认并实施的视频总结 API 与推送事件目录展示。
 
 ## 关键设计决策
 
