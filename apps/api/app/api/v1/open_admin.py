@@ -60,6 +60,10 @@ class ApiKeyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
+class ApiKeyStatusPatch(BaseModel):
+    enabled: bool
+
+
 @router.get("/api-keys")
 def list_api_keys(session: DbDep):
     rows = session.scalars(select(ApiKey).order_by(ApiKey.id.desc())).all()
@@ -108,6 +112,32 @@ def revoke_api_key(key_id: int, session: DbDep):
     )
     session.commit()
     return {"id": row.id, "status": "revoked"}
+
+
+@router.patch("/api-keys/{key_id}")
+def set_api_key_enabled(key_id: int, body: ApiKeyStatusPatch, session: DbDep):
+    row = session.get(ApiKey, key_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"api_key {key_id} 不存在")
+    if row.status == "revoked":
+        raise HTTPException(status_code=409, detail="已吊销的 API Key 不能恢复")
+    if row.status not in {"active", "disabled"}:
+        raise HTTPException(status_code=409, detail="API Key 状态不可修改")
+    status = "active" if body.enabled else "disabled"
+    if row.status != status:
+        before = {"status": row.status}
+        row.status = status
+        write_audit(
+            session,
+            actor="console",
+            action="enable" if body.enabled else "disable",
+            resource_type="api_key",
+            resource_id=row.id,
+            before=before,
+            after={"status": status},
+        )
+        session.commit()
+    return {"id": row.id, "status": row.status}
 
 
 # --- 推送渠道 ---

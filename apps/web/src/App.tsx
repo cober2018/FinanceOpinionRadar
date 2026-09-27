@@ -1991,30 +1991,53 @@ const CHANNEL_TYPE_CN: Record<string, string> = {
 }
 
 function OpenApiPage() {
+  const [mode, setMode] = useState<'pull' | 'push'>('pull')
+  const [trialKey, setTrialKey] = useState('')
+  const [trialCursor, setTrialCursor] = useState('0')
+  const [trialPageSize, setTrialPageSize] = useState('50')
+  const [trialLoading, setTrialLoading] = useState(false)
+  const [trialResult, setTrialResult] = useState<string | null>(null)
   const [keys, setKeys] = useState<ApiKeyRow[]>([])
+  const [keysStatus, setKeysStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [channels, setChannels] = useState<PushChannelRow[]>([])
   const [channelsStatus, setChannelsStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [summaryDeliveries, setSummaryDeliveries] = useState<VideoSummaryDeliveryRow[]>([])
+  const [deliveriesStatus, setDeliveriesStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [error, setError] = useState<string | null>(null)
   const [newKey, setNewKey] = useState<{ name: string; api_key: string } | null>(null)
   const [keyName, setKeyName] = useState('')
   const [chForm, setChForm] = useState(false)
-  const [chDraft, setChDraft] = useState({ name: '', channel_type: 'feishu', url: '', secret: '', viewpoint_enabled: true })
+  const [chDraft, setChDraft] = useState({ name: '', channel_type: 'generic_webhook', url: '', secret: '', viewpoint_enabled: false })
   const [testing, setTesting] = useState<number | null>(null)
   const summarySubscribers = channels.filter((channel) =>
     channel.channel_type === 'generic_webhook' && channel.has_secret && channel.enabled && channel.summary_enabled
   )
 
   const reload = useCallback(() => {
-    api<{ items: ApiKeyRow[] }>('/open-admin/api-keys').then((d) => setKeys(d.items)).catch((e: Error) => setError(e.message))
+    api<{ items: ApiKeyRow[] }>('/open-admin/api-keys').then((d) => {
+      setKeys(d.items)
+      setKeysStatus('ready')
+    }).catch((e: Error) => {
+      setKeys([])
+      setKeysStatus('error')
+      setError(e.message)
+    })
     api<{ items: PushChannelRow[] }>('/open-admin/push-channels').then((d) => {
       setChannels(d.items)
       setChannelsStatus('ready')
     }).catch((e: Error) => {
+      setChannels([])
       setChannelsStatus('error')
       setError(e.message)
     })
-    api<{ items: VideoSummaryDeliveryRow[] }>('/open-admin/video-summary-deliveries').then((d) => setSummaryDeliveries(d.items)).catch((e: Error) => setError(e.message))
+    api<{ items: VideoSummaryDeliveryRow[] }>('/open-admin/video-summary-deliveries').then((d) => {
+      setSummaryDeliveries(d.items)
+      setDeliveriesStatus('ready')
+    }).catch((e: Error) => {
+      setSummaryDeliveries([])
+      setDeliveriesStatus('error')
+      setError(e.message)
+    })
   }, [])
   useEffect(reload, [reload])
 
@@ -2031,6 +2054,41 @@ function OpenApiPage() {
       reload()
     } catch (e) {
       setError((e as Error).message)
+    }
+  }
+
+  const toggleKey = async (r: ApiKeyRow) => {
+    if (r.status === 'active' && !window.confirm(`停用「${r.name}」？此 Key 对全部开放 API 的访问将暂停，之后可重新启用。`)) return
+    setError(null)
+    try {
+      await api(`/open-admin/api-keys/${r.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: r.status !== 'active' }),
+      })
+      reload()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const trialPull = async () => {
+    const cursor = Number(trialCursor)
+    const pageSize = Number(trialPageSize)
+    if (!trialKey.trim() || !Number.isSafeInteger(cursor) || cursor < 0 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200) {
+      setTrialResult('请填写 API Key；cursor 须为非负整数，page_size 须为 1–200。')
+      return
+    }
+    setTrialLoading(true)
+    setTrialResult(null)
+    try {
+      const query = new URLSearchParams({ cursor: String(cursor), page_size: String(pageSize) })
+      const resp = await fetch(`/open/v1/video-summaries?${query}`, { headers: { 'X-API-Key': trialKey.trim() } })
+      const body: unknown = await resp.json()
+      setTrialResult(JSON.stringify({ http_status: resp.status, body }, null, 2))
+    } catch (e) {
+      setTrialResult(`请求失败：${(e as Error).message}`)
+    } finally {
+      setTrialLoading(false)
     }
   }
 
@@ -2053,7 +2111,7 @@ function OpenApiPage() {
         }),
       })
       setChForm(false)
-      setChDraft({ name: '', channel_type: 'feishu', url: '', secret: '', viewpoint_enabled: true })
+      setChDraft({ name: '', channel_type: 'generic_webhook', url: '', secret: '', viewpoint_enabled: false })
       reload()
     } catch (e) {
       setError((e as Error).message)
@@ -2095,7 +2153,7 @@ function OpenApiPage() {
     setError(null)
     try {
       await api(`/open-admin/push-channels/${r.id}/test`, { method: 'POST' })
-      window.alert('测试消息已发出，请到群里确认收到')
+      window.alert('渠道测试消息已发出，请到接收端确认；这不代表视频总结事件已投递。')
     } catch (e) {
       window.alert((e as Error).message)
     } finally {
@@ -2114,28 +2172,46 @@ function OpenApiPage() {
       </div>
       {error && <p className="error">{error}</p>}
 
-      <h3>数据 API · 视频审核后总结</h3>
-      <div className="callout">
-        <p><b>增量拉取</b> <code>GET /open/v1/video-summaries?cursor=0&amp;page_size=50</code></p>
-        <p>请求头：<code>X-API-Key</code>。响应包含 <code>items</code>、<code>next_cursor</code>、<code>has_more</code>；保存游标继续拉取。每项是一个视频总结版本事件，包含 <code>event_id</code>、<code>item_id</code>、<code>version</code>、<code>state</code>、<code>display_name</code>、<code>video_time</code>、<code>time_basis</code>、<code>summary</code> 和 <code>updated_at</code>。</p>
-        <p><b>单视频查询</b> <code>GET /open/v1/items/&#123;item_id&#125;/summary</code>：按视频 ID 查询当前总结，沿用 <code>X-API-Key</code>；无可用总结或总结已撤回时 <code>summary</code> 为 null，并通过 <code>export_state</code> 区分状态。</p>
-        <p>只有视频至少有一条已确认观点、没有待审观点，且总结对应当前已确认观点时，才有可用的 <code>ready</code> 版本。接口已提供；是否有返回数据取决于实际审核与总结状态。</p>
-      </div>
-
-      <h3>推送事件 · 视频审核后总结</h3>
-      <div className="callout">
-        <p><b>事件定义</b>：通用 HTTPS Webhook 推送与增量拉取相同的视频总结事件载荷。<code>ready</code> 表示新总结版本可用，<code>withdrawn</code> 表示先前版本失效，此时 <code>summary</code> 为 null，并携带 <code>withdraws_version</code>。</p>
-        <p>接收方按稳定的 <code>event_id</code> 去重；请求头包含 <code>X-Radar-Event-ID</code>、<code>X-Radar-Timestamp</code>、<code>X-Radar-Signature</code>（HMAC-SHA256）。<code>video_time</code> 是视频级时间：普通视频取来源发布时间，直播取记录的开播时间；缺失时为 null，<code>time_basis</code> 为 <code>unknown</code>。</p>
-        <p><b>当前有效订阅：{channelsStatus === 'ready' ? `${summarySubscribers.length} 个` : '待确认'}。</b> {channelsStatus === 'loading'
-          ? '正在读取渠道配置。'
-          : channelsStatus === 'error'
-            ? '渠道配置读取失败，请刷新页面重试。'
-            : summarySubscribers.length > 0
-              ? `接收渠道：${summarySubscribers.map((channel) => channel.name).join('、')}。可在下方管理订阅并查看最近投递。`
-              : '尚未配置启用中的视频总结接收渠道；事件定义与拉取 API 仍可查看，拉取不依赖推送订阅。'}</p>
-      </div>
-
-      <h3>API Key（{keys.length}）</h3>
+      <div className="gateway-layout">
+        <aside className="gateway-catalog" aria-label="服务目录">
+          <div className="gateway-catalog-label">服务目录</div>
+          <div className="gateway-service-selected">视频审核后总结</div>
+        </aside>
+        <section className="gateway-detail" aria-label="视频审核后总结详情">
+          <div className="gateway-detail-head">
+            <div>
+              <p className="muted">开放接口 / 服务目录</p>
+              <h3>视频审核后总结</h3>
+              <p className="muted">同一份审核后总结，可按需拉取或订阅推送。</p>
+            </div>
+            <div className="gateway-mode-tabs" role="tablist" aria-label="交付方式">
+              <button type="button" role="tab" aria-selected={mode === 'pull'} className={mode === 'pull' ? 'selected' : ''} onClick={() => setMode('pull')}>拉取</button>
+              <button type="button" role="tab" aria-selected={mode === 'push'} className={mode === 'push' ? 'selected' : ''} onClick={() => setMode('push')}>推送</button>
+            </div>
+          </div>
+          {mode === 'pull' ? <div role="tabpanel">
+            <div className="gateway-path"><span className="gateway-method">GET</span><code>/open/v1/video-summaries</code></div>
+            <p className="muted">增量拉取审核后的总结版本事件，使用 <code>X-API-Key</code> 鉴权；只有启用中的 Key 可访问。这里的 Key 管理影响全部 <code>/open/v1/*</code> 接口。</p>
+            <h4>请求参数</h4>
+            <table className="table"><thead><tr><th>参数</th><th>说明</th><th>范围</th></tr></thead><tbody>
+              <tr><td><code>cursor</code></td><td>最后已处理的事件序号，首次填 0</td><td>非负整数，默认 0</td></tr>
+              <tr><td><code>page_size</code></td><td>每页事件数</td><td>1–200，默认 50</td></tr>
+            </tbody></table>
+            <h4>返回字段</h4>
+            <p><code>items</code>、<code>next_cursor</code>、<code>has_more</code>；每项包含 <code>event_id</code>、<code>item_id</code>、<code>version</code>、<code>state</code>、<code>display_name</code>、<code>video_time</code>、<code>time_basis</code>、<code>summary</code>、<code>updated_at</code>。<code>withdrawn</code> 事件的总结为 null，携带 <code>withdraws_version</code>。</p>
+            <p>单视频查询：<code>GET /open/v1/items/&#123;item_id&#125;/summary</code>；无可用总结时 <code>summary</code> 为 null，查看 <code>export_state</code> 判断状态。</p>
+            <p className="muted">视频级时间：普通视频取来源发布时间，直播取已记录的开播时间；来源缺失时为 null，<code>time_basis</code> 为 <code>unknown</code>。</p>
+            <h4>在线试读</h4>
+            <div className="gateway-trial">
+              <div className="gateway-trial-fields">
+                <label className="field">API Key<input type="password" autoComplete="off" value={trialKey} onChange={(e) => setTrialKey(e.target.value)} placeholder="仅用于本次页面试读" /></label>
+                <label className="field">cursor<input inputMode="numeric" value={trialCursor} onChange={(e) => setTrialCursor(e.target.value)} /></label>
+                <label className="field">page_size<input inputMode="numeric" value={trialPageSize} onChange={(e) => setTrialPageSize(e.target.value)} /></label>
+                <button className="primary" onClick={trialPull} disabled={trialLoading}>{trialLoading ? '请求中…' : '运行请求'}</button>
+              </div>
+              <pre className="gateway-response" aria-live="polite">{trialResult ?? '运行请求后显示实际响应。空 items 表示当前没有可拉取事件。'}</pre>
+            </div>
+      <h3>API Key（{keysStatus === 'ready' ? keys.length : '待确认'}）</h3>
       <div className="toolbar">
         <input
           placeholder="Key 名称（如：兄弟产品 A）"
@@ -2162,25 +2238,35 @@ function OpenApiPage() {
             <tr key={r.id}>
               <td>{r.name}</td>
               <td><code>{r.prefix}…</code></td>
-              <td>{r.status === 'active' ? '启用' : '已吊销'}</td>
+              <td>{r.status === 'active' ? '启用' : r.status === 'disabled' ? '停用' : '已吊销'}</td>
               <td className="muted">{r.last_used_at ? fmtDateTime(r.last_used_at) : '从未'}</td>
               <td>
-                {r.status === 'active' && (
+                {r.status !== 'revoked' && (<>
+                  <button className="ghost" onClick={() => toggleKey(r)}>{r.status === 'active' ? '停用' : '启用'}</button>{' '}
                   <button className="ghost" onClick={() => revokeKey(r)}>吊销</button>
-                )}
+                </>)}
               </td>
             </tr>
           ))}
-          {keys.length === 0 && (
+          {keysStatus === 'ready' && keys.length === 0 && (
             <tr><td colSpan={5} className="muted pad">暂无 Key。下游系统凭 X-API-Key 请求头访问 /open/v1/*。</td></tr>
           )}
+          {keysStatus !== 'ready' && <tr><td colSpan={5} className="muted pad">{keysStatus === 'loading' ? '正在读取 Key…' : 'Key 状态读取失败，请刷新页面重试。'}</td></tr>}
         </tbody>
       </table>
 
-      <h3 style={{ marginTop: 28 }}>推送渠道（{channels.length}）</h3>
+          </div> : <div role="tabpanel">
+            <div className="gateway-path"><span className="gateway-method gateway-method-push">WEBHOOK</span><code>HTTPS POST → 接收方 URL</code></div>
+            <p>向已启用且订阅视频总结的通用 Webhook 渠道投递与拉取相同的事件载荷。<code>ready</code> 为新版本，<code>withdrawn</code> 为旧版本撤回。接收方按 <code>event_id</code> 去重。</p>
+            <h4>事件与签名</h4>
+            <p>载荷含 <code>event_id</code>、<code>item_id</code>、<code>version</code>、<code>state</code>、<code>display_name</code>、<code>video_time</code>、<code>time_basis</code>、<code>summary</code>、<code>updated_at</code>。撤回事件的 <code>summary</code> 为 null，并含 <code>withdraws_version</code>。</p>
+            <p>请求头：<code>X-Radar-Event-ID</code>、<code>X-Radar-Timestamp</code>、<code>X-Radar-Signature</code>（HMAC-SHA256）。</p>
+            <p><b>有效订阅：{channelsStatus === 'ready' ? `${summarySubscribers.length} 个` : '待确认'}。</b> {channelsStatus === 'loading' ? '正在读取渠道配置。' : channelsStatus === 'error' ? '渠道配置读取失败，请刷新页面重试。' : summarySubscribers.length > 0 ? `接收渠道：${summarySubscribers.map((channel) => channel.name).join('、')}。` : '尚未配置启用中的视频总结接收渠道。'}</p>
+            <p className="muted">渠道测试只发送测试消息，真实事件是否送达以投递记录为准；订阅前的历史事件可从拉取接口补齐。</p>
+      <h3 style={{ marginTop: 28 }}>推送渠道（{channelsStatus === 'ready' ? channels.length : '待确认'}）</h3>
       <div className="toolbar">
         <button className="primary" onClick={() => setChForm(!chForm)}>新建渠道</button>
-        <span className="muted">新确认观点每分钟聚合推送到启用中的渠道。</span>
+        <span className="muted">视频总结只支持带签名密钥的通用 HTTPS Webhook；渠道创建后需单独开启视频总结订阅。</span>
       </div>
       {chForm && (
         <div className="callout">
@@ -2199,10 +2285,10 @@ function OpenApiPage() {
             </label>
             <label className="field" style={{ gridColumn: '1 / -1' }}>
               Webhook URL
-              <input value={chDraft.url} onChange={(e) => setChDraft({ ...chDraft, url: e.target.value })} placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…" />
+              <input value={chDraft.url} onChange={(e) => setChDraft({ ...chDraft, url: e.target.value })} placeholder={chDraft.channel_type === 'generic_webhook' ? 'https://example.com/webhook/video-summary' : 'https://open.feishu.cn/open-apis/bot/v2/hook/…'} />
             </label>
             <label className="field" style={{ gridColumn: '1 / -1' }}>
-              加签 Secret（机器人开了加签才填）
+              签名 Secret（视频总结订阅必填；飞书/钉钉按机器人设置）
               <input value={chDraft.secret} onChange={(e) => setChDraft({ ...chDraft, secret: e.target.value })} placeholder="可选" />
             </label>
             <label className="field" style={{ gridColumn: '1 / -1' }}>
@@ -2256,7 +2342,7 @@ function OpenApiPage() {
         </tbody>
       </table>
 
-      <h3 style={{ marginTop: 28 }}>视频总结投递（最近 {summaryDeliveries.length} 条）</h3>
+      <h3 style={{ marginTop: 28 }}>视频总结投递（最近 {deliveriesStatus === 'ready' ? `${summaryDeliveries.length} 条` : '待确认'}）</h3>
       <p className="muted">推送可能失败或结果未知；接收方可用增量拉取补漏。订阅开启前的历史事件请先拉取。</p>
       <table className="table">
         <thead><tr><th>渠道</th><th>事件</th><th>视频</th><th>状态</th><th>尝试</th><th>处理</th></tr></thead>
@@ -2269,9 +2355,13 @@ function OpenApiPage() {
             <td>{d.attempt}</td>
             <td>{['unknown', 'failed', 'dead'].includes(d.status) && <><button className="ghost" onClick={() => reconcileSummary(d, 'sent')}>核对为已收到</button><button className="ghost" onClick={() => reconcileSummary(d, 'retry')}>核对后重试</button></>}</td>
           </tr>)}
-          {summaryDeliveries.length === 0 && <tr><td colSpan={6} className="muted pad">暂无视频总结投递记录；拉取接口仍可独立使用。</td></tr>}
+          {deliveriesStatus === 'ready' && summaryDeliveries.length === 0 && <tr><td colSpan={6} className="muted pad">暂无视频总结投递记录；拉取接口仍可独立使用。</td></tr>}
+          {deliveriesStatus !== 'ready' && <tr><td colSpan={6} className="muted pad">{deliveriesStatus === 'loading' ? '正在读取投递记录…' : '投递记录读取失败，状态待确认。'}</td></tr>}
         </tbody>
       </table>
+          </div>}
+        </section>
+      </div>
     </div>
   )
 }

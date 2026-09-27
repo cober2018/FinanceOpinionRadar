@@ -66,6 +66,44 @@
   padding: 22px 26px 40px;
 }
 
+.gateway-layout {
+  display: grid;
+  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+  margin-top: 20px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.gateway-catalog {
+  border-right: 1px solid var(--line-soft);
+  padding: 18px 12px;
+}
+
+.gateway-catalog-label { color: var(--ink-400); font-size: 12px; padding: 0 10px 12px; }
+.gateway-service-selected { background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 12px 10px; font-weight: 600; }
+.gateway-detail { min-width: 0; padding: 20px 24px 28px; }
+.gateway-detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.gateway-detail-head h3 { margin: 0; }
+.gateway-mode-tabs { display: flex; gap: 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 3px; }
+.gateway-mode-tabs button { border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink-500); padding: 7px 16px; cursor: pointer; }
+.gateway-mode-tabs button.selected { background: var(--accent); color: #fff; }
+.gateway-path { display: flex; align-items: center; gap: 12px; padding: 14px 16px; margin: 14px 0; background: #0f1216; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.gateway-method { color: #27c98b; font-weight: 700; }
+.gateway-method-push { color: #7aa8ff; }
+.gateway-detail h4 { margin: 22px 0 10px; }
+.gateway-trial { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 16px; padding: 16px; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); }
+.gateway-trial-fields { display: grid; align-content: start; gap: 10px; }
+.gateway-response { margin: 0; min-height: 160px; padding: 12px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #0f1216; border-radius: var(--radius-sm); font-size: 12px; }
+
+@media (max-width: 850px) {
+  .gateway-layout { grid-template-columns: 1fr; }
+  .gateway-catalog { border-right: 0; border-bottom: 1px solid var(--line-soft); }
+  .gateway-detail-head { flex-wrap: wrap; }
+  .gateway-trial { grid-template-columns: 1fr; }
+}
+
 .stack {
   display: grid;
   gap: 16px;

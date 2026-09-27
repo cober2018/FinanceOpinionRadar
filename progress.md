@@ -64,3 +64,12 @@
 - 已对照后端路由、事件载荷和订阅门禁；复核发现“渠道未加载/读取失败”会误报 0 个订阅，已增加明确状态。前端构建与现有 1 个测试文件通过；最终 lint 待修正后重跑。根目录与前端 README 已同步。
 - 最终前端 build、lint、现有测试均退出 0；lint 仅有 5 条未改位置的既有 warning。OpenSpec 任务 5/5 完成，进入归档与本地集成。
 - 变更已归档并同步主规范；功能分支 `f1be6b8` 已并入本地 `main`（`f1e460e`）。`:8010/console/` 已切换到新前端产物，读回确认引用新 JS、资源返回 200，API 健康正常；合并后现有前端测试 1/1 通过。未向远端推送。
+
+## 2026-09-27 API 服务网关需求更正
+
+- 用户给出另一个本地项目的网关截图，随后明确“视频审核后总结”只需一个服务条目，详情内切换拉取与推送。当前页面仅是文字化契约展示，未满足网关式服务目录与详情交互。
+- 已只读核对 `/Users/mshengran/Project/DreamOAgents/frontend/src/views/DataManagement/APIs/index.vue`。参考项目目录/详情由真实服务注册表驱动；代理端点不能页面试读，发布审批和监控卡片含演示状态。雷达提案仅借鉴目录/详情/试读交互，复用自身真实 API、渠道和投递，等待确认。
+- 已修订 `build-video-summary-service-gateway` 的 proposal、design、spec 和 tasks：同一服务中切换 GET 拉取与 Webhook 推送；本轮未改业务代码。
+- 用户确认切换只负责显示，启停在各自详情内。核对发现拉取 Key 目前只有创建/吊销；已在提案中补入经审计的单 Key 暂停/恢复管理动作，永久吊销不可恢复。推送沿用渠道/订阅启停；整体提案仍待明确确认。
+- 用户已确认提案，隔离分支 `codex/video-summary-service-gateway` 实施完成页面重排及 Key 状态管理。隔离测试库的现有后端集成测试 3/3 通过，手工 Key 状态联调路径 8 步通过；前端 build、lint、现有测试 1/1 通过（lint 仍有 5 条未改位置的 warning）。浏览器已核对两种详情切换；本机 API :8010 不可达，未验证当前运行服务页面与真实下游。未合并、未推送、未部署。
+- OpenSpec `build-video-summary-service-gateway` 的 6/6 项任务已完成，主规范已同步，归档于 `openspec/changes/archive/2026-09-27-build-video-summary-service-gateway/`。
