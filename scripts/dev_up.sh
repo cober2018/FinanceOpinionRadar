@@ -15,6 +15,8 @@ REDIS_PORT=${REDIS_PORT:-$(sed -n 's/^REDIS_PORT=//p' .env 2>/dev/null)}
 REDIS_PORT=${REDIS_PORT:-6379}
 
 API_PORT=8010
+# 局域网开放：默认绑 0.0.0.0；想退回本机请用 API_HOST=127.0.0.1 make up
+API_HOST=${API_HOST:-0.0.0.0}
 API_LOG=/tmp/radar-api-8010.log
 WORKER_LOG=/tmp/radar-worker-beat.log
 PY=.venv/bin/python
@@ -55,7 +57,7 @@ start_detached() {
 
 start_api() {
   echo "==> 启动 API :${API_PORT}（日志 ${API_LOG}）"
-  start_detached "$PY" -m uvicorn app.main:app --reload --port "$API_PORT" --app-dir apps/api \
+  start_detached "$PY" -m uvicorn app.main:app --reload --host "$API_HOST" --port "$API_PORT" --app-dir apps/api \
     >"$API_LOG" 2>&1
   for _ in $(seq 1 20); do
     api_alive && { echo "    API 就绪"; return 0; }

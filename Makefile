@@ -2,6 +2,7 @@
 # doctor 的硬性失败项只有 .venv / Python 3.12;docker 项在 Task 5 (docker-compose.yml) 落地前仅 WARN。
 
 PORT ?= 8000
+HOST ?= 0.0.0.0
 PYTHON ?= .venv/bin/python
 
 .DEFAULT_GOAL := help
@@ -19,7 +20,7 @@ setup: ## 创建 .venv 并安装后端/前端依赖
 
 dev: ## 启动 API 开发服务器 (前端开发服务器用 make web)
 	docker compose up -d
-	$(PYTHON) -m uvicorn app.main:app --reload --port $(PORT) --app-dir apps/api
+	$(PYTHON) -m uvicorn app.main:app --reload --host $(HOST) --port $(PORT) --app-dir apps/api
 
 up: ## 一键幂等拉起全部组件：docker 依赖 + dtk + API :8010 + worker（已在跑的跳过）
 	@bash scripts/dev_up.sh up
