@@ -6,13 +6,13 @@
 import secrets
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.open.deps import hash_key
-from app.db.models import ApiKey, PushChannel
+from app.db.models import ApiKey, PushChannel, VideoSummaryDelivery, VideoSummaryEvent
 from app.db.session import get_db
 from app.services.audit import write_audit
 
@@ -47,6 +47,8 @@ def _serialize_channel(c: PushChannel) -> dict:
         "url": cfg.get("url") or "",
         "has_secret": bool(cfg.get("secret")),
         "enabled": c.enabled,
+        "summary_enabled": c.summary_enabled,
+        "viewpoint_enabled": cfg.get("viewpoint_enabled", True),
         "created_at": _iso(c.created_at),
     }
 
@@ -116,6 +118,7 @@ class PushChannelCreate(BaseModel):
     channel_type: Literal["generic_webhook", "feishu", "dingtalk"]
     url: str = Field(min_length=1, max_length=500)
     secret: str | None = Field(None, max_length=200)
+    viewpoint_enabled: bool = True
 
 
 class PushChannelPatch(BaseModel):
@@ -123,6 +126,8 @@ class PushChannelPatch(BaseModel):
     url: str | None = Field(None, min_length=1, max_length=500)
     secret: str | None = Field(None, max_length=200)
     enabled: bool | None = None
+    summary_enabled: bool | None = None
+    viewpoint_enabled: bool | None = None
 
 
 @router.get("/push-channels")
@@ -138,7 +143,11 @@ def create_push_channel(body: PushChannelCreate, session: DbDep):
     row = PushChannel(
         name=body.name.strip(),
         channel_type=body.channel_type,
-        config_json={"url": body.url.strip(), "secret": body.secret or ""},
+        config_json={
+            "url": body.url.strip(),
+            "secret": body.secret or "",
+            "viewpoint_enabled": body.viewpoint_enabled,
+        },
         enabled=True,
     )
     session.add(row)
@@ -170,8 +179,28 @@ def patch_push_channel(channel_id: int, body: PushChannelPatch, session: DbDep):
         cfg["url"] = updates["url"].strip()
     if "secret" in updates:
         cfg["secret"] = updates["secret"] or ""
+    if "viewpoint_enabled" in updates:
+        cfg["viewpoint_enabled"] = updates["viewpoint_enabled"]
     if "enabled" in updates:
         row.enabled = updates["enabled"]
+    summary_enabled = updates.get("summary_enabled", row.summary_enabled)
+    if summary_enabled:
+        if row.channel_type != "generic_webhook" or not cfg.get("secret"):
+            raise HTTPException(
+                status_code=422, detail="视频总结订阅仅支持配置签名密钥的通用 Webhook"
+            )
+        from app.services.video_summary_push import validate_target
+
+        try:
+            validate_target(str(cfg.get("url") or ""))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if "summary_enabled" in updates:
+        if summary_enabled and not row.summary_enabled:
+            cfg["summary_from_event_id"] = session.scalar(
+                select(VideoSummaryEvent.id).order_by(VideoSummaryEvent.id.desc()).limit(1)
+            ) or 0
+        row.summary_enabled = updates["summary_enabled"]
     row.config_json = cfg
     write_audit(
         session,
@@ -184,6 +213,67 @@ def patch_push_channel(channel_id: int, body: PushChannelPatch, session: DbDep):
     )
     session.commit()
     return _serialize_channel(row)
+
+
+@router.get("/video-summary-deliveries")
+def list_video_summary_deliveries(
+    session: DbDep,
+    limit: int = Query(50, ge=1, le=200),
+):
+    rows = session.execute(
+        select(VideoSummaryDelivery, PushChannel.name, VideoSummaryEvent)
+        .join(PushChannel, PushChannel.id == VideoSummaryDelivery.channel_id)
+        .join(VideoSummaryEvent, VideoSummaryEvent.id == VideoSummaryDelivery.event_id)
+        .order_by(VideoSummaryDelivery.id.desc())
+        .limit(limit)
+    ).all()
+    return {"items": [
+        {
+            "id": delivery.id,
+            "channel_id": delivery.channel_id,
+            "channel_name": channel_name,
+            "event_id": f"vsum-{event.id}",
+            "item_id": event.item_id,
+            "version": event.version,
+            "event_state": event.state,
+            "status": delivery.status,
+            "attempt": delivery.attempt,
+            "last_http_status": delivery.last_http_status,
+            "error": delivery.error,
+            "updated_at": delivery.updated_at,
+        }
+        for delivery, channel_name, event in rows
+    ]}
+
+
+class SummaryDeliveryReconcile(BaseModel):
+    outcome: Literal["sent", "retry"]
+    note: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/video-summary-deliveries/{delivery_id}/reconcile")
+def reconcile_summary_delivery(delivery_id: int, body: SummaryDeliveryReconcile, session: DbDep):
+    delivery = session.get(VideoSummaryDelivery, delivery_id)
+    if delivery is None:
+        raise HTTPException(status_code=404, detail="视频总结投递不存在")
+    if delivery.status not in ("unknown", "failed", "dead"):
+        raise HTTPException(status_code=409, detail="只有未知或失败投递可对账")
+    before = {"status": delivery.status, "attempt": delivery.attempt}
+    delivery.status = "sent" if body.outcome == "sent" else "failed"
+    if body.outcome == "retry":
+        delivery.attempt = 0
+    delivery.error = f"人工对账：{body.note.strip()}"[:500]
+    write_audit(
+        session,
+        actor="console",
+        action="reconcile",
+        resource_type="video_summary_delivery",
+        resource_id=delivery.id,
+        before=before,
+        after={"status": delivery.status, "note": body.note.strip()},
+    )
+    session.commit()
+    return {"id": delivery.id, "status": delivery.status}
 
 
 @router.delete("/push-channels/{channel_id}")

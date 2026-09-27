@@ -66,6 +66,9 @@ def summarize_source_item(session: Session, item_id: int, *, provider=None) -> d
     ).all()
     if not rows:
         return {"item_id": item_id, "status": "skipped_no_confirmed"}
+    from app.services.video_summary_feed import _review_state, record_ready_summary
+
+    _pending, _confirmed, source_fingerprint = _review_state(session, item_id)
 
     provider = provider or build_llm_provider(session)
     pack = get_prompt_registry().get(SUMMARY_PROMPT_VERSION)
@@ -96,8 +99,19 @@ def summarize_source_item(session: Session, item_id: int, *, provider=None) -> d
         logger.warning("summarize_empty_output", item_id=item_id, raw_head=getattr(resp, "raw_head", "")[:120])
         return {"item_id": item_id, "status": "skipped_empty_output"}
 
+    session.scalar(select(SourceItem).where(SourceItem.id == item_id).with_for_update())
+    session.expire_all()
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        session.rollback()
+        return {"item_id": item_id, "status": "skipped_no_item"}
+    pending, confirmed, current_fingerprint = _review_state(session, item_id)
+    if pending or not confirmed or current_fingerprint != source_fingerprint:
+        session.rollback()
+        return {"item_id": item_id, "status": "skipped_stale_input"}
     item.viewpoint_summary = summary[:500]
     item.summary_generated_at = datetime.now(UTC)
+    record_ready_summary(session, item, expected_fingerprint=source_fingerprint)
     session.commit()
     logger.info("summarize_done", item_id=item_id, chars=len(summary))
     return {"item_id": item_id, "status": "done", "summary": summary}

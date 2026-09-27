@@ -5,7 +5,7 @@
 """
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session
 from app.api.open.deps import require_api_key
 from app.api.v1.transcripts import _search_impl
 from app.api.v1.viewpoints import _serialize
-from app.db.models import Creator, Entity, SourceAccount, Topic, Viewpoint
+from app.db.models import Creator, Entity, SourceAccount, Topic, VideoSummaryEvent, Viewpoint
 from app.db.session import get_db
+from app.services.video_summary_feed import current_event, serialize_event
 
 router = APIRouter(
     prefix="/open/v1",
@@ -138,14 +139,46 @@ def get_item_summary(item_id: int, session: DbDep):
     if row is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
     item, creator_name = row
+    current = current_event(session, item_id)
+    latest = session.scalars(
+        select(VideoSummaryEvent)
+        .where(VideoSummaryEvent.item_id == item_id)
+        .order_by(VideoSummaryEvent.version.desc()).limit(1)
+    ).first()
     return {
         "item_id": item.id,
         "title": item.title,
         "display_name": creator_name,
         "item_type": item.item_type,
         "published_at": item.published_at,
-        "summary": item.viewpoint_summary,
-        "generated_at": item.summary_generated_at,
+        "summary": item.viewpoint_summary if current else None,
+        "generated_at": item.summary_generated_at if current else None,
+        "export_state": "ready" if current else ("withdrawn" if latest else "not_available"),
+        "version": current.version if current else None,
+        "event_id": f"vsum-{current.id}" if current else None,
+        "video_time": current.payload_json.get("video_time") if current else None,
+        "time_basis": current.payload_json.get("time_basis") if current else "unknown",
+    }
+
+
+@router.get("/video-summaries")
+def list_video_summary_events(
+    session: DbDep,
+    cursor: int = Query(0, ge=0, description="最后已处理的视频总结事件序号"),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """一视频一总结的版本变更流；ready 和 withdrawn 使用同一游标。"""
+    rows = session.scalars(
+        select(VideoSummaryEvent)
+        .where(VideoSummaryEvent.id > cursor)
+        .order_by(VideoSummaryEvent.id)
+        .limit(page_size + 1)
+    ).all()
+    page = rows[:page_size]
+    return {
+        "items": [serialize_event(event) for event in page],
+        "next_cursor": page[-1].id if page else cursor,
+        "has_more": len(rows) > page_size,
     }
 
 

@@ -1,5 +1,10 @@
 # 配置进度
 
+## 2026-09-26 单视频观点总结 API
+
+- 用户确认每条视频只需一个统一时间戳。现有 `GET /open/v1/items/{item_id}/summary` 已返回主播、总结与 `published_at`；普通视频将发布时间作为统一时间，直播使用已记录的开播时间。
+- 已在根 README 写明对外字段、API Key、空值与时间口径。无需重复增加接口，未改业务代码；当前部署状态未在本轮核验。
+
 - 当前状态：连接器已创建，ChatGPT 页面显示已连接账户。
 - 已完成：固定域名准备、当前工作区连接器创建、连接授权、本地安全检查。
 - 下一步：绑定 `FinanceOpinionRadar` ChatGPT 项目，完成工作区身份和文件读取验证。
@@ -41,3 +46,9 @@
 - code-reviewer 与 python-reviewer 最终复核均通过，无剩余高风险问题。
 - 已逐项核对规范、实现与验证证据：质量评测工具完成；当前只有 2 条 demo、无合格人工签署与独立验收覆盖，业务质量状态仍为 `not_evaluated`。
 - 最终复核完成；OpenSpec 已同步主规范并归档至 `openspec/changes/archive/2026-09-22-establish-finance-label-quality-baseline/`。业务人审样本缺口继续保留为 TODO。
+
+# 2026-09-27 视频总结开放接口
+
+- 已核对：`/open/v1/items/{item_id}/summary` 可按 ID 查询现有总结；当前 `PushDelivery` 是逐观点粒度，不能直接用于一视频一条总结。
+- 用户确认拉取与推送第一版同时支持。已创建独立 OpenSpec 提案；未实施接口、推送或数据库改动。
+- 提案获确认后在独立分支 `codex/radar-video-summary-open-api` 实施；已核对复核、总结、重抽、保留期与删除入口，并增加视频总结事件和独立投递表的模型/迁移，未改逐观点投递表。

@@ -523,6 +523,9 @@ def delete_source_item(item_id: int, session: DbDep):
     item = session.get(SourceItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    from app.services.video_summary_feed import erase_deleted_item_history
+
+    erase_deleted_item_history(session, item.id)
     _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
     _purge_item_files(session, item)
     session.delete(item)
@@ -606,11 +609,14 @@ def batch_delete_items(body: BatchDeleteRequest, session: DbDep):
 
     deleted: list[int] = []
     missing: list[int] = []
+    from app.services.video_summary_feed import erase_deleted_item_history
+
     for item_id in body.ids:
         item = session.get(SourceItem, item_id)
         if item is None:
             missing.append(item_id)
             continue
+        erase_deleted_item_history(session, item.id)
         _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
         _purge_item_files(session, item)
         session.delete(item)

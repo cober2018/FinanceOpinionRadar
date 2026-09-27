@@ -5,7 +5,8 @@ ALL_TABLES = (
     "viewpoint, viewpoint_evidence, creator_topic_snapshot, topic_consensus_daily, "
     "prompt_version, job_run, audit_log, live_chat_message, content_summary, "
     "app_setting, deleted_item_ref, entity_candidate, "
-    "api_key, api_call_log, push_channel, push_delivery"
+    "api_key, api_call_log, push_channel, push_delivery, "
+    "video_summary_event, video_summary_delivery"
 )
 
 EXPECTED_TABLES = {
@@ -32,6 +33,8 @@ EXPECTED_TABLES = {
     "api_call_log",
     "push_channel",
     "push_delivery",
+    "video_summary_event",
+    "video_summary_delivery",
 }
 
 
