@@ -215,6 +215,32 @@ def list_creators(session: DbDep):
     return {"items": list(by_creator.values())}
 
 
+@router.get("/broadcasters")
+def list_broadcasters(session: DbDep):
+    """Flat latest snapshot of source accounts for downstream follow directories."""
+    rows = session.scalars(
+        select(SourceAccount)
+        .join(Creator, Creator.id == SourceAccount.creator_id)
+        .order_by(SourceAccount.id)
+    ).all()
+    creators = {
+        creator.id: creator.display_name
+        for creator in session.scalars(select(Creator)).all()
+    }
+    return {
+        "items": [
+            {
+                "source_account_id": account.id,
+                "display_name": creators.get(account.creator_id),
+                "platform": account.platform,
+                "external_id": account.external_id,
+                "enabled": account.enabled,
+            }
+            for account in rows
+        ]
+    }
+
+
 @router.get("/entities")
 def list_entities(session: DbDep) -> dict:
     """标的词典：复用控制台 taxonomy 实现（同一数据源）。"""
