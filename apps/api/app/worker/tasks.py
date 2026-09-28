@@ -471,8 +471,13 @@ def extract_source_item_viewpoints(item_id: int) -> dict:
 
 @celery_app.task(name="dispatch_pending_extractions")
 def dispatch_pending_extractions() -> int:
-    """EPIC-04 补扫：transcribed 且应自动抽取（账号开视频监控、非 backfill）的条目派发。"""
+    """EPIC-04 补扫：transcribed 且应自动抽取（非 backfill）的条目派发。
+
+    vod 要求账号 auto_poll（手动模式账号的旧视频由用户手动抽取）；live 不限——
+    纯直播值守账号（manual）的直播转录完也要自动抽取（用户 2026-09-28）。
+    """
     from app.db.models import SourceAccount, SourceItem
+    from sqlalchemy import or_
 
     session = get_session_factory()()
     try:
@@ -483,7 +488,10 @@ def dispatch_pending_extractions() -> int:
                 SourceItem.status == "transcribed",
                 SourceItem.item_type.in_(["vod", "live"]),
                 SourceAccount.enabled.is_(True),
-                SourceAccount.discovery_mode == "auto_poll",
+                or_(
+                    SourceAccount.discovery_mode == "auto_poll",
+                    SourceItem.item_type == "live",
+                ),
             )
             .order_by(SourceItem.id)
             .limit(get_settings().prepare_sweep_batch_size)

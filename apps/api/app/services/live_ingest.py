@@ -660,4 +660,9 @@ def _close_stale_sessions(session, grace_sec: int) -> int:
             _persist_live_meta(item, base_meta)
             closed += 1
             logger.info("live_session_closed", item_id=item.id)
+            # 转录完即抽取（用户 2026-09-28）：直播转录收尾立即派发，不等补扫——
+            # 纯直播值守账号（discovery_mode=manual）不进 dispatch_pending_extractions
+            from app.worker.celery_app import celery_app
+
+            celery_app.send_task("extract_source_item_viewpoints", args=[item.id])
     return closed

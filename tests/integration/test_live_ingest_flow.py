@@ -405,3 +405,75 @@ def test_session_close_after_grace(
     assert item.status == "transcribed"
     assert item.metadata_json["live"]["closed"] is True
     assert result["sessions_active"] == 0
+
+
+def test_session_close_dispatches_extraction(
+    db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """收尾即派发观点抽取（用户 2026-09-28）：transcribing→transcribed 同事务派发。"""
+    from app.worker.celery_app import celery_app
+
+    _ensure_watch_account(db_session)
+    _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
+    _set_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(live_ingest, "normalize_audio", _fake_normalize(60_000))
+
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    item = _live_item(db_session)
+    stale = datetime.now(UTC) - timedelta(seconds=3600)
+    meta = dict(item.metadata_json)
+    live_meta = dict(meta["live"])
+    live_meta["last_segment_at"] = stale.isoformat()
+    meta["live"] = live_meta
+    item.metadata_json = meta
+    db_session.commit()
+
+    dispatched: list[tuple[str, list]] = []
+    monkeypatch.setattr(
+        celery_app, "send_task", lambda name, args=None, **kw: dispatched.append((name, args or []))
+    )
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    db_session.expire_all()
+    assert ("extract_source_item_viewpoints", [item.id]) in dispatched
+
+
+def test_extraction_sweep_covers_manual_account_live(
+    db_session, database_url, monkeypatch
+):
+    """补扫放宽（用户 2026-09-28）：manual 纯直播值守账号的 transcribed 直播也被补扫。"""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db.models import SourceAccount, SourceItem
+    from app.worker import tasks as tasks_mod
+
+    # 换绑 worker 会话工厂到测试库（否则补扫打开发库）
+    factory = sessionmaker(bind=create_engine(database_url), expire_on_commit=False)
+    monkeypatch.setattr(tasks_mod, "get_session_factory", lambda: factory)
+
+    _ensure_watch_account(db_session)
+    account = (
+        db_session.query(SourceAccount).filter_by(external_id="新闻联播").one()
+    )
+    account.enabled = True
+    account.discovery_mode = "manual"  # 纯直播值守账号
+    item = SourceItem(
+        source_account_id=account.id,
+        external_item_id="live:新闻联播:2026-09-17",
+        item_type="live",
+        status="transcribed",
+        published_at=datetime.now(UTC),
+    )
+    db_session.add(item)
+    db_session.commit()
+
+    dispatched: list[tuple[str, list]] = []
+    monkeypatch.setattr(
+        tasks_mod.celery_app,
+        "send_task",
+        lambda name, args=None, **kw: dispatched.append((name, args or [])),
+    )
+    tasks_mod.dispatch_pending_extractions()
+    assert ("extract_source_item_viewpoints", [item.id]) in dispatched
