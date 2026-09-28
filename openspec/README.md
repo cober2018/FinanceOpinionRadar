@@ -12,6 +12,7 @@
 
 ## 已完成
 
+- `changes/archive/2026-09-29-catalog-broadcaster-open-interface/`：补齐主播清单的开放接口目录、契约及真实试读入口；仅拉取，代码完成但尚未部署运行页面。
 - 使用本机 OpenSpec 1.2.0 初始化项目，生成 `.codex/` 下的 Codex skills 和命令模板。
 - 第一批质量基线已完成实施和归档，主规范位于 `specs/finance-label-quality-baseline/spec.md`，全量严格校验通过。
 

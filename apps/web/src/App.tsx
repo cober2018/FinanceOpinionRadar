@@ -1991,6 +1991,7 @@ const CHANNEL_TYPE_CN: Record<string, string> = {
 }
 
 function OpenApiPage() {
+  const [service, setService] = useState<'summaries' | 'broadcasters'>('summaries')
   const [mode, setMode] = useState<'pull' | 'push'>('pull')
   const [trialKey, setTrialKey] = useState('')
   const [trialCursor, setTrialCursor] = useState('0')
@@ -2074,15 +2075,20 @@ function OpenApiPage() {
   const trialPull = async () => {
     const cursor = Number(trialCursor)
     const pageSize = Number(trialPageSize)
-    if (!trialKey.trim() || !Number.isSafeInteger(cursor) || cursor < 0 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200) {
-      setTrialResult('请填写 API Key；cursor 须为非负整数，page_size 须为 1–200。')
+    if (!trialKey.trim()) {
+      setTrialResult('请填写 API Key。')
+      return
+    }
+    if (service === 'summaries' && (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200)) {
+      setTrialResult('cursor 须为非负整数，page_size 须为 1–200。')
       return
     }
     setTrialLoading(true)
     setTrialResult(null)
     try {
       const query = new URLSearchParams({ cursor: String(cursor), page_size: String(pageSize) })
-      const resp = await fetch(`/open/v1/video-summaries?${query}`, { headers: { 'X-API-Key': trialKey.trim() } })
+      const path = service === 'broadcasters' ? '/open/v1/broadcasters' : `/open/v1/video-summaries?${query}`
+      const resp = await fetch(path, { headers: { 'X-API-Key': trialKey.trim() } })
       const body: unknown = await resp.json()
       setTrialResult(JSON.stringify({ http_status: resp.status, body }, null, 2))
     } catch (e) {
@@ -2175,9 +2181,37 @@ function OpenApiPage() {
       <div className="gateway-layout">
         <aside className="gateway-catalog" aria-label="服务目录">
           <div className="gateway-catalog-label">服务目录</div>
-          <div className="gateway-service-selected">视频审核后总结</div>
+          {([['summaries', '视频审核后总结'], ['broadcasters', '主播清单']] as const).map(([id, label]) => (
+            <button key={id} type="button" className={`gateway-service${service === id ? ' gateway-service-selected' : ''}`} aria-pressed={service === id} disabled={trialLoading} onClick={() => { setService(id); setTrialResult(null) }}>
+              {label}
+            </button>
+          ))}
         </aside>
-        <section className="gateway-detail" aria-label="视频审核后总结详情">
+        <section className="gateway-detail" aria-label={service === 'broadcasters' ? '主播清单详情' : '视频审核后总结详情'}>
+          {service === 'broadcasters' ? <>
+            <div className="gateway-detail-head"><div>
+              <p className="muted">开放接口 / 服务目录</p>
+              <h3>主播清单</h3>
+              <p className="muted">拉取全部来源账号的当前快照，供下游同步主播目录与关注关系。</p>
+            </div></div>
+            <div className="gateway-path"><span className="gateway-method">GET</span><code>/open/v1/broadcasters</code></div>
+            <p>使用 <code>X-API-Key</code> 鉴权，无查询参数。与视频总结共用 API Key，可在“视频审核后总结 → 拉取”详情中创建、暂停、启用或吊销。</p>
+            <h4>返回字段</h4>
+            <p>返回 <code>items</code> 数组，每项代表一个来源账号；包括启用和停用的账号。</p>
+            <table className="table"><thead><tr><th>字段</th><th>说明</th></tr></thead><tbody>
+              <tr><td><code>source_account_id</code></td><td>稳定来源账号 ID，用于关联视频总结与关注关系</td></tr>
+              <tr><td><code>display_name</code></td><td>主播名称，不作为唯一标识</td></tr>
+              <tr><td><code>platform</code></td><td>来源平台</td></tr>
+              <tr><td><code>external_id</code></td><td>平台账号标识</td></tr>
+              <tr><td><code>enabled</code></td><td>账号是否启用</td></tr>
+            </tbody></table>
+            <p className="muted">这是完整快照，不是增量事件流。下游按账号 ID 同步增删改；清单中缺失的账号应标记停用，不按同名主播迁移关注关系。</p>
+            <h4>在线试读</h4>
+            <div className="gateway-trial"><div className="gateway-trial-fields">
+              <label className="field">API Key<input type="password" autoComplete="off" value={trialKey} onChange={(e) => setTrialKey(e.target.value)} placeholder="仅用于本次页面试读" /></label>
+              <button className="primary" onClick={trialPull} disabled={trialLoading}>{trialLoading ? '请求中…' : '运行请求'}</button>
+            </div><pre className="gateway-response" aria-live="polite">{trialResult ?? '运行请求后显示实际响应。空 items 表示当前没有来源账号。'}</pre></div>
+          </> : <>
           <div className="gateway-detail-head">
             <div>
               <p className="muted">开放接口 / 服务目录</p>
@@ -2360,6 +2394,7 @@ function OpenApiPage() {
         </tbody>
       </table>
           </div>}
+          </>}
         </section>
       </div>
     </div>

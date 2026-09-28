@@ -82,7 +82,8 @@
 }
 
 .gateway-catalog-label { color: var(--ink-400); font-size: 12px; padding: 0 10px 12px; }
-.gateway-service-selected { background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 12px 10px; font-weight: 600; }
+.gateway-service { display: block; width: 100%; text-align: left; background: transparent; border: 0; border-left: 3px solid transparent; border-radius: var(--radius-sm); padding: 12px 10px; color: inherit; cursor: pointer; }
+.gateway-service-selected { background: var(--accent-soft); border-left-color: var(--accent); font-weight: 600; }
 .gateway-detail { min-width: 0; padding: 20px 24px 28px; }
 .gateway-detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .gateway-detail-head h3 { margin: 0; }
