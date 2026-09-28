@@ -2,9 +2,11 @@
 
 import hashlib
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import Creator, Entity, SourceAccount, SourceItem, VideoSummaryEvent, Viewpoint
@@ -35,14 +37,18 @@ def _review_state(session: Session, item_id: int) -> tuple[int, int, str]:
         .where(Viewpoint.source_item_id == item_id)
         .order_by(Viewpoint.id)
     ).all()
+    item = session.get(SourceItem, item_id)
+    source = _video_context(session, item) if item else None
+    return _review_state_from_rows(rows, source)
+
+
+def _review_state_from_rows(rows: Sequence[Any], source: dict | None) -> tuple[int, int, str]:
     pending = sum(v.verification_status in ("candidate", "needs_review") for v, _ in rows)
     confirmed = [(v, name) for v, name in rows if v.verification_status == "confirmed"]
     evidence = [
         [v.id, v.claim, v.stance, v.horizon, v.entity_id, v.entity_raw, name]
         for v, name in confirmed
     ]
-    item = session.get(SourceItem, item_id)
-    source = _video_context(session, item) if item else None
     fingerprint = hashlib.sha256(
         json.dumps([evidence, source], ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()
@@ -55,18 +61,61 @@ def _video_context(session: Session, item: SourceItem) -> dict:
         .join(SourceAccount, SourceAccount.creator_id == Creator.id)
         .where(SourceAccount.id == item.source_account_id)
     ).first()
+    return _source_context(item, row[0] if row else None, row[1] if row else None)
+
+
+def _source_context(item: SourceItem, display_name: str | None, platform: str | None) -> dict:
     live = item.item_type == "live"
     return {
         "source_account_id": item.source_account_id,
-        "display_name": row[0] if row else None,
+        "display_name": display_name,
         "video_time": item.published_at.isoformat() if item.published_at else None,
         "time_basis": (
             ("live_started_at" if live else "published_at") if item.published_at else "unknown"
         ),
-        "platform": row[1] if row else None,
+        "platform": platform,
         "title": item.title,
         "item_type": item.item_type,
     }
+
+
+def valid_summary_candidates(
+    session: Session, candidates: list[tuple[SourceItem, VideoSummaryEvent]],
+) -> set[int]:
+    if not candidates:
+        return set()
+    item_ids = [item.id for item, _ in candidates]
+    latest = dict(session.execute(
+        select(VideoSummaryEvent.item_id, func.max(VideoSummaryEvent.version))
+        .where(VideoSummaryEvent.item_id.in_(item_ids)).group_by(VideoSummaryEvent.item_id)
+    ).all())
+    reviews: dict[int, list[tuple[Viewpoint, str | None]]] = {item_id: [] for item_id in item_ids}
+    for viewpoint, name in session.execute(
+        select(Viewpoint, Entity.canonical_name)
+        .outerjoin(Entity, Entity.id == Viewpoint.entity_id)
+        .where(Viewpoint.source_item_id.in_(item_ids)).order_by(Viewpoint.id)
+    ):
+        reviews[viewpoint.source_item_id].append((viewpoint, name))
+    accounts = {
+        account_id: (name, platform)
+        for account_id, name, platform in session.execute(
+            select(SourceAccount.id, Creator.display_name, SourceAccount.platform)
+            .join(Creator, Creator.id == SourceAccount.creator_id)
+            .where(SourceAccount.id.in_({item.source_account_id for item, _ in candidates}))
+        )
+    }
+    valid = set()
+    for item, event in candidates:
+        name, platform = accounts.get(item.source_account_id, (None, None))
+        pending, confirmed, fingerprint = _review_state_from_rows(
+            reviews[item.id], _source_context(item, name, platform),
+        )
+        if (
+            event.state == "ready" and latest.get(item.id) == event.version
+            and confirmed and not pending and fingerprint == event.fingerprint
+        ):
+            valid.add(item.id)
+    return valid
 
 
 def serialize_event(event: VideoSummaryEvent) -> dict:

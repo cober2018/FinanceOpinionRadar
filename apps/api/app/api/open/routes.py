@@ -14,9 +14,17 @@ from sqlalchemy.orm import Session
 from app.api.open.deps import require_api_key
 from app.api.v1.transcripts import _search_impl
 from app.api.v1.viewpoints import _serialize
-from app.db.models import Creator, Entity, SourceAccount, Topic, VideoSummaryEvent, Viewpoint
+from app.db.models import (
+    Creator,
+    Entity,
+    SourceAccount,
+    SourceItem,
+    Topic,
+    VideoSummaryEvent,
+    Viewpoint,
+)
 from app.db.session import get_db
-from app.services.video_summary_feed import current_event, serialize_event
+from app.services.video_summary_feed import current_event, serialize_event, valid_summary_candidates
 
 router = APIRouter(
     prefix="/open/v1",
@@ -179,6 +187,44 @@ def list_video_summary_events(
         "items": [serialize_event(event) for event in page],
         "next_cursor": page[-1].id if page else cursor,
         "has_more": len(rows) > page_size,
+    }
+
+
+@router.get("/broadcasters/recent-summaries")
+def list_recent_broadcaster_summaries(session: DbDep):
+    accounts = session.scalars(select(SourceAccount).order_by(SourceAccount.id)).all()
+    summaries: dict[int, list[dict]] = {account.id: [] for account in accounts}
+    latest = (
+        select(VideoSummaryEvent.item_id, func.max(VideoSummaryEvent.version).label("version"))
+        .group_by(VideoSummaryEvent.item_id).subquery()
+    )
+    items = session.execute(
+        select(SourceItem, VideoSummaryEvent)
+        .join(latest, latest.c.item_id == SourceItem.id)
+        .join(VideoSummaryEvent, (VideoSummaryEvent.item_id == SourceItem.id)
+              & (VideoSummaryEvent.version == latest.c.version))
+        .where(VideoSummaryEvent.state == "ready")
+        .order_by(SourceItem.source_account_id, SourceItem.published_at.desc().nullslast(),
+                  SourceItem.summary_generated_at.desc().nullslast(), SourceItem.id.desc())
+    )
+    for batch in items.partitions(100):
+        candidates = [
+            (item, event) for item, event in batch
+            if item.source_account_id in summaries
+            and len(summaries[item.source_account_id]) < 5
+        ]
+        valid = valid_summary_candidates(session, candidates)
+        for item, event in candidates:
+            selected = summaries[item.source_account_id]
+            if (
+                item.id in valid and len(selected) < 5
+                and (event.payload_json.get("summary") or "").strip()
+            ):
+                selected.append(serialize_event(event))
+    return {
+        "complete": True,
+        "accounts": [{"source_account_id": account.id, "summaries": summaries[account.id]}
+                     for account in accounts],
     }
 
 
