@@ -57,6 +57,7 @@ def _video_context(session: Session, item: SourceItem) -> dict:
     ).first()
     live = item.item_type == "live"
     return {
+        "source_account_id": item.source_account_id,
         "display_name": row[0] if row else None,
         "video_time": item.published_at.isoformat() if item.published_at else None,
         "time_basis": (
