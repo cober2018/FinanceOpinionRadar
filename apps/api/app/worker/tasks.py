@@ -503,7 +503,29 @@ def dispatch_pending_extractions() -> int:
                 continue
             celery_app.send_task("extract_source_item_viewpoints", args=[item.id])
             dispatched += 1
-        logger.info("dispatch_pending_extractions", dispatched=dispatched)
+        # 兜底：reviewing 但无待审观点的条目收尾 ready + 派总结（自动确认路径
+        # 断链、任务中断等一切漏网；2026-09-28 直播实录 931/966 永卡 reviewing）
+        from app.db.models import Viewpoint
+        from app.services.summarizer import promote_item_if_reviewed
+
+        promoted = 0
+        for item in (
+            session.query(SourceItem)
+            .filter(
+                SourceItem.status == "reviewing",
+                ~session.query(Viewpoint.id)
+                .where(
+                    Viewpoint.source_item_id == SourceItem.id,
+                    Viewpoint.verification_status.in_(("candidate", "needs_review")),
+                )
+                .exists(),
+            )
+            .limit(get_settings().prepare_sweep_batch_size)
+            .all()
+        ):
+            if promote_item_if_reviewed(session, item):
+                promoted += 1
+        logger.info("dispatch_pending_extractions", dispatched=dispatched, promoted=promoted)
         return dispatched
     finally:
         session.close()

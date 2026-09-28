@@ -118,9 +118,10 @@ def test_extraction_happy_path(db_session, tracked_transcribed_item):
     assert vp.entity_id is None
     cand = db_session.query(EntityCandidate).filter_by(raw_name="黄金").one()
     assert cand.entity_type == "commodity"
-    # 状态推进：transcribed → extracting → reviewing
+    # 状态推进：transcribed → extracting → reviewing；reviewer 全自动确认后
+    # 直接收尾 ready（2026-09-28 修复：此前永卡 reviewing）
     db_session.expire(tracked_transcribed_item)
-    assert tracked_transcribed_item.status == "reviewing"
+    assert tracked_transcribed_item.status == "ready"
     # run 存档索引
     runs = tracked_transcribed_item.metadata_json["llm_runs"]
     assert len(runs) == 1 and runs[0]["created"] == 1 and "llm-runs/" in runs[0]["uri"]

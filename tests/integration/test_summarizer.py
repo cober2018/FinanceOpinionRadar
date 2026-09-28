@@ -17,18 +17,18 @@ class StubLLM:
         return SimpleNamespace(data=self.data, raw_head="")
 
 
-def _mk_item_with_confirmed(db_session, *, confirmed=2, pending=0) -> SourceItem:
+def _mk_item_with_confirmed(db_session, *, confirmed=2, pending=0, ext="sum_v1") -> SourceItem:
     creator = Creator(display_name="总结主播", status="active")
     db_session.add(creator)
     db_session.flush()
     account = SourceAccount(
-        creator_id=creator.id, platform="douyin", external_id="sec_sum", discovery_mode="auto_poll"
+        creator_id=creator.id, platform="douyin", external_id=f"sec_{ext}", discovery_mode="auto_poll"
     )
     db_session.add(account)
     db_session.flush()
     item = SourceItem(
         source_account_id=account.id,
-        external_item_id="sum_v1",
+        external_item_id=ext,
         item_type="vod",
         status="ready",
         title="9月24日复盘",
@@ -138,3 +138,31 @@ def test_summarize_key_drift_fallback(db_session):
     llm = StubLLM({"text": "键名漂移的总结内容。"})
     out = summarize_source_item(db_session, item.id, provider=llm)
     assert out["status"] == "done" and out["summary"] == "键名漂移的总结内容。"
+
+
+def test_promote_item_if_reviewed_dispatches(db_session, monkeypatch):
+    """收尾闸：reviewing + 全确认 → ready + 派总结；有待审不动；非 reviewing 不动。"""
+    from app.services.summarizer import dispatch_summarize, promote_item_if_reviewed
+
+    sent: list[int] = []
+    monkeypatch.setattr("app.services.summarizer.dispatch_summarize", lambda iid: sent.append(iid))
+
+    item = _mk_item_with_confirmed(db_session, confirmed=2, pending=0)
+    item.status = "reviewing"
+    db_session.commit()
+
+    assert promote_item_if_reviewed(db_session, item) is True
+    db_session.expire_all()
+    assert db_session.get(SourceItem, item.id).status == "ready"
+    assert sent == [item.id]
+
+    # 再跑：已 ready，不重复
+    assert promote_item_if_reviewed(db_session, item) is False and sent == [item.id]
+
+    # 有待审观点：不提升
+    item2 = _mk_item_with_confirmed(db_session, confirmed=1, pending=1, ext="sum_v2")
+    item2.status = "reviewing"
+    db_session.commit()
+    assert promote_item_if_reviewed(db_session, item2) is False
+    db_session.expire_all()
+    assert db_session.get(SourceItem, item2.id).status == "reviewing"

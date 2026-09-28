@@ -84,29 +84,11 @@ def _lock_item_for_review(session: Session, vp: Viewpoint) -> None:
 
 
 def _item_ready_when_no_pending(session: Session, item: SourceItem) -> None:
-    """item 无剩余 candidate/needs_review 且状态为 reviewing → ready。
+    """人工复核收尾：无剩余待审 → ready + 派发总结（实现在 summarizer，
+    与 reviewer 自动确认路径/beat 兜底共用同一道闸）。"""
+    from app.services.summarizer import promote_item_if_reviewed
 
-    全部复核完成即进入下一环节：自动派发观点一句话总结（用户 2026-09-24）。
-    """
-    if item.status != "reviewing":
-        return
-    pending = (
-        session.query(func.count(Viewpoint.id))
-        .filter(
-            Viewpoint.source_item_id == item.id,
-            Viewpoint.verification_status.in_(["candidate", "needs_review"]),
-        )
-        .scalar()
-    )
-    if not pending:
-        from app.domain.pipeline_states import ensure_transition
-
-        ensure_transition(item.status, "ready")
-        item.status = "ready"
-        session.commit()
-        from app.services.summarizer import dispatch_summarize
-
-        dispatch_summarize(item.id)
+    promote_item_if_reviewed(session, item)
 
 
 @router.get("")

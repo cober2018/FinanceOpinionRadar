@@ -331,6 +331,11 @@ def extract_source_item(
             ensure_transition(item.status, "ready")
             item.status = "ready"
         session.commit()
+        # reviewer 全部自动确认（无剩余待审）→ 直接收尾 ready + 派发总结——
+        # 不挂这条，全自动路径的条目会永卡 reviewing（2026-09-28 直播实录）
+        from app.services.summarizer import promote_item_if_reviewed
+
+        promote_item_if_reviewed(session, item)
 
         logger.info(
             "extract_done",

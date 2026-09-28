@@ -141,3 +141,31 @@ def dispatch_summarize(item_id: int) -> None:
         log.info("summarize_dispatched", item_id=item_id)
     except Exception as exc:  # noqa: BLE001
         log.warning("summarize_dispatch_failed", item_id=item_id, error=str(exc)[:150])
+
+
+def promote_item_if_reviewed(session: Session, item: SourceItem) -> bool:
+    """reviewing 且无待审观点（candidate/needs_review）→ ready + 派发总结。
+
+    人工确认/驳回端点、reviewer 自动确认（extraction 收尾）、beat 兜底扫描三条
+    路径统一走这里（2026-09-28 实录：大潘/张心朔等直播观点全被 reviewer 自动
+    确认，却无人触发收尾检查，条目永卡 reviewing、总结永不生成）。
+    """
+    if item.status != "reviewing":
+        return False
+    pending = (
+        session.query(func.count(Viewpoint.id))
+        .filter(
+            Viewpoint.source_item_id == item.id,
+            Viewpoint.verification_status.in_(["candidate", "needs_review"]),
+        )
+        .scalar()
+    )
+    if pending:
+        return False
+    from app.domain.pipeline_states import ensure_transition
+
+    ensure_transition(item.status, "ready")
+    item.status = "ready"
+    session.commit()
+    dispatch_summarize(item.id)
+    return True
