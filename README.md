@@ -61,7 +61,7 @@ flowchart LR
 
 另提供 `GET /open/v1/broadcasters` 主播清单接口：使用 `X-API-Key`，返回当前来源账号的完整扁平快照。每项包含 `source_account_id`、`display_name`、`platform`、`external_id` 和 `enabled`；下游可按稳定账号 ID 做本地增删改同步，清单缺失的账号应标记停用而不是按名称迁移关注关系。
 
-2026-09-29 前端修补：开放接口目录新增“主播清单”独立服务，提供仅拉取详情、鉴权/字段说明与在线试读。该前端修补尚未部署到 `:8010`；规范见 `openspec/changes/archive/2026-09-29-catalog-broadcaster-open-interface/`。
+2026-09-29 前端修补：开放接口目录新增“主播清单”独立服务，提供仅拉取详情、鉴权/字段说明与在线试读。已快进合入本地 `main`，合并后构建及现有测试通过；6 条其他本地分支均已合入并删除，仅保留 `main`，原独立工作区保留文件并转为 detached HEAD。远端目前仅有 `main`，本次未上传或部署到 `:8010`；规范见 `openspec/changes/archive/2026-09-29-catalog-broadcaster-open-interface/`。
 
 新增 `GET /open/v1/broadcasters/recent-summaries`，同样使用 `X-API-Key`，返回 `complete=true` 和全部来源账号的 `accounts`，每项含 `source_account_id` 与最多五条 `summaries`。先验证当前审核与来源指纹、最新 ready 版本，再按视频发布时间倒序选取；无时间排后，生成时间和视频 ID 用于稳定排序。不足五条按实返回，空账号也保留。下游可同步独立本地预览，不需要为历史预览发送个人通知或推进事件游标。本地真实数据只读核对通过；DreamOAgents 新预览版本尚待发布联调。
 

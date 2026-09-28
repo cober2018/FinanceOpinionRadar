@@ -1,5 +1,11 @@
 # 配置发现
 
+## 2026-09-29 分支清理依据
+
+- 本地其余 6 条分支全部已是 main 的祖先，没有未合入提交。三个分支被独立工作区占用，但工作区均干净；在同一 HEAD 脱离分支后可删除分支且不删除文件。
+- `codex/dreamo-notification-contract` 原跟踪旧 origin/main；虽然已合入本地 main，Git 的 `branch -d` 会按未更新的 upstream 拒绝删除。核实本地包含关系后解除该分支 upstream，再以 `branch -d` 安全删除；未使用强制删除。
+- 远端实际仅 main，本次不需要远端删除，不将本地合入当作推送或部署。
+
 ## 2026-09-29 主播清单未展示的根因
 
 - `5b2012b` 仅新增后端 `/open/v1/broadcasters`、事件账号 ID 和 README，没有修改前端目录。OpenApiPage 原本固定只有视频总结，因此刷新最新构建也不会出现主播清单。
