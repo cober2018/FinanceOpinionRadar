@@ -27,7 +27,7 @@ def sweep_live_segments(settings=None, *, now: datetime | None = None) -> dict:
         return {"noop": True}
     cutoff = (now or datetime.now(UTC)) - timedelta(days=s.live_segment_retention_days)
     files_deleted, dirs_deleted, bytes_freed = 0, 0, 0
-    for path in root.rglob("*.ts"):
+    for path in (*root.rglob("*.ts"), *root.rglob("*.TS")):  # StreamCap 落盘 .TS 大写
         try:
             stat = path.stat()
         except OSError:

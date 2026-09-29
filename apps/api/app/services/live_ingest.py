@@ -527,6 +527,15 @@ def _process_segment(
     key = str(seg.index)
     if key in processed:
         return "processed"  # 幂等：重跑跳出
+    import time as _time
+
+    if (
+        s.live_segment_settle_sec > 0
+        and _time.time() - seg.mtime < s.live_segment_settle_sec
+    ):
+        # 分片仍在写入（mtime 新鲜）：转写会截断成部分内容（2026-09-29 实录：
+        # 大潘 10 分钟分片在 2 分钟时被转，注册表记 118s 后续同 key 跳过）
+        return "writing"
     if errors.get(key, {}).get("attempts", 0) >= s.live_segment_max_attempts:  # F4
         return "skipped"
     if len(processed) >= s.live_max_segments_per_session:
@@ -638,6 +647,21 @@ def _count_pending(live_meta: dict) -> int:
     )
 
 
+def _disk_recent_activity(item, cutoff: datetime) -> bool:
+    """会话目录里是否有 mtime 晚于 cutoff 的分片（磁盘仍在活动）。"""
+    paths = (item.metadata_json or {}).get("live", {}).get("segment_paths") or {}
+    dirs = {Path(p).parent for p in paths.values() if p}
+    for d in dirs:
+        try:
+            # StreamCap 落盘 .TS 大写；pathlib.glob 在 macOS 大小写敏感，双模式并扫
+            for f in (*d.glob("*.ts"), *d.glob("*.TS")):
+                if datetime.fromtimestamp(f.stat().st_mtime, UTC) >= cutoff:
+                    return True
+        except OSError:
+            continue
+    return False
+
+
 def _close_stale_sessions(session, grace_sec: int) -> int:
     """G1：静默 > grace 的 transcribing 会话收尾（状态机 transcribing→transcribed 已允许）。"""
     cutoff = datetime.now(UTC) - timedelta(seconds=grace_sec)
@@ -651,18 +675,23 @@ def _close_stale_sessions(session, grace_sec: int) -> int:
         last = (item.metadata_json or {}).get("live", {}).get("last_segment_at")
         if last is None:
             continue
-        if datetime.fromisoformat(last) < cutoff:
-            ensure_transition(item.status, "transcribed")
-            item.status = "transcribed"
-            base_meta = dict(item.metadata_json or {})
-            live_meta = _normalize_live_meta(base_meta)
-            live_meta["closed"] = True
-            _persist_live_meta(item, base_meta)
-            closed += 1
-            logger.info("live_session_closed", item_id=item.id)
-            # 转录完即抽取（用户 2026-09-28）：直播转录收尾立即派发，不等补扫——
-            # 纯直播值守账号（discovery_mode=manual）不进 dispatch_pending_extractions
-            from app.worker.celery_app import celery_app
+        if datetime.fromisoformat(last) >= cutoff:
+            continue
+        if _disk_recent_activity(item, cutoff):
+            # 注册表过期但磁盘分片仍在落/等待转写（在写分片被 settle 门禁跳过期间
+            # 注册表不更新）——不能 close，否则后续分片被终态守卫整场丢弃
+            continue
+        ensure_transition(item.status, "transcribed")
+        item.status = "transcribed"
+        base_meta = dict(item.metadata_json or {})
+        live_meta = _normalize_live_meta(base_meta)
+        live_meta["closed"] = True
+        _persist_live_meta(item, base_meta)
+        closed += 1
+        logger.info("live_session_closed", item_id=item.id)
+        # 转录完即抽取（用户 2026-09-28）：直播转录收尾立即派发，不等补扫——
+        # 纯直播值守账号（discovery_mode=manual）不进 dispatch_pending_extractions
+        from app.worker.celery_app import celery_app
 
-            celery_app.send_task("extract_source_item_viewpoints", args=[item.id])
+        celery_app.send_task("extract_source_item_viewpoints", args=[item.id])
     return closed

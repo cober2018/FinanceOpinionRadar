@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     live_scan_interval_sec: int = 300  # beat：分片扫描
     live_close_grace_sec: int = 900  # 分片静默 ≥ 此值 → 会话视为下播收尾
     live_min_segment_sec: int = 30  # 小于视为残片跳过（F5：不计入转写偏移）
+    live_segment_settle_sec: int = 120  # 分片 mtime 新鲜窗口：仍在写入，不转写（防截断）
     live_max_segments_per_session: int = 120  # 防失控（4h@2min 上限量级）
     live_segment_max_attempts: int = 3  # 同分片连续失败 N 次后跳过记账（F4）
     # StreamCap recordings.json 在共享卷上的绝对路径；空 = 值守桥不启用

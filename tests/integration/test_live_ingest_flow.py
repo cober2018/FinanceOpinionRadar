@@ -24,6 +24,7 @@ def _settings(tmp_path):
         live_segments_dir=str(tmp_path),
         live_close_grace_sec=900,
         live_min_segment_sec=30,
+        live_segment_settle_sec=0,  # 默认关：老用例分片 mtime=now；新用例显式开窗
         live_max_segments_per_session=120,
         live_segment_max_attempts=3,
     )
@@ -309,6 +310,7 @@ def test_max_segments_per_session_stops_scan(flow, db_session, monkeypatch):
             live_segments_dir=str(root),
             live_close_grace_sec=900,
             live_min_segment_sec=30,
+            live_segment_settle_sec=0,
             live_max_segments_per_session=2,
             live_segment_max_attempts=3,
         ),
@@ -378,6 +380,17 @@ def test_segment_retry_cap_skips_after_max_attempts(
     assert result["segments_failed"] == 0
 
 
+def _age_dir_segs(tmp_path, seconds: int = 3600) -> None:
+    """目录内全部 .ts 的 mtime 回拨（模拟真下播：磁盘活动也过期）。"""
+    import os
+    import time as time_mod
+
+    past = time_mod.time() - seconds
+    day = tmp_path / "新闻联播" / "2026-09-17"
+    for f in (*day.glob("*.ts"), *day.glob("*.TS")):
+        os.utime(f, (past, past))
+
+
 def test_session_close_after_grace(
     db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
@@ -398,6 +411,7 @@ def test_session_close_after_grace(
     meta["live"] = live_meta
     item.metadata_json = meta
     db_session.commit()
+    _age_dir_segs(tmp_path)  # 磁盘活动同步过期（新 close 语义：看磁盘不看注册表）
 
     result = live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
     db_session.expire_all()
@@ -427,6 +441,7 @@ def test_session_close_dispatches_extraction(
     meta["live"] = live_meta
     item.metadata_json = meta
     db_session.commit()
+    _age_dir_segs(tmp_path)
 
     dispatched: list[tuple[str, list]] = []
     monkeypatch.setattr(
@@ -477,3 +492,80 @@ def test_extraction_sweep_covers_manual_account_live(
     )
     tasks_mod.dispatch_pending_extractions()
     assert ("extract_source_item_viewpoints", [item.id]) in dispatched
+
+
+def test_writing_segment_skipped_until_settled(
+    db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """在写分片（mtime 新鲜）不转写——防止部分内容被当成完整分片（大潘 9-29 实录
+    118 秒截断）。settle 窗口过后同轮次正常转写。"""
+    import time as time_mod
+
+    _ensure_watch_account(db_session)
+    seg_path = _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
+    _set_dir(monkeypatch, tmp_path)
+    live_ingest.get_settings = lambda: SimpleNamespace(  # noqa: B010 显式开 settle 窗
+        live_segments_dir=str(tmp_path),
+        live_close_grace_sec=900,
+        live_min_segment_sec=30,
+        live_segment_settle_sec=120,
+        live_max_segments_per_session=120,
+        live_segment_max_attempts=3,
+    )
+    provider = _fake_provider()
+    monkeypatch.setattr(
+        live_ingest, "normalize_audio", _fake_normalize(600_000)
+    )
+    # mtime 抚到现在 → 新鲜 → writing 跳过
+    time_mod.cft = None
+    import os
+
+    os.utime(seg_path, (time_mod.time(), time_mod.time()))
+
+    live_ingest.ingest_live_segments(db_session, provider=provider)
+    item = _live_item(db_session)
+    assert item.status == "transcribing"
+    assert provider.transcribe.call_count == 0  # 未转写
+    assert item.metadata_json["live"]["processed"] == {}
+
+    # mtime 回拨 3 分钟（已写完）→ 正常转写
+    old = time_mod.time() - 180
+    os.utime(seg_path, (old, old))
+    live_ingest.ingest_live_segments(db_session, provider=provider)
+    db_session.expire_all()
+    item = db_session.get(SourceItem, item.id)
+    assert provider.transcribe.call_count == 1
+    assert list(item.metadata_json["live"]["processed"]) == ["0"]
+
+
+def test_disk_activity_blocks_close(
+    db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """注册表 last_segment_at 过期但磁盘分片仍在落 → 不 close（close 后新分片
+    会被终态守卫整场丢弃）。"""
+    import os
+    import time as time_mod
+
+    _ensure_watch_account(db_session)
+    seg_path = _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
+    _set_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(live_ingest, "normalize_audio", _fake_normalize(60_000))
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    item = _live_item(db_session)
+
+    # 注册表置 1 小时前（过期），但磁盘新分片 mtime = 现在（仍在落）
+    stale = datetime.now(UTC) - timedelta(seconds=3600)
+    meta = dict(item.metadata_json)
+    live_meta = dict(meta["live"])
+    live_meta["last_segment_at"] = stale.isoformat()
+    meta["live"] = live_meta
+    item.metadata_json = meta
+    db_session.commit()
+    _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 1)
+    fresh = tmp_path / "新闻联播" / "2026-09-17" / "base_001.ts"
+    os.utime(fresh, (time_mod.time(), time_mod.time()))
+
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    db_session.expire_all()
+    item = db_session.get(SourceItem, item.id)
+    assert item.status == "transcribing"  # 未被误 close
