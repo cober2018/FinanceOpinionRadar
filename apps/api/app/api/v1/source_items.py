@@ -325,6 +325,22 @@ def summarize_source_item_manual(item_id: int, session: DbDep):
     return {"item_id": item_id, "dispatched": True}
 
 
+@router.post("/{item_id}/llm-review", status_code=202)
+def llm_review_source_item_manual(item_id: int, session: DbDep):
+    """手动（重新）触发 LLM 二道复核（EPIC-05）。
+
+    用于回填存量待审、LLM 任务失败后的补跑；无待审候选时任务会幂等跳过。
+    """
+    from app.db.models import SourceItem
+    from app.services.reviewer import dispatch_llm_review
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    dispatch_llm_review(item_id)
+    return {"item_id": item_id, "dispatched": True}
+
+
 @router.post("/{item_id}/prepare", status_code=202)
 def prepare_source_item_manual(item_id: int, session: DbDep):
     """手动转录（视频库"转写"按钮）：清 backfill 标记后投递 prepare。

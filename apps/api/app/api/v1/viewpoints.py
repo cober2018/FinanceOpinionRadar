@@ -52,6 +52,8 @@ def _serialize(
         "as_of_date": vp.as_of_date,
         "verification_status": vp.verification_status,
         "merge_reason": vp.merge_reason,
+        "review_source": vp.review_source,
+        "review_note": vp.review_note,
     }
 
 
@@ -180,6 +182,7 @@ def confirm_viewpoint(viewpoint_id: int, session: DbDep, reason: str | None = No
     if vp.verification_status == "confirmed":
         return {"id": vp.id, "verification_status": "confirmed", "already": True}
     vp.verification_status = "confirmed"
+    vp.review_source = "manual"
     from app.services.video_summary_feed import withdraw_if_invalid
 
     withdraw_if_invalid(session, vp.source_item_id)
@@ -210,6 +213,7 @@ def reject_viewpoint(viewpoint_id: int, session: DbDep, reason: str | None = Non
     _lock_item_for_review(session, vp)
     before = {"verification_status": vp.verification_status}
     vp.verification_status = "rejected"
+    vp.review_source = "manual"
     from app.services.video_summary_feed import withdraw_if_invalid
 
     withdraw_if_invalid(session, vp.source_item_id)

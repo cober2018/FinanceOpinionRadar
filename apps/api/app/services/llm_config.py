@@ -20,6 +20,7 @@ _DEFAULTS = {
     "api_key": "",
     "model": "",
     "chat_path": "/chat/completions",
+    "review_model": "",  # LLM 复核单独模型；空=沿用主模型（EPIC-05）
 }
 
 
@@ -70,11 +71,20 @@ def get_llm_settings(session: Session) -> dict:
         "effective": {
             "base_url": merged["base_url"],
             "model": merged["model"] or s.llm_model,
+            "review_model": merged.get("review_model") or merged["model"] or s.llm_model,
             "timeout_sec": s.llm_timeout_sec,
             "max_retries": s.llm_max_retries,
             "key_set": bool(merged["api_key"]),
         },
     }
+
+
+def get_review_model(session: Session) -> str | None:
+    """LLM 复核用的模型；未单独配置返回 None（provider 用默认主模型）。"""
+    row = session.get(AppSetting, LLM_SETTINGS_KEY)
+    stored = (row.value if row else {}) or {}
+    review_model = str(stored.get("review_model") or "").strip()
+    return review_model or None
 
 
 def put_llm_settings(session: Session, payload: dict) -> dict:
@@ -90,6 +100,7 @@ def put_llm_settings(session: Session, payload: dict) -> dict:
     clean["chat_path"] = (
         str(payload.get("chat_path") or "/chat/completions").strip() or "/chat/completions"
     )
+    clean["review_model"] = str(payload.get("review_model") or "").strip()
     if clean["base_url"] and not clean["base_url"].startswith(("http://", "https://")):
         raise ValueError("base_url 需以 http(s):// 开头")
     if clean["chat_path"] and not clean["chat_path"].startswith("/"):

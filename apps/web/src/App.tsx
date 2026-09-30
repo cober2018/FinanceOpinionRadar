@@ -91,11 +91,13 @@ type SecuritySettings = {
   proxy_pool: string[]
   review_confidence_threshold?: number | null
   review_min_evidence_chars?: number | null
+  llm_review_enabled?: boolean | null
   effective: {
     discover_dispatch_stagger_max_sec: number
     douyin_discover_max_pages: number
     review_confidence_threshold?: number
     review_min_evidence_chars?: number
+    llm_review_enabled?: boolean
   }
 }
 
@@ -121,7 +123,8 @@ type LLMSettings = {
   api_key: string
   model: string
   chat_path: string
-  effective: { base_url: string; model: string; timeout_sec: number; max_retries: number; key_set: boolean }
+  review_model: string
+  effective: { base_url: string; model: string; review_model?: string; timeout_sec: number; max_retries: number; key_set: boolean }
 }
 
 type SystemStatus = {
@@ -1236,6 +1239,8 @@ type VPRow = {
   as_of_date: string | null
   verification_status: string
   source_item_id: number
+  review_source?: string | null
+  review_note?: string | null
 }
 
 const STANCE_CN: Record<string, string> = {
@@ -1582,9 +1587,15 @@ function VideoViewpointsDrawer(props: {
                 <span className="muted" style={{ fontSize: 11 }}>
                   置信 {r.confidence.toFixed(2)}
                   {r.topic_name ? ` · ${r.topic_name}` : ''}
+                  {r.review_source ? ` · ${r.review_source === 'llm' ? 'LLM 放行' : r.review_source === 'rule' ? '规则放行' : '人工'}` : ''}
                 </span>
               </div>
               <p style={{ margin: '0 0 10px', lineHeight: 1.6 }}>{r.claim}</p>
+              {r.review_note && (
+                <p className="muted" style={{ margin: '-4px 0 10px', fontSize: 12, lineHeight: 1.5 }}>
+                  复核意见：{r.review_note}
+                </p>
+              )}
               <div>
                 {(r.verification_status === 'needs_review' || r.verification_status === 'candidate') && (
                   <>
@@ -2695,6 +2706,7 @@ function LLMSettingsCard() {
   const [apiKey, setApiKey] = useState('')
   const [apiKeySet, setApiKeySet] = useState(false)
   const [model, setModel] = useState('')
+  const [reviewModel, setReviewModel] = useState('')
   const [chatPath, setChatPath] = useState('/chat/completions')
   const [effective, setEffective] = useState<LLMSettings['effective'] | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -2709,6 +2721,7 @@ function LLMSettingsCard() {
         setBaseUrl(s.base_url)
         setApiKeySet(s.effective.key_set)
         setModel(s.model)
+        setReviewModel(s.review_model ?? '')
         setChatPath(s.chat_path)
         setEffective(s.effective)
       })
@@ -2738,6 +2751,7 @@ function LLMSettingsCard() {
           base_url: baseUrl,
           api_key: apiKey,
           model,
+          review_model: reviewModel,
           chat_path: chatPath,
         }),
       })
@@ -2806,6 +2820,11 @@ function LLMSettingsCard() {
             ))}
           </datalist>
           {effective && <span className="muted">当前生效：{effective.model}</span>}
+        </label>
+        <label className="field">
+          复核模型（留空 = 沿用上面的主模型；用于 LLM 二道复核，可配更强的判断型模型）
+          <input value={reviewModel} onChange={(e) => setReviewModel(e.target.value)} placeholder="留空沿用主模型" />
+          {effective?.review_model && <span className="muted">当前生效：{effective.review_model}</span>}
         </label>
         <label className="field">
           Chat 路径（一般不动；MiniMax 为 /text/chatcompletion_v2）
@@ -3075,6 +3094,7 @@ function SettingsPage() {
   const [pool, setPool] = useState('')
   const [reviewThr, setReviewThr] = useState('')
   const [reviewChars, setReviewChars] = useState('')
+  const [llmReviewOn, setLlmReviewOn] = useState(true)
   const [effective, setEffective] = useState<SecuritySettings['effective'] | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -3087,6 +3107,7 @@ function SettingsPage() {
         setPool(s.proxy_pool.join('\n'))
         setReviewThr(s.review_confidence_threshold?.toString() ?? '')
         setReviewChars(s.review_min_evidence_chars?.toString() ?? '')
+        setLlmReviewOn(s.effective.llm_review_enabled !== false)
         setEffective(s.effective)
       })
       .catch((e: Error) => setError(e.message))
@@ -3106,6 +3127,7 @@ function SettingsPage() {
           proxy_pool: pool.split('\n').map((s) => s.trim()).filter(Boolean),
           review_confidence_threshold: reviewThr === '' ? null : Number(reviewThr),
           review_min_evidence_chars: reviewChars === '' ? null : Number(reviewChars),
+          llm_review_enabled: llmReviewOn,
         }),
       })
       setEffective(saved.effective)
@@ -3149,6 +3171,10 @@ function SettingsPage() {
               {effective && <span className="muted">当前生效：{effective.review_min_evidence_chars}</span>}
             </label>
           </div>
+          <label className="field">
+            <input type="checkbox" checked={llmReviewOn} onChange={(e) => setLlmReviewOn(e.target.checked)} style={{ marginRight: 6 }} />
+            LLM 二道复核：规则复核未放行的候选送大模型逐条裁决（只放行不驳回；判断口径含人工修正校准规则），关闭即回到纯规则复核
+          </label>
           <label className="field">
             代理池（每行一条 http/socks5 URL）——已接入媒体下载：同账号恒走同一出口（稳定绑定），失败自动冷却 10 分钟；留空则直连
             <textarea rows={5} value={pool} onChange={(e) => setPool(e.target.value)} placeholder={'http://user:pass@host:port\nsocks5://host:port'} />

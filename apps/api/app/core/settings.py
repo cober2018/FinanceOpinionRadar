@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     extraction_sweep_interval_sec: int = 900  # beat：观点抽取补扫
     review_confidence_threshold: float = 0.75  # RAD-051：低于此值进人工队列
     review_min_evidence_chars: int = 50  # RAD-051：证据总字数下限""
+    llm_review_enabled: bool = True  # EPIC-05：规则复核未放行的送 LLM 二道复核（security 可覆盖）
     db_pool_size: int = 5
     db_max_overflow: int = 10
     # --- EPIC-02 媒体发现 ---

@@ -430,10 +430,14 @@ def qg_proxy_maintain() -> dict:
 def extract_source_item_viewpoints(item_id: int) -> dict:
     from datetime import UTC, datetime
 
-    from app.db.models import JobRun
+    from app.db.models import JobRun, SourceItem
     from app.services.extraction import extract_source_item
 
     session = get_session_factory()()
+    # 条目已被物理删除（重投/迟到消息）：JobRun 有 FK，先防一手免得刷 FK 错
+    if session.get(SourceItem, item_id) is None:
+        session.close()
+        return {"item_id": item_id, "status": "skipped_no_item"}
     run = JobRun(job_type="extract_viewpoints", source_item_id=item_id, status="running")
     session.add(run)
     session.commit()
@@ -525,7 +529,50 @@ def dispatch_pending_extractions() -> int:
         ):
             if promote_item_if_reviewed(session, item):
                 promoted += 1
-        logger.info("dispatch_pending_extractions", dispatched=dispatched, promoted=promoted)
+        # 兜底：reviewing 且仍有待审 → 派 LLM 二道复核（EPIC-05）。metadata 记
+        # 请求时间戳，1 小时内不重派——LLM 任务失败/丢消息时按此节奏重试
+        from datetime import UTC, datetime
+
+        from app.services.reviewer import dispatch_llm_review, llm_review_enabled
+
+        llm_dispatched = 0
+        if llm_review_enabled(session):
+            for item in (
+                session.query(SourceItem)
+                .filter(
+                    SourceItem.status == "reviewing",
+                    session.query(Viewpoint.id)
+                    .where(
+                        Viewpoint.source_item_id == SourceItem.id,
+                        Viewpoint.verification_status == "needs_review",
+                    )
+                    .exists(),
+                )
+                .limit(get_settings().prepare_sweep_batch_size)
+                .all()
+            ):
+                meta = dict(item.metadata_json or {})
+                last = meta.get("llm_review_requested_at")
+                if last:
+                    try:
+                        if (datetime.now(UTC) - datetime.fromisoformat(last)).total_seconds() < 3600:
+                            continue
+                    except ValueError:
+                        pass
+                meta["llm_review_requested_at"] = datetime.now(UTC).isoformat()
+                item.metadata_json = meta
+                from sqlalchemy.orm.attributes import flag_modified
+
+                flag_modified(item, "metadata_json")
+                session.commit()
+                dispatch_llm_review(item.id)
+                llm_dispatched += 1
+        logger.info(
+            "dispatch_pending_extractions",
+            dispatched=dispatched,
+            promoted=promoted,
+            llm_review_dispatched=llm_dispatched,
+        )
         return dispatched
     finally:
         session.close()
@@ -574,14 +621,51 @@ def sweep_live_segments_task() -> dict:
     return sweep_live_segments()
 
 
+@celery_app.task(name="llm_review_source_item")
+def llm_review_source_item(item_id: int) -> dict:
+    """EPIC-05：LLM 二道复核——规则复核未放行的候选逐条裁决（只放行不驳回）。"""
+    from app.db.models import JobRun
+    from app.services.reviewer import llm_review_pending
+
+    session = get_session_factory()()
+    job_id = None
+    try:
+        job = JobRun(job_type="llm_review", source_item_id=item_id, status="running")
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        out = llm_review_pending(session, item_id)
+        with get_session_factory()() as s2:
+            row = s2.get(JobRun, job_id)
+            row.status = "success"
+            row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+            row.payload_json = {"result": out}
+            s2.commit()
+        return out
+    except Exception as exc:
+        if job_id:
+            with get_session_factory()() as s2:
+                row = s2.get(JobRun, job_id)
+                row.status = "failed"
+                row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+                row.error_message = str(exc)[:500]
+                s2.commit()
+        raise
+    finally:
+        session.close()
+
+
 @celery_app.task(name="summarize_source_item_viewpoints")
 def summarize_source_item_viewpoints(item_id: int) -> dict:
     """视频观点一句话总结（最后一个观点复核完自动 / 抽屉手动重生成）。"""
-    from app.db.models import JobRun
+    from app.db.models import JobRun, SourceItem
     from app.services import summarizer
 
     session = get_session_factory()()
     job_id = None
+    if session.get(SourceItem, item_id) is None:  # 迟到/重投消息的 FK 防护
+        session.close()
+        return {"item_id": item_id, "status": "skipped_no_item"}
     try:
         job = JobRun(job_type="summarize_viewpoints", source_item_id=item_id, status="running")
         session.add(job)

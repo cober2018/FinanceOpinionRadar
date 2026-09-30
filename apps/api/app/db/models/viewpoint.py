@@ -59,6 +59,10 @@ class Viewpoint(TimestampMixin, IdMixin, Base):
     prompt_version: Mapped[str | None] = mapped_column(String(100))
     # RAD-045 去重：该观点吸收了哪些重复候选（"同实体同立场 claim 相似度 0.91"）
     merge_reason: Mapped[str | None] = mapped_column(String(200))
+    # EPIC-05：裁决来源（rule=规则复核/llm=LLM 复核/manual=人工），谁把它推进到
+    # 当前 verification_status 的；LLM 复核留的裁决理由写 review_note
+    review_source: Mapped[str | None] = mapped_column(String(20))
+    review_note: Mapped[str | None] = mapped_column(Text)
 
 
 class ViewpointEvidence(IdMixin, Base):

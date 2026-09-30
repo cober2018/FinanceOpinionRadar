@@ -183,6 +183,7 @@ _SECURITY_DEFAULTS: dict[str, object] = {
     "proxy_pool": [],  # 预留：下载/解析出口代理池（radar 侧接线挂账 EPIC-04+）
     "review_confidence_threshold": None,  # 观点自动复核阈值（DB 覆盖 env）
     "review_min_evidence_chars": None,  # 自动复核证据最小字数（同上）
+    "llm_review_enabled": None,  # EPIC-05：LLM 二道复核开关（None = env 默认开）
 }
 
 
@@ -206,6 +207,9 @@ def get_security_settings(session: Session) -> dict:
         "review_min_evidence_chars": merged["review_min_evidence_chars"]
         if merged["review_min_evidence_chars"] is not None
         else s.review_min_evidence_chars,
+        "llm_review_enabled": merged["llm_review_enabled"]
+        if merged["llm_review_enabled"] is not None
+        else s.llm_review_enabled,
     }
     return merged
 
@@ -246,6 +250,11 @@ def put_security_settings(session: Session, payload: dict) -> dict:
         if not isinstance(min_chars, int) or not 0 <= min_chars <= 2000:
             raise ValueError("review_min_evidence_chars 需为 0–2000 的整数")
         clean["review_min_evidence_chars"] = min_chars
+    llm_review = payload.get("llm_review_enabled")
+    if llm_review is not None:
+        if not isinstance(llm_review, bool):
+            raise ValueError("llm_review_enabled 需为布尔值")
+        clean["llm_review_enabled"] = llm_review
     row = session.get(AppSetting, SECURITY_KEY)
     if row is None:
         row = AppSetting(key=SECURITY_KEY, value=clean)

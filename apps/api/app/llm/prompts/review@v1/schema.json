@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": ["integer", "string"]},
+          "verdict": {"type": "string", "enum": ["accept", "human"]},
+          "reason": {"type": "string"},
+          "corrected_stance": {
+            "type": "string",
+            "enum": ["strong_bullish", "bullish", "neutral", "bearish", "strong_bearish", "unclear"]
+          },
+          "corrected_horizon": {
+            "type": ["string", "null"],
+            "enum": ["intraday", "1-3D", "1-4W", "1-3M", "3M+", null]
+          }
+        },
+        "required": ["id", "verdict", "reason"]
+      }
+    }
+  },
+  "required": ["reviews"]
+}

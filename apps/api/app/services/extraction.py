@@ -332,9 +332,13 @@ def extract_source_item(
             item.status = "ready"
         session.commit()
         # reviewer 全部自动确认（无剩余待审）→ 直接收尾 ready + 派发总结——
-        # 不挂这条，全自动路径的条目会永卡 reviewing（2026-09-28 直播实录）
+        # 不挂这条，全自动路径的条目会永卡 reviewing（2026-09-28 直播实录）；
+        # 有剩余待审 → 派 LLM 二道复核（EPIC-05），复核完在任务里收尾
+        from app.services.reviewer import dispatch_llm_review
         from app.services.summarizer import promote_item_if_reviewed
 
+        if review_counts.get("needs_review"):
+            dispatch_llm_review(item_id)
         promote_item_if_reviewed(session, item)
 
         logger.info(
