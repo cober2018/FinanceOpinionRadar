@@ -203,7 +203,7 @@ def llm_review_pending(session: Session, item_id: int, *, provider=None) -> dict
     from app.db.models import SourceItem
     from app.llm.calibration import REVIEW_CALIBRATION_MD
     from app.llm.registry import get_prompt_registry
-    from app.services.llm_config import build_llm_provider, get_review_model
+    from app.services.llm_config import build_llm_provider
     from app.services.summarizer import promote_item_if_reviewed
 
     item = session.get(SourceItem, item_id)
@@ -216,8 +216,7 @@ def llm_review_pending(session: Session, item_id: int, *, provider=None) -> dict
     if not pending:
         return {"item_id": item_id, "status": "skipped_no_pending"}
 
-    provider = provider or build_llm_provider(session)
-    review_model = get_review_model(session)
+    provider = provider or build_llm_provider(session, task="review")
     pack = get_prompt_registry().get(REVIEW_PROMPT_VERSION)
     system_prompt = pack.system.replace("__STANCE_CALIBRATION__", REVIEW_CALIBRATION_MD)
 
@@ -229,7 +228,7 @@ def llm_review_pending(session: Session, item_id: int, *, provider=None) -> dict
             "__VIEWPOINTS__", _json.dumps(rows, ensure_ascii=False)
         )
         resp = provider.generate_json(
-            system_prompt, user_prompt, pack.schema, model=review_model, temperature=0.2
+            system_prompt, user_prompt, pack.schema, temperature=0.2
         )
         reviews = resp.data.get("reviews") if isinstance(resp.data, dict) else None
         if not isinstance(reviews, list):

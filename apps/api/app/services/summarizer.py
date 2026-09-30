@@ -70,7 +70,7 @@ def summarize_source_item(session: Session, item_id: int, *, provider=None) -> d
 
     _pending, _confirmed, source_fingerprint = _review_state(session, item_id)
 
-    provider = provider or build_llm_provider(session)
+    provider = provider or build_llm_provider(session, task="summary")
     pack = get_prompt_registry().get(SUMMARY_PROMPT_VERSION)
     viewpoints_payload = [
         {

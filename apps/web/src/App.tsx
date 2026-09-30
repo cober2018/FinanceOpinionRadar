@@ -116,15 +116,22 @@ type LLMTemplate = {
   note: string
 }
 
-type LLMSettings = {
-  templates: LLMTemplate[]
+type LLMProfile = {
+  id?: string
+  name: string
   template: string
   base_url: string
   api_key: string
+  key_set?: boolean
   model: string
   chat_path: string
-  review_model: string
-  effective: { base_url: string; model: string; review_model?: string; timeout_sec: number; max_retries: number; key_set: boolean }
+}
+
+type LLMSettings = {
+  templates: LLMTemplate[]
+  profiles: LLMProfile[]
+  assignment: Record<string, string | null>
+  stages: { key: string; label: string }[]
 }
 
 type SystemStatus = {
@@ -2701,141 +2708,194 @@ function JobCenterPage() {
 
 function LLMSettingsCard() {
   const [templates, setTemplates] = useState<LLMTemplate[]>([])
-  const [template, setTemplate] = useState('custom')
-  const [baseUrl, setBaseUrl] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [apiKeySet, setApiKeySet] = useState(false)
-  const [model, setModel] = useState('')
-  const [reviewModel, setReviewModel] = useState('')
-  const [chatPath, setChatPath] = useState('/chat/completions')
-  const [effective, setEffective] = useState<LLMSettings['effective'] | null>(null)
+  const [stages, setStages] = useState<LLMSettings['stages']>([])
+  const [profiles, setProfiles] = useState<LLMProfile[]>([])
+  const [assignment, setAssignment] = useState<Record<string, string | null>>({})
   const [msg, setMsg] = useState<string | null>(null)
-  const [testResult, setTestResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [testResult, setTestResult] = useState<Record<string, string>>({})
 
   const reload = useCallback(() => {
     api<LLMSettings>('/settings/llm')
       .then((s) => {
         setTemplates(s.templates)
-        setTemplate(s.template)
-        setBaseUrl(s.base_url)
-        setApiKeySet(s.effective.key_set)
-        setModel(s.model)
-        setReviewModel(s.review_model ?? '')
-        setChatPath(s.chat_path)
-        setEffective(s.effective)
+        setStages(s.stages)
+        setProfiles(s.profiles)
+        setAssignment(s.assignment)
       })
       .catch((e: Error) => setError(e.message))
   }, [])
 
   useEffect(reload, [reload])
 
-  const applyTemplate = (key: string) => {
-    setTemplate(key)
+  const updateProfile = (idx: number, patch: Partial<LLMProfile>) => {
+    setProfiles((ps) => ps.map((p, i) => (i === idx ? { ...p, ...patch } : p)))
+  }
+
+  const applyTemplate = (idx: number, key: string) => {
     const t = templates.find((x) => x.key === key)
-    if (t) {
-      setBaseUrl(t.base_url)
-      setModel(t.models[0] ?? '')
-      setChatPath(t.chat_path)
-    }
+    updateProfile(idx, {
+      template: key,
+      base_url: t?.base_url ?? '',
+      model: t?.models[0] ?? '',
+      chat_path: t?.chat_path ?? '/chat/completions',
+    })
+  }
+
+  const addProfile = () => {
+    setProfiles((ps) => [
+      ...ps,
+      { name: '', template: 'custom', base_url: '', api_key: '', model: '', chat_path: '/chat/completions' },
+    ])
+  }
+
+  const removeProfile = (idx: number) => {
+    setProfiles((ps) => ps.filter((_, i) => i !== idx))
+  }
+
+  const persist = async (): Promise<LLMProfile[]> => {
+    const saved = await api<LLMProfile[]>('/settings/llm/profiles', {
+      method: 'PUT',
+      body: JSON.stringify({ profiles }),
+    })
+    await api('/settings/llm/assignment', {
+      method: 'PUT',
+      body: JSON.stringify(assignment),
+    })
+    setProfiles(saved)
+    return saved
   }
 
   const save = async () => {
     setError(null)
     setMsg(null)
+    setSaving(true)
     try {
-      await api('/settings/llm', {
-        method: 'PUT',
-        body: JSON.stringify({
-          template,
-          base_url: baseUrl,
-          api_key: apiKey,
-          model,
-          review_model: reviewModel,
-          chat_path: chatPath,
-        }),
-      })
-      setMsg('已保存')
-      setApiKey('')
+      await persist()
+      setMsg('已保存（模型档案与阶段分配即时生效）')
       reload()
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      setSaving(false)
     }
   }
 
-  const testConn = async () => {
-    setTestResult('测试中…')
+  const testConn = async (idx: number) => {
+    const pid = profiles[idx]?.id
+    if (!pid) {
+      setTestResult((m) => ({ ...m, [idx]: '❌ 请先保存，再测试' }))
+      return
+    }
+    setTestResult((m) => ({ ...m, [idx]: '测试中…' }))
     try {
+      await persist()
       const r = await api<{ ok: boolean; latency_ms?: number; model?: string; error?: string }>(
         '/settings/llm/test',
-        { method: 'POST' },
+        { method: 'POST', body: JSON.stringify({ profile_id: pid }) },
       )
-      setTestResult(
-        r.ok
-          ? `✅ 连通（${r.latency_ms}ms，模型 ${r.model}）`
-          : `❌ ${r.error ?? '失败'}`,
-      )
+      setTestResult((m) => ({
+        ...m,
+        [idx]: r.ok ? `✅ 连通（${r.latency_ms}ms，模型 ${r.model}）` : `❌ ${r.error ?? '失败'}`,
+      }))
     } catch (e) {
-      setTestResult(`❌ ${(e as Error).message}`)
+      setTestResult((m) => ({ ...m, [idx]: `❌ ${(e as Error).message}` }))
     }
   }
-
-  const current = templates.find((t) => t.key === template)
 
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>大模型（观点抽取）</h3>
+        <h3>大模型</h3>
       </div>
       <div className="stack">
         {error && <p className="error">{error}</p>}
         {msg && <p className="ok">{msg}</p>}
-        <label className="field">
-          服务商模板：选中后自动填地址与模型，可再手动改
-          <select
-            value={template}
-            onChange={(e) => applyTemplate(e.target.value)}
-          >
-            {templates.map((t) => (
-              <option key={t.key} value={t.key}>{t.label}</option>
-            ))}
-          </select>
-          {current?.note && <span className="muted">{current.note}</span>}
-        </label>
-        <label className="field">
-          Base URL
-          <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com/v1" />
-          {effective && <span className="muted">当前生效：{effective.base_url || '（未配置，Mock 模式）'}</span>}
-        </label>
-        <label className="field">
-          API Key {apiKeySet && <span className="muted">（已设置，留空保持不变）</span>}
-          <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={apiKeySet ? '••••••••' : 'sk-…'} />
-        </label>
-        <label className="field">
-          模型（可下拉选或手输）
-          <input value={model} onChange={(e) => setModel(e.target.value)} list="llm-models" placeholder="deepseek-chat" />
-          <datalist id="llm-models">
-            {(current?.models ?? []).map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-          {effective && <span className="muted">当前生效：{effective.model}</span>}
-        </label>
-        <label className="field">
-          复核模型（留空 = 沿用上面的主模型；用于 LLM 二道复核，可配更强的判断型模型）
-          <input value={reviewModel} onChange={(e) => setReviewModel(e.target.value)} placeholder="留空沿用主模型" />
-          {effective?.review_model && <span className="muted">当前生效：{effective.review_model}</span>}
-        </label>
-        <label className="field">
-          Chat 路径（一般不动；MiniMax 为 /text/chatcompletion_v2）
-          <input value={chatPath} onChange={(e) => setChatPath(e.target.value)} />
-        </label>
-        <div className="form-actions">
-          <button className="primary" onClick={save}>保存配置</button>
-          <button onClick={testConn}>测试连接</button>
+        <p className="hint" style={{ margin: 0 }}>
+          可配置多个模型（OpenAI 兼容协议），在下方「阶段分配」里为每个环节指定用哪个；未指定的环节默认用第一个。
+        </p>
+        {profiles.map((p, idx) => {
+          const current = templates.find((t) => t.key === p.template)
+          return (
+            <div key={p.id ?? `new-${idx}`} className="stack" style={{ borderTop: '1px solid var(--line, #ddd)', paddingTop: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <b style={{ fontSize: 13 }}>模型 {idx + 1}</b>
+                <input
+                  value={p.name}
+                  onChange={(e) => updateProfile(idx, { name: e.target.value })}
+                  placeholder="名称（如：MiniMax-M3 主力）"
+                  style={{ flex: 1 }}
+                />
+                {profiles.length > 1 && (
+                  <button className="ghost" onClick={() => removeProfile(idx)}>删除</button>
+                )}
+              </div>
+              <label className="field">
+                服务商模板：选中后自动填地址与模型，可再手动改
+                <select value={p.template} onChange={(e) => applyTemplate(idx, e.target.value)}>
+                  {templates.map((t) => (
+                    <option key={t.key} value={t.key}>{t.label}</option>
+                  ))}
+                </select>
+                {current?.note && <span className="muted">{current.note}</span>}
+              </label>
+              <label className="field">
+                Base URL
+                <input value={p.base_url} onChange={(e) => updateProfile(idx, { base_url: e.target.value })} placeholder="https://api.deepseek.com/v1" />
+              </label>
+              <label className="field">
+                API Key {p.key_set && <span className="muted">（已设置，留空保持不变）</span>}
+                <input type="password" value={p.api_key} onChange={(e) => updateProfile(idx, { api_key: e.target.value })} placeholder={p.key_set ? '••••••••' : 'sk-…'} />
+              </label>
+              <label className="field">
+                模型（可下拉选或手输）
+                <input value={p.model} onChange={(e) => updateProfile(idx, { model: e.target.value })} list={`llm-models-${idx}`} placeholder="deepseek-chat" />
+                <datalist id={`llm-models-${idx}`}>
+                  {(current?.models ?? []).map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+              </label>
+              <label className="field">
+                Chat 路径（一般不动；MiniMax 为 /text/chatcompletion_v2）
+                <input value={p.chat_path} onChange={(e) => updateProfile(idx, { chat_path: e.target.value })} />
+              </label>
+              <div className="form-actions" style={{ margin: 0 }}>
+                <button className="ghost" onClick={() => testConn(idx)}>测试此模型</button>
+                {testResult[idx] && <span className="muted">{testResult[idx]}</span>}
+              </div>
+            </div>
+          )
+        })}
+        <div>
+          <button className="ghost" onClick={addProfile}>+ 新增模型</button>
         </div>
-        {testResult && <p className="muted">{testResult}</p>}
-        <p className="hint">全部走 OpenAI 兼容协议；中转/聚合网关选「自定义」手填。配置存库即时生效，下一次观点抽取即使用新配置。</p>
+        {stages.length > 0 && (
+          <div className="stack" style={{ borderTop: '1px solid var(--line, #ddd)', paddingTop: 8 }}>
+            <b style={{ fontSize: 13 }}>阶段分配</b>
+            {stages.map((st) => (
+              <label className="field" key={st.key}>
+                {st.label}
+                <select
+                  value={assignment[st.key] ?? ''}
+                  onChange={(e) => setAssignment((a) => ({ ...a, [st.key]: e.target.value || null }))}
+                >
+                  {profiles.length === 0 && <option value="">（先添加模型）</option>}
+                  {profiles.map((p) => (
+                    <option key={p.id ?? p.name} value={p.id ?? ''}>
+                      {p.name || '未命名'}{p.model ? `（${p.model}）` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="form-actions">
+          <button className="primary" disabled={saving} onClick={save}>{saving ? '保存中…' : '保存配置'}</button>
+        </div>
+        <p className="hint">配置存库即时生效：抽取/复核/总结/润色各环节按分配选用对应模型。新填的 API Key 保存后才能「测试此模型」。</p>
       </div>
     </div>
   )

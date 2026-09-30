@@ -369,10 +369,10 @@ def flag_modified(item):
 
 
 def _default_provider(session: Session):
-    # EPIC-04+：LLM 配置从设置页（app_setting）读取，模板支持 DeepSeek/GLM/MiniMax 等
+    # EPIC-04+：LLM 配置从设置页（app_setting）读取；多档案按阶段路由（2026-09-30）
     from app.services.llm_config import build_llm_provider
 
-    return build_llm_provider(session)
+    return build_llm_provider(session, task="extraction")
 
 
 def _store_run(session: Session, run_id: str, payload: dict) -> str:

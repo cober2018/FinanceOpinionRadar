@@ -317,29 +317,67 @@ class LLMSettingsPayload(BaseModel):
     chat_path: str | None = None
 
 
+class LLMProfilePayload(BaseModel):
+    profiles: list
+
+
+class LLMAssignmentPayload(BaseModel):
+    extraction: str | None = None
+    review: str | None = None
+    summary: str | None = None
+    polish: str | None = None
+
+
+class LLMTestPayload(BaseModel):
+    profile_id: str | None = None
+
+
 @router.get("/settings/llm")
 def get_llm_settings(session: Annotated[Session, Depends(get_db)]):
-    """RAD-041+：大模型配置读取（模板列表 + 当前值 + 生效值；key 只回是否已设置）。"""
-    return llm_config.get_llm_settings(session)
+    """多模型档案 + 阶段分配（2026-09-30）：模板列表 + 档案（key 打码）+ 各阶段指向。"""
+    return {
+        "templates": llm_config.get_llm_settings(session)["templates"],
+        "profiles": llm_config.get_llm_profiles(session),
+        "assignment": llm_config.get_llm_assignment(session),
+        "stages": [{"key": k, "label": label} for k, label in llm_config.STAGES],
+    }
 
 
-@router.put("/settings/llm")
-def put_llm_settings(body: LLMSettingsPayload, session: Annotated[Session, Depends(get_db)]):
+@router.put("/settings/llm/profiles")
+def put_llm_profiles(body: LLMProfilePayload, session: Annotated[Session, Depends(get_db)]):
+    """全量保存模型档案；api_key 留空 = 沿用该档案现有 key。"""
     try:
-        return llm_config.put_llm_settings(session, body.model_dump())
+        return llm_config.put_llm_profiles(session, body.profiles)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/settings/llm/assignment")
+def put_llm_assignment(body: LLMAssignmentPayload, session: Annotated[Session, Depends(get_db)]):
+    """保存阶段 → 档案分配。"""
+    try:
+        return llm_config.put_llm_assignment(session, body.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/settings/llm/test")
-def test_llm_settings(session: Annotated[Session, Depends(get_db)]):
-    """连接测试：按当前配置跑一次最小 generate_json，返回时延与样例。"""
+def test_llm_settings(body: LLMTestPayload | None = None, session: Annotated[Session, Depends(get_db)] = None):
+    """连接测试：跑一次最小 generate_json。可指定 profile_id，缺省测抽取阶段指向的档案。"""
     import time
 
-    cfg = llm_config.get_llm_settings(session)
-    provider = llm_config.build_llm_provider(session)
-    if not cfg["effective"]["key_set"] or not cfg["effective"]["base_url"]:
+    payload = body or LLMTestPayload()
+    profiles = llm_config.get_llm_profiles(session, include_secrets=True)
+    profile = None
+    if payload.profile_id:
+        profile = next((p for p in profiles if p["id"] == payload.profile_id), None)
+        if profile is None:
+            return {"ok": False, "error": f"模型档案不存在: {payload.profile_id}"}
+    else:
+        profile = llm_config._resolve_profile(session, "extraction") or (profiles[0] if profiles else None)
+    if profile is None or not (profile.get("api_key") and profile.get("base_url")):
         return {"ok": False, "error": "未配置完整（base_url/api_key 缺失），当前为 Mock 模式"}
+    provider = llm_config.build_provider_for_profile(session, profile)
     t0 = time.time()
     try:
         resp = provider.generate_json(
@@ -372,7 +410,7 @@ def polish_claim(body: PolishRequest, session: Annotated[Session, Depends(get_db
     claim = body.claim.strip()
     if not claim:
         raise HTTPException(status_code=422, detail="内容为空，无法润色")
-    provider = llm_config.build_llm_provider(session)
+    provider = llm_config.build_llm_provider(session, task="polish")
     if type(provider).__name__ == "MockLLMProvider":
         raise HTTPException(status_code=409, detail="大模型未配置，润色不可用（设置 → 大模型）")
 
