@@ -188,24 +188,9 @@ def extract_source_item(
                 continue
             # 模型输出容错：裸数组 / 键名漂移（views/items/claims）都归一到候选列表；
             # 终极兜底：唯一值为对象数组的键也接受（MiniMax 对 schema 键名有自由发挥）
-            data = resp.data if isinstance(resp.data, dict) else {"viewpoints": resp.data or []}
-            raw_candidates = data.get("viewpoints")
-            if raw_candidates is None:
-                raw_candidates = next(
-                    (
-                        data[k]
-                        for k in ("views", "items", "results", "claims")
-                        if isinstance(data.get(k), list)
-                    ),
-                    None,
-                )
+            raw_candidates = normalize_candidates(resp.data if isinstance(resp.data, dict) else {"viewpoints": resp.data or []})
             if not isinstance(raw_candidates, list):
                 raw_candidates = []
-            if not raw_candidates and isinstance(data, dict):
-                for v in data.values():
-                    if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
-                        raw_candidates = v
-                        break
             chunk_summaries.append(
                 {
                     "chunk": call_id,
@@ -214,70 +199,16 @@ def extract_source_item(
                 }
             )
             for cand in raw_candidates:
-                # 证据 id 归一：模型偶发把 id 输出成字符串（"108443"），而校验集合
-                # 与 seg_map 均为 int——不归一会全部误判「证据越界」（2026-09-23 实录）
-                evidence_ids: list[int] = []
-                for e in cand.get("evidence_segment_ids") or []:
-                    try:
-                        evidence_ids.append(int(e))
-                    except (TypeError, ValueError):
-                        continue
-                cand["evidence_segment_ids"] = evidence_ids
-                err, stance = _validate_candidate(cand, chunk_ids)
-                if err:
-                    rejected.append({"chunk": call_id, "reason": err})
-                    continue
-                topic_id = resolve_topic(session, cand.get("topic"))
-                entity_id, _disp = None, "none"
-                entity_raw = None
-                entities_raw = cand.get("entities") or []
-                for ent in entities_raw:
-                    eid, disp = normalize_entity(
-                        session,
-                        ent.get("raw_name", ""),
-                        entity_type=ent.get("entity_type", "other"),
-                        first_seen_item_id=item_id,
-                    )
-                    if entity_raw is None and (ent.get("raw_name") or "").strip():
-                        entity_raw = ent["raw_name"].strip()[:200]
-                    if eid is not None:
-                        entity_id = eid
-                        break
-                vp = Viewpoint(
-                    creator_id=account.creator_id,
-                    source_item_id=item_id,
-                    topic_id=topic_id,
-                    entity_id=entity_id,
-                    entity_raw=entity_raw,
-                    claim=cand["claim"].strip(),
-                    stance=stance,
-                    horizon=cand.get("horizon") or None,
-                    conditional=bool(cand.get("conditional", False)),
-                    importance=float(cand.get("importance") or 0.5),
-                    confidence=float(cand["confidence"]),
-                    as_of_date=item.published_at.date() if item.published_at else None,
-                    verification_status="candidate",
+                vp_id, err = persist_candidate(
+                    session, item, account, cand, seg_map,
+                    valid_seg_ids=chunk_ids,
                     extractor_version=extractor_version,
                     prompt_version=used_prompt_version,
                 )
-                session.add(vp)
-                session.flush()
-                created_ids.append(vp.id)
-                order = 1
-                for seg_id in dict.fromkeys(cand["evidence_segment_ids"]):
-                    seg = seg_map[seg_id]
-                    session.add(
-                        ViewpointEvidence(
-                            viewpoint_id=vp.id,
-                            transcript_segment_id=seg.id,
-                            start_ms=seg.start_ms,
-                            end_ms=seg.end_ms,
-                            evidence_text=seg.text,
-                            evidence_order=order,
-                        )
-                    )
-                    order += 1
-                session.commit()
+                if err:
+                    rejected.append({"chunk": call_id, "reason": err})
+                    continue
+                created_ids.append(vp_id)
 
         dedupe = dedupe_source_item_viewpoints(session, item_id)
 
@@ -366,6 +297,96 @@ def flag_modified(item):
     from sqlalchemy.orm.attributes import flag_modified
 
     flag_modified(item, "metadata_json")
+
+
+def normalize_candidates(data: dict) -> list:
+    """模型输出归一：裸数组 / 键名漂移（views/items/results/claims）都归到候选列表；
+    终极兜底：唯一值为对象数组的键也接受（MiniMax 对 schema 键名有自由发挥）。"""
+    raw = data.get("viewpoints")
+    if raw is None:
+        raw = next(
+            (data[k] for k in ("views", "items", "results", "claims") if isinstance(data.get(k), list)),
+            None,
+        )
+    if not isinstance(raw, list) and isinstance(data, dict):
+        for v in data.values():
+            if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
+                raw = v
+                break
+    return raw if isinstance(raw, list) else []
+
+
+def persist_candidate(
+    session, item, account, cand: dict, seg_map: dict, *,
+    valid_seg_ids: set[int], extractor_version: str, prompt_version: str,
+) -> tuple[int | None, str | None]:
+    """候选观点 → 校验 + Viewpoint/Evidence 落库。返回 (vp_id, 错误说明)。
+
+    全文抽取与直播增量抽取共用（live_rolling）；候选字段校验/证据 id 字符串
+    归一都在这里（证据 id 字符串化曾致全部误判越界，2026-09-23 实录）。
+    """
+    # 证据 id 归一：模型偶发把 id 输出成字符串（"108443"），而校验集合与 seg_map 均为 int
+    evidence_ids: list[int] = []
+    for e in cand.get("evidence_segment_ids") or []:
+        try:
+            evidence_ids.append(int(e))
+        except (TypeError, ValueError):
+            continue
+    cand["evidence_segment_ids"] = evidence_ids
+    err, stance = _validate_candidate(cand, valid_seg_ids)
+    if err:
+        return None, err
+    topic_id = resolve_topic(session, cand.get("topic"))
+    entity_id, _disp = None, "none"
+    entity_raw = None
+    entities_raw = cand.get("entities") or []
+    for ent in entities_raw:
+        eid, disp = normalize_entity(
+            session,
+            ent.get("raw_name", ""),
+            entity_type=ent.get("entity_type", "other"),
+            first_seen_item_id=item.id,
+        )
+        if entity_raw is None and (ent.get("raw_name") or "").strip():
+            entity_raw = ent["raw_name"].strip()[:200]
+        if eid is not None:
+            entity_id = eid
+            break
+    vp = Viewpoint(
+        creator_id=account.creator_id,
+        source_item_id=item.id,
+        topic_id=topic_id,
+        entity_id=entity_id,
+        entity_raw=entity_raw,
+        claim=cand["claim"].strip(),
+        stance=stance,
+        horizon=cand.get("horizon") or None,
+        conditional=bool(cand.get("conditional", False)),
+        importance=float(cand.get("importance") or 0.5),
+        confidence=float(cand["confidence"]),
+        as_of_date=item.published_at.date() if item.published_at else None,
+        verification_status="candidate",
+        extractor_version=extractor_version,
+        prompt_version=prompt_version,
+    )
+    session.add(vp)
+    session.flush()
+    order = 1
+    for seg_id in dict.fromkeys(cand["evidence_segment_ids"]):
+        seg = seg_map[seg_id]
+        session.add(
+            ViewpointEvidence(
+                viewpoint_id=vp.id,
+                transcript_segment_id=seg.id,
+                start_ms=seg.start_ms,
+                end_ms=seg.end_ms,
+                evidence_text=seg.text,
+                evidence_order=order,
+            )
+        )
+        order += 1
+    session.commit()
+    return vp.id, None
 
 
 def _default_provider(session: Session):

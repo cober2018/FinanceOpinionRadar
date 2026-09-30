@@ -146,6 +146,7 @@ def ingest_live_segments(session, provider=None) -> dict:
         return {"skipped": "singleton"}
 
     counters = dict(_ZERO_COUNTERS)
+    newly: list[int] = []
     try:
         # 收尾判定先行：静默关闭的是上一轮遗留会话，不计入本轮 sessions_active
         _close_stale_sessions(session, s.live_close_grace_sec)
@@ -173,7 +174,9 @@ def ingest_live_segments(session, provider=None) -> dict:
                 session.commit()  # 会话行先落库：分片级 rollback 不得回滚会话本身
                 for seg in sd.segments:
                     outcome = _process_segment(session, item, base_meta, live_meta, seg, s, provider)
-                    if outcome == "failed":
+                    if outcome == "processed":
+                        newly.append(item.id)
+                    elif outcome == "failed":
                         counters["segments_failed"] += 1
                 _persist_live_meta(item, base_meta)
                 session.commit()
@@ -181,6 +184,11 @@ def ingest_live_segments(session, provider=None) -> dict:
         session.commit()
     finally:
         _release_singleton(session)
+    # 本轮有新转写分片 → 派增量抽取（水位幂等，重复派发无害）
+    for item_id in dict.fromkeys(newly):
+        from app.services.live_rolling import dispatch_extract_live_incremental
+
+        dispatch_extract_live_incremental(item_id)
     logger.info("live_ingest_scan", **counters)
     return counters
 
@@ -210,6 +218,11 @@ def prepare_live_segment(item_id: int, segment_index: int, path: str) -> dict:
             )
             _persist_live_meta(item, base_meta)
             session.commit()
+            if outcome == "processed":
+                # 恢复路径转写成功同样触发增量抽取（水位幂等）
+                from app.services.live_rolling import dispatch_extract_live_incremental
+
+                dispatch_extract_live_incremental(item_id)
             return {"item_id": item_id, "segment": segment_index, "outcome": outcome}
         finally:
             _release_singleton(session)
@@ -690,8 +703,13 @@ def _close_stale_sessions(session, grace_sec: int) -> int:
         closed += 1
         logger.info("live_session_closed", item_id=item.id)
         # 转录完即抽取（用户 2026-09-28）：直播转录收尾立即派发，不等补扫——
-        # 纯直播值守账号（discovery_mode=manual）不进 dispatch_pending_extractions
+        # 纯直播值守账号（discovery_mode=manual）不进 dispatch_pending_extractions。
+        # 已按分片增量抽取过的（用户 2026-09-30 滚动总结）：不再全文重抽（重复观点
+        # 与 LLM 成本双浪费），走 finalize 推进状态机 + 收尾总结闸
         from app.worker.celery_app import celery_app
 
-        celery_app.send_task("extract_source_item_viewpoints", args=[item.id])
+        if live_meta.get("incremental_extracted_ms"):
+            celery_app.send_task("live_finalize_after_close", args=[item.id])
+        else:
+            celery_app.send_task("extract_source_item_viewpoints", args=[item.id])
     return closed

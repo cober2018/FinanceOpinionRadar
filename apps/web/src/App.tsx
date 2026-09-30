@@ -1267,6 +1267,111 @@ function weekbarFmt(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// 当天主播事件流（2026-09-30）：左侧时间轴 + 右侧卡片，从近到远；
+// 观点卡片 = 主播在某个钟点说的一件事（直播观点时刻=起播+证据偏移），
+// 总结卡片 = 视频观点（直播进行中随分片滚动更新）
+type TimelineEvent = {
+  type: 'viewpoint' | 'summary'
+  at: string | null
+  item_id: number
+  item_type: string
+  title: string | null
+  source_url: string | null
+  creator_name: string
+  avatar_url: string | null
+  viewpoint_id?: number
+  claim?: string
+  stance?: string
+  horizon?: string | null
+  entity?: string | null
+  conditional?: boolean
+  summary?: string
+  live_ongoing?: boolean
+  confirmed_count?: number
+}
+
+function TimelinePage() {
+  const [dayFilter, setDayFilter] = useState<string | null>(weekbarFmt(new Date()))
+  const [events, setEvents] = useState<TimelineEvent[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const reload = useCallback(() => {
+    setLoading(true)
+    const q = dayFilter ? `?date_from=${dayFilter}&date_to=${dayFilter}` : ''
+    api<{ events: TimelineEvent[] }>(`/timeline${q}`)
+      .then((d) => {
+        setEvents(d.events)
+        setError(null)
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [dayFilter])
+
+  useEffect(reload, [reload])
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <h2>时间轴</h2>
+        <span className="muted">各主播当天说了什么、总结到哪了——从近到远；直播进行中的总结随分片滚动更新。</span>
+      </div>
+      <WeekBar value={dayFilter} onChange={setDayFilter} />
+      {error && <p className="error">{error}</p>}
+      {loading ? (
+        <p className="muted pad">加载中…</p>
+      ) : events.length === 0 ? (
+        <p className="muted pad">当天暂无事件（再点一次选中日可清除筛选看最近 300 条）。</p>
+      ) : (
+        <div className="timeline">
+          {events.map((e, i) => {
+            const t = e.at ? new Date(e.at) : null
+            const hhmm = t
+              ? `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
+              : '--:--'
+            return (
+              <div className="timeline-row" key={`${e.type}-${e.item_id}-${e.viewpoint_id ?? i}`}>
+                <div className="timeline-time">{hhmm}</div>
+                <div className="timeline-dotline">
+                  <span className={`timeline-dot ${e.type === 'summary' ? 'summary' : ''}`} />
+                </div>
+                <div className="timeline-card">
+                  <div className="timeline-card-head">
+                    {e.avatar_url ? (
+                      <img className="timeline-avatar" src={e.avatar_url} alt="" />
+                    ) : (
+                      <span className="timeline-avatar fallback">{(e.creator_name || '?')[0]}</span>
+                    )}
+                    <b>{e.creator_name}</b>
+                    {e.type === 'summary' ? (
+                      <>
+                        <span className="badge ok">视频观点</span>
+                        {e.live_ongoing && <span className="badge run">直播中</span>}
+                        {typeof e.confirmed_count === 'number' && (
+                          <span className="muted" style={{ fontSize: 11 }}>{e.confirmed_count} 条观点</span>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <StanceBadge stance={e.stance ?? 'unclear'} />
+                        {e.entity && <span className="badge">{e.entity}</span>}
+                        {e.horizon && <span className="badge">{e.horizon}</span>}
+                        {e.conditional && <span className="muted" style={{ fontSize: 11 }}>条件式</span>}
+                      </>
+                    )}
+                  </div>
+                  <p className="timeline-text">{e.type === 'summary' ? e.summary : e.claim}</p>
+                  {e.title && <p className="muted timeline-src">来源：{e.title}</p>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function WeekBar({ value, onChange }: { value: string | null; onChange: (day: string | null) => void }) {
   const [weekStart, setWeekStart] = useState<Date>(() => {
     const base = value ? new Date(`${value}T00:00:00`) : new Date()
@@ -3293,6 +3398,7 @@ function BackendHealthBanner() {
 
 const NAV = [
   { key: 'overview', label: '总览' },
+  { key: 'timeline', label: '时间轴' },
   { key: 'accounts', label: '主播' },
   { key: 'library', label: '视频库' },
   { key: 'assets', label: '资产库' },
@@ -3332,6 +3438,7 @@ function App() {
       <main className="main">
         <BackendHealthBanner />
         {tab === 'overview' && <OverviewPage go={(t) => setTab(t as Tab)} />}
+        {tab === 'timeline' && <TimelinePage />}
         {tab === 'accounts' && <AccountsPage />}
         {tab === 'library' && <LibraryPage />}
         {tab === 'assets' && <AssetLibraryPage />}

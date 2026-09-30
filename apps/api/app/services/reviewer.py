@@ -266,6 +266,12 @@ def llm_review_pending(session: Session, item_id: int, *, provider=None) -> dict
         session.commit()
 
     promoted = promote_item_if_reviewed(session, item)
+    # 直播滚动总结链：LLM 复核收尾时直播还在播（transcribing，promote 不适用），
+    # 派滚动总结把刚放行的观点融进最新总结（用户 2026-09-30 时效性需求）
+    if not promoted and item.status == "transcribing" and item.item_type == "live":
+        from app.services.live_rolling import dispatch_rolling_summarize
+
+        dispatch_rolling_summarize(item_id)
     logger.info(
         "llm_review_done",
         item_id=item_id,

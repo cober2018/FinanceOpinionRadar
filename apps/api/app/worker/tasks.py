@@ -655,6 +655,117 @@ def llm_review_source_item(item_id: int) -> dict:
         session.close()
 
 
+@celery_app.task(name="extract_live_incremental")
+def extract_live_incremental(item_id: int) -> dict:
+    """直播滚动总结（2026-09-30）：分片转写后的增量观点抽取（水位幂等）。"""
+    from app.db.models import JobRun, SourceItem
+    from app.services.live_rolling import extract_live_incremental
+
+    session = get_session_factory()()
+    job_id = None
+    if session.get(SourceItem, item_id) is None:
+        session.close()
+        return {"item_id": item_id, "status": "skipped_no_item"}
+    try:
+        job = JobRun(job_type="live_incremental_extract", source_item_id=item_id, status="running")
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        out = extract_live_incremental(session, item_id)
+        with get_session_factory()() as s2:
+            row = s2.get(JobRun, job_id)
+            row.status = "success"
+            row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+            row.payload_json = {"result": out}
+            s2.commit()
+        return out
+    except Exception as exc:
+        if job_id:
+            with get_session_factory()() as s2:
+                row = s2.get(JobRun, job_id)
+                row.status = "failed"
+                row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+                row.error_message = str(exc)[:500]
+                s2.commit()
+        raise
+    finally:
+        session.close()
+
+
+@celery_app.task(name="rolling_summarize_live")
+def rolling_summarize_live(item_id: int) -> dict:
+    """直播滚动总结：confirmed 观点全集重算 viewpoint_summary（直播中滚动覆盖）。"""
+    from app.db.models import JobRun, SourceItem
+    from app.services.live_rolling import rolling_summarize_live
+
+    session = get_session_factory()()
+    job_id = None
+    if session.get(SourceItem, item_id) is None:
+        session.close()
+        return {"item_id": item_id, "status": "skipped_no_item"}
+    try:
+        job = JobRun(job_type="rolling_summarize", source_item_id=item_id, status="running")
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        out = rolling_summarize_live(session, item_id)
+        with get_session_factory()() as s2:
+            row = s2.get(JobRun, job_id)
+            row.status = "success"
+            row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+            row.payload_json = {"result": out}
+            s2.commit()
+        return out
+    except Exception as exc:
+        if job_id:
+            with get_session_factory()() as s2:
+                row = s2.get(JobRun, job_id)
+                row.status = "failed"
+                row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+                row.error_message = str(exc)[:500]
+                s2.commit()
+        raise
+    finally:
+        session.close()
+
+
+@celery_app.task(name="live_finalize_after_close")
+def live_finalize_after_close(item_id: int) -> dict:
+    """已增量抽取的直播 close 收尾：推进状态机 + 统一收尾闸（不全文重抽）。"""
+    from app.db.models import JobRun, SourceItem
+    from app.services.live_rolling import finalize_after_close
+
+    session = get_session_factory()()
+    job_id = None
+    if session.get(SourceItem, item_id) is None:
+        session.close()
+        return {"item_id": item_id, "status": "skipped_no_item"}
+    try:
+        job = JobRun(job_type="live_finalize", source_item_id=item_id, status="running")
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        out = finalize_after_close(session, item_id)
+        with get_session_factory()() as s2:
+            row = s2.get(JobRun, job_id)
+            row.status = "success"
+            row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+            row.payload_json = {"result": out}
+            s2.commit()
+        return out
+    except Exception as exc:
+        if job_id:
+            with get_session_factory()() as s2:
+                row = s2.get(JobRun, job_id)
+                row.status = "failed"
+                row.finished_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+                row.error_message = str(exc)[:500]
+                s2.commit()
+        raise
+    finally:
+        session.close()
+
+
 @celery_app.task(name="summarize_source_item_viewpoints")
 def summarize_source_item_viewpoints(item_id: int) -> dict:
     """视频观点一句话总结（最后一个观点复核完自动 / 抽屉手动重生成）。"""

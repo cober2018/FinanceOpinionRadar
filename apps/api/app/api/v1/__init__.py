@@ -9,6 +9,7 @@ from app.api.v1 import (
     source_accounts,
     source_items,
     taxonomy,
+    timeline,
     transcripts,
     viewpoints,
 )
@@ -24,3 +25,4 @@ api_router.include_router(open_admin.router)
 api_router.include_router(danmaku.router)
 api_router.include_router(retention.router)
 api_router.include_router(proxy_pool.router)
+api_router.include_router(timeline.router)

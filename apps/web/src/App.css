@@ -725,3 +725,99 @@ button.danger:hover:not(:disabled) { border-color: var(--live); }
   font-size: 12px;
   color: var(--ink-300);
 }
+
+/* ---------------- 时间轴页（2026-09-30）：左轴右卡片，从近到远 ---------------- */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 52px 20px 1fr;
+  gap: 8px;
+}
+
+.timeline-time {
+  font-size: 12px;
+  color: var(--ink-300);
+  text-align: right;
+  padding-top: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-dotline {
+  position: relative;
+}
+
+.timeline-dotline::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--line-soft);
+}
+
+.timeline-row:first-child .timeline-dotline::before { top: 20px; }
+.timeline-row:last-child .timeline-dotline::before { bottom: auto; height: 20px; }
+
+.timeline-dot {
+  position: absolute;
+  left: 5px;
+  top: 20px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.timeline-dot.summary {
+  background: var(--ok);
+  box-shadow: 0 0 0 2px var(--ok);
+}
+
+.timeline-card {
+  background: var(--card);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 6px 0;
+}
+
+.timeline-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.timeline-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.timeline-avatar.fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--line-soft);
+  color: var(--ink-300);
+  font-size: 12px;
+}
+
+.timeline-text {
+  margin: 6px 0 0;
+  line-height: 1.6;
+}
+
+.timeline-src {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
