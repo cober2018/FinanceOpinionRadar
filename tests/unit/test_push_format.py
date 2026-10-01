@@ -65,7 +65,12 @@ def test_payload_shapes():
         as_of_date = None
         updated_at = None
 
-    rows = [(FakeVP(), "李一恩", None)]
+    class FakeItem:
+        id = 101
+        item_type = "vod"
+        metadata_json = None
+
+    rows = [(FakeVP(), "李一恩", None, FakeItem())]
 
     _u, feishu_body = _build_payload(_channel("feishu"), rows)
     assert feishu_body["msg_type"] == "text"

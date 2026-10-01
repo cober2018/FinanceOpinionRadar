@@ -80,23 +80,11 @@ def get_timeline(
         .limit(_MAX_EVENTS)
     )
     vp_rows = session.execute(vp_stmt).all()
-    # 证据偏移批量取：每条观点取其证据段的最小起点（=直播内的全局偏移）
+    # 证据偏移批量取（与推送同口径：app/services/viewpoint_time）
     vp_ids = [vp.id for vp, *_ in vp_rows]
-    first_offset: dict[int, int] = {}
-    if vp_ids:
-        off_rows = session.execute(
-            select(
-                ViewpointEvidence.viewpoint_id,
-                func.min(TranscriptSegment.start_ms),
-            )
-            .join(
-                TranscriptSegment,
-                TranscriptSegment.id == ViewpointEvidence.transcript_segment_id,
-            )
-            .where(ViewpointEvidence.viewpoint_id.in_(vp_ids))
-            .group_by(ViewpointEvidence.viewpoint_id)
-        ).all()
-        first_offset = {vid: int(seg_start or 0) for vid, seg_start in off_rows}
+    from app.services.viewpoint_time import evidence_offset_map
+
+    first_offset = evidence_offset_map(session, vp_ids)
 
     for vp, item, creator_name, avatar_url, entity_name in vp_rows:
         at = None

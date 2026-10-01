@@ -127,3 +127,104 @@ def test_send_test_message_ok_and_business_error(db_session):
     bad = _capture([], body={"code": 19021, "msg": "sign match fail"})
     with pytest.raises(RuntimeError, match="19021"):
         send_test_message(db_session, ch.id, http=bad)
+
+
+# --- 直播分片快报（2026-09-30：推送按分片粒度，系统内仍是整场一个视频）---
+
+
+def _mk_live_confirmed(db_session, *, display_name="李一恩", closed=False):
+    """进行中的直播条目 + 2 条已确认观点（带证据偏移 5min/12min）。"""
+    from app.db.models import TranscriptSegment, ViewpointEvidence
+    from datetime import UTC, datetime
+
+    creator = Creator(display_name=display_name, status="active")
+    db_session.add(creator)
+    db_session.flush()
+    account = SourceAccount(
+        creator_id=creator.id, platform="douyin", external_id="sec_live", discovery_mode="manual"
+    )
+    db_session.add(account)
+    db_session.flush()
+    start = datetime(2026, 9, 30, 19, 0, tzinfo=UTC)
+    item = SourceItem(
+        source_account_id=account.id,
+        external_item_id="live_push_item",
+        item_type="live",
+        status="transcribing",
+        published_at=start,
+        metadata_json={"live": {"closed": closed}},
+    )
+    db_session.add(item)
+    db_session.flush()
+    vps = []
+    for i, (offset_min, claim) in enumerate([(5, "黄金看涨"), (12, "大盘中性")]):
+        seg = TranscriptSegment(
+            source_item_id=item.id, sequence_no=i + 1,
+            start_ms=offset_min * 60000, end_ms=(offset_min + 1) * 60000, text=claim,
+        )
+        db_session.add(seg)
+        db_session.flush()
+        vp = Viewpoint(
+            creator_id=creator.id, source_item_id=item.id, claim=claim,
+            stance="bullish" if i == 0 else "neutral", confidence=0.9,
+            verification_status="confirmed",
+        )
+        db_session.add(vp)
+        db_session.flush()
+        db_session.add(
+            ViewpointEvidence(
+                viewpoint_id=vp.id, transcript_segment_id=seg.id,
+                start_ms=seg.start_ms, end_ms=seg.end_ms, evidence_text=claim, evidence_order=1,
+            )
+        )
+        vps.append(vp)
+    db_session.commit()
+    return item, vps
+
+
+def test_live_ongoing_pushes_bulletin_with_clock_time(db_session, confirmed_vps):
+    """进行中的直播观点 → 独立「直播快报」消息（带 HH:mm 钟点），与 vod digest 分开发送。"""
+    item, live_vps = _mk_live_confirmed(db_session)
+    ch = _mk_channel(db_session)
+    captured: list[httpx.Request] = []
+
+    out = deliver_pending_pushes(db_session, http=_capture(captured))
+    assert out["delivered"] == 5  # 3 vod + 2 live
+    assert len(captured) == 2  # 1 条 vod digest + 1 条直播快报
+    texts = [json.loads(r.read())["content"]["text"] for r in captured]
+    bulletin = next(t for t in texts if "直播快报" in t)
+    digest = next(t for t in texts if "新增确认观点" in t)
+    assert "李一恩 直播进行中" in bulletin
+    # 钟点 = 起播 19:00 + 偏移 5/12 分钟（UTC；fmt 无时区转换，直接按存的时间）
+    assert "19:05" in bulletin and "19:12" in bulletin
+    assert "黄金看涨" in bulletin
+    # vod 观点仍在 digest 里、不混入快报
+    assert "观点0" in digest and "观点0" not in bulletin
+    # 幂等：第二轮无消息
+    captured.clear()
+    out2 = deliver_pending_pushes(db_session, http=_capture(captured))
+    assert out2["channels"] == 0 and not captured
+
+
+def test_closed_live_goes_digest_not_bulletin(db_session):
+    """已收尾的直播观点 → 走普通 digest（快报只对进行中的直播）。"""
+    _item, live_vps = _mk_live_confirmed(db_session, closed=True)
+    ch = _mk_channel(db_session)
+    captured: list[httpx.Request] = []
+    out = deliver_pending_pushes(db_session, http=_capture(captured))
+    assert len(captured) == 1
+    text = json.loads(captured[0].read())["content"]["text"]
+    assert "新增确认观点" in text and "直播快报" not in text
+
+
+def test_webhook_bulletin_event_and_fields(db_session):
+    """generic_webhook：快报用 viewpoints.live_bulletin 事件，条目带 said_at/live_ongoing。"""
+    _item, _vps = _mk_live_confirmed(db_session)
+    ch = _mk_channel(db_session, ctype="generic_webhook")
+    captured: list[httpx.Request] = []
+    deliver_pending_pushes(db_session, http=_capture(captured))
+    payload = json.loads(captured[0].read())
+    assert payload["event"] == "viewpoints.live_bulletin"
+    items = payload["items"]
+    assert all(it["live_ongoing"] for it in items)
+    assert any(it["said_at"] for it in items)

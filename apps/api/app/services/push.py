@@ -19,12 +19,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
-from app.db.models import Creator, Entity, PushChannel, PushDelivery, Viewpoint
+from app.db.models import Creator, Entity, PushChannel, PushDelivery, SourceItem, Viewpoint
 
 logger = structlog.get_logger(__name__)
 
 _CHANNEL_TYPES = ("generic_webhook", "feishu", "dingtalk")
 _BATCH_LIMIT = 20  # 单渠道单轮最多携带的观点数（digest 防超长）
+
+# (观点, 主播名, 标的名, 所属条目)——条目用于直播快报分组与时刻计算
+PushRow = tuple[Viewpoint, str | None, str | None, SourceItem]
 
 _STANCE_CN = {
     "strong_bullish": "强烈看多",
@@ -50,7 +53,15 @@ def _with_dingtalk_sign(url: str, secret: str) -> str:
     return f"{url}{sep}timestamp={ts}&sign={sign}"
 
 
-def _serialize_vp_row(vp: Viewpoint, creator_name: str | None, entity_name: str | None) -> dict:
+def _serialize_vp_row(
+    vp: Viewpoint,
+    creator_name: str | None,
+    entity_name: str | None,
+    *,
+    item: SourceItem | None = None,
+    said_at=None,
+) -> dict:
+    live_meta = (getattr(item, "metadata_json", None) or {}).get("live") or {}
     return {
         "viewpoint_id": vp.id,
         "creator_name": creator_name,
@@ -61,38 +72,88 @@ def _serialize_vp_row(vp: Viewpoint, creator_name: str | None, entity_name: str 
         "entity_raw": vp.entity_raw,
         "confidence": float(vp.confidence or 0.5),
         "as_of_date": vp.as_of_date.isoformat() if vp.as_of_date else None,
+        "item_id": getattr(item, "id", None),
+        "item_type": getattr(item, "item_type", None),
+        # 直播分片快报：主播说出这句话的钟点（起播+证据偏移）与直播中标记
+        "said_at": said_at.isoformat() if said_at else None,
+        "live_ongoing": bool(
+            getattr(item, "item_type", None) == "live" and not live_meta.get("closed")
+        ),
         "confirmed_via_updated_at": vp.updated_at.isoformat() if vp.updated_at else None,
     }
 
 
-def _digest_text(rows: list[tuple[Viewpoint, str | None, str | None]]) -> str:
+def _hhmm(dt) -> str:
+    if dt is None:
+        return ""
+    return dt.strftime("%H:%M")
+
+
+def _digest_text(rows: list[PushRow], said_at: dict[int, object] | None = None) -> str:
+    said_at = said_at or {}
     lines = [f"【观点雷达】新增确认观点 {len(rows)} 条", ""]
-    for i, (vp, creator_name, entity_name) in enumerate(rows, 1):
+    for i, (vp, creator_name, entity_name, _item) in enumerate(rows, 1):
         entity = entity_name or vp.entity_raw or "未指明标的"
         stance = _STANCE_CN.get(vp.stance, vp.stance)
         claim = vp.claim[:60] + ("…" if len(vp.claim) > 60 else "")
+        at = _hhmm(said_at.get(vp.id))
+        when = f"{at} " if at else ""
         lines.append(
-            f"{i}. {creator_name or '未知主播'} · {entity} · {stance}"
+            f"{i}. {when}{creator_name or '未知主播'} · {entity} · {stance}"
             f"（置信 {float(vp.confidence or 0.5):.2f}）"
         )
         lines.append(f"   {claim}")
     return "\n".join(lines)
 
 
+def _live_bulletin_text(item: SourceItem, creator_name: str, rows: list[PushRow], said_at: dict[int, object]) -> str:
+    """直播分片快报（用户 2026-09-30：推送按分片粒度，不等播完）。
+
+    一场进行中的直播一条消息：本轮分片新确认的观点逐条带钟点，
+    读者按时间顺序看主播这几分钟说了什么。系统内仍是整场一个视频，
+    这里只是推送的汇报粒度。
+    """
+    title = (item.title or "")[:30]
+    head = f"【观点雷达·直播快报】{creator_name or '未知主播'} 直播进行中"
+    if title:
+        head += f"（{title}）"
+    lines = [head, ""]
+    for i, (vp, _c, entity_name, _it) in enumerate(sorted(rows, key=lambda r: r[0].id), 1):
+        entity = entity_name or vp.entity_raw or "未指明标的"
+        stance = _STANCE_CN.get(vp.stance, vp.stance)
+        at = _hhmm(said_at.get(vp.id)) or "--:--"
+        lines.append(f"{at} · {entity} · {stance}（置信 {float(vp.confidence or 0.5):.2f}）")
+        lines.append(f"   {vp.claim[:60]}{'…' if len(vp.claim) > 60 else ''}")
+    lines.append("")
+    lines.append("（本场直播持续录制，观点随分片滚动确认推送）")
+    return "\n".join(lines)
+
+
 def _build_payload(
-    channel: PushChannel, rows: list[tuple[Viewpoint, str | None, str | None]], *, test: bool = False
+    channel: PushChannel,
+    rows: list[PushRow],
+    *,
+    test: bool = False,
+    said_at: dict[int, object] | None = None,
+    live_group: tuple[SourceItem, str] | None = None,
 ) -> tuple[str, dict | None]:
-    """返回 (url, json_body)；text 类消息体见 _build_text。"""
+    """返回 (url, json_body)；text 类消息体见 _digest_text/_live_bulletin_text。
+
+    live_group=(item, creator_name) 时构建「直播分片快报」消息（一场直播一条）。
+    """
+    said_at = said_at or {}
     cfg = channel.config_json or {}
     url = cfg.get("url") or ""
     secret = cfg.get("secret") or None
+    if live_group is not None:
+        text = _live_bulletin_text(live_group[0], live_group[1], rows, said_at)
+    else:
+        text = "观点雷达推送测试：连通性 OK" if test else _digest_text(rows, said_at)
     if channel.channel_type == "dingtalk":
         if secret:
             url = _with_dingtalk_sign(url, secret)
-        text = "观点雷达推送测试：连通性 OK" if test else _digest_text(rows)
         return url, {"msgtype": "markdown", "markdown": {"title": "观点雷达", "text": text}}
     if channel.channel_type == "feishu":
-        text = "观点雷达推送测试：连通性 OK" if test else _digest_text(rows)
         body: dict = {"msg_type": "text", "content": {"text": text}}
         if secret:
             ts = int(time.time())
@@ -100,8 +161,15 @@ def _build_payload(
             body["sign"] = _sign(secret, ts)
         return url, body
     # generic_webhook
-    items = [_serialize_vp_row(vp, c, e) for vp, c, e in rows]
-    event = "test" if test else "viewpoints.confirmed"
+    items = [
+        _serialize_vp_row(vp, c, e, item=it, said_at=said_at.get(vp.id)) for vp, c, e, it in rows
+    ]
+    if live_group is not None:
+        event = "viewpoints.live_bulletin"
+    elif test:
+        event = "test"
+    else:
+        event = "viewpoints.confirmed"
     return url, {"event": event, "items": items}
 
 
@@ -138,7 +206,12 @@ def send_test_message(session: Session, channel_id: int, http: httpx.Client | No
 
 
 def deliver_pending_pushes(session: Session, http: httpx.Client | None = None) -> dict:
-    """beat 入口：扫描未投递的确认观点并按渠道推送。"""
+    """beat 入口：扫描未投递的确认观点并按渠道推送。
+
+    直播分片快报（用户 2026-09-30）：进行中的直播（未 close）新确认观点按
+    「一场直播一条消息」推送，带主播钟点——推送粒度=分片批次，不等播完；
+    其余观点仍聚合成 digest 一条。两种消息独立记账/重试。
+    """
     s = get_settings()
     counters = {"channels": 0, "delivered": 0, "failed": 0, "dead": 0}
     channels = session.scalars(
@@ -148,11 +221,12 @@ def deliver_pending_pushes(session: Session, http: httpx.Client | None = None) -
     client = http or httpx.Client(trust_env=False)  # 不继承环境代理（no_proxy IPv6 CIDR 触发 httpx 崩溃）
     try:
         for channel in channels:
-            rows = (
+            rows: list[PushRow] = (
                 session.execute(
-                    select(Viewpoint, Creator.display_name, Entity.canonical_name)
+                    select(Viewpoint, Creator.display_name, Entity.canonical_name, SourceItem)
                     .join(Creator, Creator.id == Viewpoint.creator_id)
                     .outerjoin(Entity, Entity.id == Viewpoint.entity_id)
+                    .join(SourceItem, SourceItem.id == Viewpoint.source_item_id)
                     .where(
                         Viewpoint.verification_status == "confirmed",
                         ~select(PushDelivery.id)
@@ -176,46 +250,68 @@ def deliver_pending_pushes(session: Session, http: httpx.Client | None = None) -
                 for d in session.scalars(
                     select(PushDelivery).where(
                         PushDelivery.channel_id == channel.id,
-                        PushDelivery.viewpoint_id.in_([vp.id for vp, _, _ in rows]),
+                        PushDelivery.viewpoint_id.in_([vp.id for vp, _, _, _ in rows]),
                     )
                 )
             }
-            try:
-                url, body = _build_payload(channel, rows)
-                _send(channel, url, body, client)
-            except Exception as exc:  # noqa: BLE001 网络失败记账进 delivery，不中断其他渠道
-                for vp, _, _ in rows:
+            from app.services.viewpoint_time import said_at_map
+
+            said_at = said_at_map(session, [vp for vp, _, _, _ in rows])
+
+            def _record(group_rows: list[PushRow], status: str, error: str | None = None) -> None:
+                for vp, _, _, _ in group_rows:
                     d = deliveries.get(vp.id) or PushDelivery(
                         channel_id=channel.id, viewpoint_id=vp.id, attempt=0
                     )
                     if d.id is None:
                         session.add(d)
-                    d.attempt = (d.attempt or 0) + 1
-                    d.status = "failed"
-                    d.error = str(exc)[:500]
-                    if d.attempt >= s.open_push_max_attempts:
-                        d.status = "dead"
-                        counters["dead"] += 1
-                    counters["failed"] += 1
+                    d.error = error
+                    if status == "sent":
+                        d.status = "sent"
+                        d.attempt = d.attempt or 0
+                        counters["delivered"] += 1
+                    else:
+                        d.attempt = (d.attempt or 0) + 1
+                        d.status = "failed"
+                        if d.attempt >= s.open_push_max_attempts:
+                            d.status = "dead"
+                            counters["dead"] += 1
+                        counters["failed"] += 1
                 session.commit()  # 失败/dead 也必须落库，否则下轮看不到 attempt 计数
-                logger.warning(
-                    "push_channel_failed",
-                    channel=channel.name,
-                    error=str(exc)[:150],
-                    viewpoints=len(rows),
-                )
-                continue
-            # 投递时间以 updated_at 为准（TimestampMixin onupdate）
-            for vp, _, _ in rows:
-                d = deliveries.get(vp.id) or PushDelivery(
-                    channel_id=channel.id, viewpoint_id=vp.id
-                )
-                if d.id is None:
-                    session.add(d)
-                d.status = "sent"
-                d.error = None
-                counters["delivered"] += 1
-            session.commit()
+
+            # 分组：进行中的直播按条目一组（一场一条快报），其余进 digest
+            live_groups: dict[int, tuple[SourceItem, str, list[PushRow]]] = {}
+            plain_rows: list[PushRow] = []
+            for row in rows:
+                vp, creator_name, _entity, item = row
+                live_meta = (item.metadata_json or {}).get("live") or {}
+                if item.item_type == "live" and not live_meta.get("closed"):
+                    g = live_groups.setdefault(item.id, (item, creator_name or "", []))
+                    g[2].append(row)
+                else:
+                    plain_rows.append(row)
+
+            send_groups: list[tuple[list[PushRow], dict]] = []
+            for item, creator_name, g_rows in live_groups.values():
+                send_groups.append((g_rows, {"live_group": (item, creator_name)}))
+            if plain_rows:
+                send_groups.append((plain_rows, {}))
+
+            for group_rows, kwargs in send_groups:
+                try:
+                    url, body = _build_payload(channel, group_rows, said_at=said_at, **kwargs)
+                    _send(channel, url, body, client)
+                except Exception as exc:  # noqa: BLE001 组级失败只记该组，不中断其他组/渠道
+                    _record(group_rows, "failed", str(exc)[:500])
+                    logger.warning(
+                        "push_group_failed",
+                        channel=channel.name,
+                        error=str(exc)[:150],
+                        viewpoints=len(group_rows),
+                        live=bool(kwargs.get("live_group")),
+                    )
+                    continue
+                _record(group_rows, "sent")
         if counters["channels"]:
             logger.info("push_deliver_done", **counters)
         return counters
