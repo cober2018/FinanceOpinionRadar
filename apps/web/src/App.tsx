@@ -2307,6 +2307,37 @@ function OpenApiPage() {
       </div>
       {error && <p className="error">{error}</p>}
 
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-head"><h3>对外端点总览（GET /open/v1/*）</h3></div>
+        <table className="board">
+          <thead><tr><th>端点</th><th>用途</th><th>下游用法</th></tr></thead>
+          <tbody>
+            {[
+              ['/open/v1/viewpoints', '已确认观点列表（since 增量、多维过滤）', '主数据接口'],
+              ['/open/v1/viewpoints/{id}', '观点详情', ''],
+              ['/open/v1/items/{id}/transcript', '转录全文（分段结构）', ''],
+              ['/open/v1/items/{id}/summary', '视频观点总结', ''],
+              ['/open/v1/video-summaries', '一视频一总结的版本变更流（ready/withdrawn）', '增量同步总结'],
+              ['/open/v1/broadcasters', '主播清单最新快照', 'DreamOAgents「关注主播」清单同步'],
+              ['/open/v1/broadcasters/recent-summaries', '各主播最近总结预览', 'DreamOAgents「最近 5 条」预览'],
+              ['/open/v1/transcripts/search', '转录关键词搜索（条目级命中）', ''],
+              ['/open/v1/creators', '主播与账号映射', ''],
+              ['/open/v1/entities', '标的词典', ''],
+            ].map(([ep, usage, who]) => (
+              <tr key={ep}>
+                <td><code>{ep}</code></td>
+                <td>{usage}</td>
+                <td className="muted">{who || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="hint" style={{ margin: '8px 12px' }}>
+          注意：DreamOAgents 侧的 <code>/api/notifications</code>、<code>/api/radar/broadcasters</code>、<code>/api/radar/follows</code> 等
+          是下游系统自己的通知中心接口（其数据由上面这些端点同步 + webhook 推送获得），不在本系统的对外端点之列。
+        </p>
+      </div>
+
       <div className="gateway-layout">
         <aside className="gateway-catalog" aria-label="服务目录">
           <div className="gateway-catalog-label">服务目录</div>
