@@ -128,15 +128,18 @@ def get_timeline(
         )
 
     # --- 总结事件（含直播滚动总结的最新版本）---
+    # 时刻与观点事件同口径：按**内容时刻**（发布/起播）定位与筛选——总结是视频
+    # 观点的浓缩，归属视频所在的那一天；生成时刻（滚动刷新时间）只作辅助展示。
+    # 按 summary_generated_at 定位曾把 9/30 的视频总结挂到 10/1（凌晨回填生成）。
     def _summary_filters(stmt):
         if date_from:
             b = _day_bounds(date_from)
             if b:
-                stmt = stmt.where(SourceItem.summary_generated_at >= b[0])
+                stmt = stmt.where(SourceItem.published_at >= b[0])
         if date_to:
             b = _day_bounds(date_to)
             if b:
-                stmt = stmt.where(SourceItem.summary_generated_at < b[1])
+                stmt = stmt.where(SourceItem.published_at < b[1])
         return stmt
 
     su_rows = session.execute(
@@ -145,7 +148,7 @@ def get_timeline(
             .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
             .join(Creator, Creator.id == SourceAccount.creator_id)
             .where(SourceItem.viewpoint_summary.isnot(None))
-            .order_by(SourceItem.summary_generated_at.desc())
+            .order_by(SourceItem.published_at.desc().nullslast())
             .limit(_MAX_EVENTS)
         )
     ).all()
@@ -154,7 +157,10 @@ def get_timeline(
         events.append(
             {
                 "type": "summary",
-                "at": item.summary_generated_at.isoformat() if item.summary_generated_at else None,
+                "at": item.published_at.isoformat() if item.published_at else None,
+                "generated_at": item.summary_generated_at.isoformat()
+                if item.summary_generated_at
+                else None,
                 "item_id": item.id,
                 "item_type": item.item_type,
                 "title": item.title,

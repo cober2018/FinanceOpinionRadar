@@ -1288,6 +1288,7 @@ type TimelineEvent = {
   summary?: string
   live_ongoing?: boolean
   confirmed_count?: number
+  generated_at?: string | null
 }
 
 function TimelinePage() {
@@ -1361,7 +1362,12 @@ function TimelinePage() {
                     )}
                   </div>
                   <p className="timeline-text">{e.type === 'summary' ? e.summary : e.claim}</p>
-                  {e.title && <p className="muted timeline-src">来源：{e.title}</p>}
+                  <p className="muted timeline-src">
+                    {e.title && <>来源：{e.title}</>}
+                    {e.type === 'summary' && e.generated_at && (
+                      <>（生成于 {fmtDateTime(e.generated_at)}{e.live_ongoing ? '，随直播滚动更新' : ''}）</>
+                    )}
+                  </p>
                 </div>
               </div>
             )
