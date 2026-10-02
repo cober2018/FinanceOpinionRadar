@@ -2120,7 +2120,7 @@ const CHANNEL_TYPE_CN: Record<string, string> = {
 }
 
 function OpenApiPage() {
-  const [service, setService] = useState<'summaries' | 'broadcasters'>('summaries')
+  const [service, setService] = useState<'summaries' | 'broadcasters' | 'viewpoints' | 'transcripts' | 'meta'>('summaries')
   const [mode, setMode] = useState<'pull' | 'push'>('pull')
   const [trialKey, setTrialKey] = useState('')
   const [trialCursor, setTrialCursor] = useState('0')
@@ -2307,48 +2307,60 @@ function OpenApiPage() {
       </div>
       {error && <p className="error">{error}</p>}
 
-      <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="panel-head"><h3>对外端点总览（GET /open/v1/*）</h3></div>
-        <table className="board">
-          <thead><tr><th>端点</th><th>用途</th><th>下游用法</th></tr></thead>
-          <tbody>
-            {[
-              ['/open/v1/viewpoints', '已确认观点列表（since 增量、多维过滤）', '主数据接口'],
-              ['/open/v1/viewpoints/{id}', '观点详情', ''],
-              ['/open/v1/items/{id}/transcript', '转录全文（分段结构）', ''],
-              ['/open/v1/items/{id}/summary', '视频观点总结', ''],
-              ['/open/v1/video-summaries', '一视频一总结的版本变更流（ready/withdrawn）', '增量同步总结'],
-              ['/open/v1/broadcasters', '主播清单最新快照', 'DreamOAgents「关注主播」清单同步'],
-              ['/open/v1/broadcasters/recent-summaries', '各主播最近总结预览', 'DreamOAgents「最近 5 条」预览'],
-              ['/open/v1/transcripts/search', '转录关键词搜索（条目级命中）', ''],
-              ['/open/v1/creators', '主播与账号映射', ''],
-              ['/open/v1/entities', '标的词典', ''],
-            ].map(([ep, usage, who]) => (
-              <tr key={ep}>
-                <td><code>{ep}</code></td>
-                <td>{usage}</td>
-                <td className="muted">{who || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="hint" style={{ margin: '8px 12px' }}>
-          注意：DreamOAgents 侧的 <code>/api/notifications</code>、<code>/api/radar/broadcasters</code>、<code>/api/radar/follows</code> 等
-          是下游系统自己的通知中心接口（其数据由上面这些端点同步 + webhook 推送获得），不在本系统的对外端点之列。
-        </p>
-      </div>
-
       <div className="gateway-layout">
         <aside className="gateway-catalog" aria-label="服务目录">
           <div className="gateway-catalog-label">服务目录</div>
-          {([['summaries', '视频审核后总结'], ['broadcasters', '主播清单']] as const).map(([id, label]) => (
+          {([
+            ['summaries', '视频审核后总结'],
+            ['broadcasters', '主播清单'],
+            ['viewpoints', '已确认观点'],
+            ['transcripts', '转录内容'],
+            ['meta', '主播映射与标的词典'],
+          ] as const).map(([id, label]) => (
             <button key={id} type="button" className={`gateway-service${service === id ? ' gateway-service-selected' : ''}`} aria-pressed={service === id} disabled={trialLoading} onClick={() => { setService(id); setTrialResult(null) }}>
               {label}
             </button>
           ))}
         </aside>
-        <section className="gateway-detail" aria-label={service === 'broadcasters' ? '主播清单详情' : '视频审核后总结详情'}>
-          {service === 'broadcasters' ? <>
+        <section className="gateway-detail" aria-label="开放接口服务详情">
+          {service === 'viewpoints' ? <>
+            <div className="gateway-detail-head"><div>
+              <p className="muted">开放接口 / 服务目录</p>
+              <h3>已确认观点</h3>
+              <p className="muted">成果主接口：默认只出已确认观点，支持增量拉取与多维过滤。</p>
+            </div></div>
+            <div className="gateway-path"><span className="gateway-method">GET</span><code>/open/v1/viewpoints</code></div>
+            <h4>请求参数</h4>
+            <table className="table"><thead><tr><th>参数</th><th>说明</th><th>范围</th></tr></thead><tbody>
+              <tr><td><code>page / page_size</code></td><td>分页</td><td>page_size 1–200，默认 20</td></tr>
+              <tr><td><code>status</code></td><td>复核状态过滤</td><td>confirmed（默认）/ candidate / needs_review / rejected / all</td></tr>
+              <tr><td><code>since</code></td><td>增量拉取：只返回 updated_at 晚于该时刻的观点</td><td>ISO 时间</td></tr>
+              <tr><td><code>creator_id / entity_id / stance</code></td><td>按主播 / 标的 / 立场过滤</td><td>可选</td></tr>
+            </tbody></table>
+            <h4>返回字段</h4>
+            <p><code>items</code>、<code>total</code>、<code>page</code>、<code>page_size</code>。每条观点含 claim、stance、horizon、标的、主播、置信度与 <code>updated_at</code>（增量游标）。</p>
+            <p>单条详情：<code>GET /open/v1/viewpoints/&#123;viewpoint_id&#125;</code>。</p>
+          </> : service === 'transcripts' ? <>
+            <div className="gateway-detail-head"><div>
+              <p className="muted">开放接口 / 服务目录</p>
+              <h3>转录内容</h3>
+              <p className="muted">粗清洗成果：转录全文与关键词检索。</p>
+            </div></div>
+            <div className="gateway-path"><span className="gateway-method">GET</span><code>/open/v1/items/&#123;item_id&#125;/transcript</code></div>
+            <p>返回该视频/直播的转录全文，与控制台同构的分段结构（start_ms / end_ms / text / speaker）。</p>
+            <div className="gateway-path"><span className="gateway-method">GET</span><code>/open/v1/transcripts/search?q=</code></div>
+            <p>转录关键词搜索：条目级命中，附摘要片段，用于下游全文检索场景。</p>
+          </> : service === 'meta' ? <>
+            <div className="gateway-detail-head"><div>
+              <p className="muted">开放接口 / 服务目录</p>
+              <h3>主播映射与标的词典</h3>
+              <p className="muted">辅助对齐接口：账号维度对齐与标的标准化。</p>
+            </div></div>
+            <div className="gateway-path"><span className="gateway-method">GET</span><code>/open/v1/creators</code></div>
+            <p>主播与平台账号映射（creator → 多平台账号），供下游按平台/账号维度对齐数据。</p>
+            <div className="gateway-path"><span className="gateway-method">GET</span><code>/open/v1/entities</code></div>
+            <p>标的词典：与控制台 taxonomy 同一数据源，供下游对齐标的口径。</p>
+          </> : service === 'broadcasters' ? <>
             <div className="gateway-detail-head"><div>
               <p className="muted">开放接口 / 服务目录</p>
               <h3>主播清单</h3>
