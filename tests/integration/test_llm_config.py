@@ -155,7 +155,102 @@ def test_assignment_validation(db_session):
     )
     llm_config.put_llm_assignment(db_session, {"extraction": saved[0]["id"]})
     llm_config.put_llm_profiles(db_session, [])  # 清空档案
-    assert llm_config.get_llm_assignment(db_session) == {
+    assert {k: v for k, v in llm_config.get_llm_assignment(db_session).items() if k in {k for k, _ in llm_config.STAGES}} == {
         k: None for k, _ in llm_config.STAGES
     }
     assert type(llm_config.build_llm_provider(db_session, task="extraction")).__name__ == "OpenAICompatProvider"
+
+
+# --- 兜底模型（2026-10-02：主模型坏掉自动切兜底）---
+
+
+def test_assignment_fallback_key_roundtrip(db_session):
+    """assignment 接受 fallback 键；指向失效回落 None；未知阶段仍 422。"""
+    llm_config.put_llm_settings(
+        db_session,
+        {"template": "minimax", "base_url": "https://api.minimax.chat/v1",
+         "api_key": "mm", "model": "MiniMax-M3"},
+    )
+    saved = llm_config.put_llm_profiles(
+        db_session,
+        [{"name": "备胎", "template": "glm", "base_url": "https://open.bigmodel.cn/api/paas/v4",
+          "api_key": "glm", "model": "glm-4-plus", "chat_path": "/chat/completions"}],
+    )
+    out = llm_config.put_llm_assignment(
+        db_session, {"extraction": saved[0]["id"], "fallback": saved[0]["id"]}
+    )
+    assert out["fallback"] == saved[0]["id"]
+    # 指向失效（档案随后被删）→ 读时回落 None（PUT 时严格 422）
+    llm_config.put_llm_profiles(db_session, [])
+    assert llm_config.get_llm_assignment(db_session)["fallback"] is None
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="未知阶段"):
+        llm_config.put_llm_assignment(db_session, {"nope": "legacy"})
+
+
+def test_build_wraps_fallback_provider(db_session):
+    """配置兜底且 ≠ 主档案 → FallbackLLMProvider；同档案/未配置 → 裸 provider。"""
+    llm_config.put_llm_settings(
+        db_session,
+        {"template": "minimax", "base_url": "https://api.minimax.chat/v1",
+         "api_key": "mm", "model": "MiniMax-M3"},
+    )
+    saved = llm_config.put_llm_profiles(
+        db_session,
+        [
+            {"id": "main", "name": "主力", "template": "minimax", "base_url": "https://api.minimax.chat/v1",
+             "api_key": "mm-key", "model": "MiniMax-M3", "chat_path": "/text/chatcompletion_v2"},
+            {"name": "备胎", "template": "glm", "base_url": "https://open.bigmodel.cn/api/paas/v4",
+             "api_key": "glm", "model": "glm-4-plus", "chat_path": "/chat/completions"},
+        ],
+    )
+    from app.llm.provider import FallbackLLMProvider, OpenAICompatProvider
+
+    llm_config.put_llm_assignment(
+        db_session, {"summary": "main", "fallback": saved[1]["id"]}
+    )
+    p = llm_config.build_llm_provider(db_session, task="summary")
+    assert type(p).__name__ == "FallbackLLMProvider"
+    assert p._fallback._chat_path == "/chat/completions"  # 兜底走 GLM 档案
+
+    # 兜底 = 主模型同档案 → 不包装
+    llm_config.put_llm_assignment(db_session, {"summary": "main", "fallback": "main"})
+    assert type(llm_config.build_llm_provider(db_session, task="summary")).__name__ == "OpenAICompatProvider"
+
+    # 未配置兜底 → 裸 provider
+    llm_config.put_llm_assignment(db_session, {"summary": "main"})
+    assert type(llm_config.build_llm_provider(db_session, task="summary")).__name__ == "OpenAICompatProvider"
+
+
+def test_fallback_engages_on_primary_failure(db_session):
+    """主模型重试耗尽抛 LLMError → 兜底接管重跑；主模型正常不触发。"""
+    from app.llm.provider import FallbackLLMProvider, LLMError, LLMResponse
+
+    class FlakyPrimary:
+        calls = 0
+
+        def generate_json(self, system_prompt, user_prompt, schema, *, model=None, temperature=0.2):
+            FlakyPrimary.calls += 1
+            raise LLMError("LLM 请求失败（重试 2 次后）: HTTP 500")
+
+    class HealthyFallback:
+        calls = 0
+
+        def generate_json(self, system_prompt, user_prompt, schema, *, model=None, temperature=0.2):
+            HealthyFallback.calls += 1
+            return LLMResponse(data={"ok": True}, usage={}, provider="fb", model="fallback")
+
+    p = FallbackLLMProvider(FlakyPrimary(), HealthyFallback(), task="summary")
+    out = p.generate_json("sys", "user", {})
+    assert out.data == {"ok": True} and FlakyPrimary.calls == 1 and HealthyFallback.calls == 1
+
+    class GoodPrimary:
+        calls = 0
+
+        def generate_json(self, system_prompt, user_prompt, schema, *, model=None, temperature=0.2):
+            GoodPrimary.calls += 1
+            return LLMResponse(data={"ok": 1}, usage={}, provider="p", model="primary")
+
+    p2 = FallbackLLMProvider(GoodPrimary(), HealthyFallback(), task="extraction")
+    p2.generate_json("sys", "user", {})
+    assert GoodPrimary.calls == 1 and HealthyFallback.calls == 1  # 兜底未被触发（仍是 1 次历史调用）

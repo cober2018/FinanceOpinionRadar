@@ -326,6 +326,7 @@ class LLMAssignmentPayload(BaseModel):
     review: str | None = None
     summary: str | None = None
     polish: str | None = None
+    fallback: str | None = None  # 兜底模型档案 id；None=不启用
 
 
 class LLMTestPayload(BaseModel):

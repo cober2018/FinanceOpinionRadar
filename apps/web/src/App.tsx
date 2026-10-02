@@ -3044,6 +3044,20 @@ function LLMSettingsCard() {
                 </select>
               </label>
             ))}
+            <label className="field">
+              兜底模型（任一环节的主模型请求失败时自动切到它重跑；选「不启用」关闭）
+              <select
+                value={assignment.fallback ?? ''}
+                onChange={(e) => setAssignment((a) => ({ ...a, fallback: e.target.value || null }))}
+              >
+                <option value="">不启用</option>
+                {profiles.map((p) => (
+                  <option key={p.id ?? p.name} value={p.id ?? ''}>
+                    {p.name || '未命名'}{p.model ? `（${p.model}）` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         )}
         <div className="form-actions">

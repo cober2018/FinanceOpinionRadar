@@ -110,13 +110,15 @@ def build_llm_provider(session: Session, task: str = "extraction"):
     """按阶段构造 provider：llm_assignment 指向的 profile 优先，无则回落旧单配置链。
 
     task ∈ extraction|review|summary|polish；未配置完整 → Mock（链路通、产出空）。
+    配置了兜底模型（assignment.fallback）且与该阶段主模型不同 → 透明包装
+    FallbackLLMProvider：主模型重试耗尽（LLMError）自动切兜底（用户 2026-10-02）。
     """
-    from app.llm.provider import MockLLMProvider, OpenAICompatProvider
+    from app.llm.provider import FallbackLLMProvider, MockLLMProvider, OpenAICompatProvider
 
     s = get_settings()
     profile = _resolve_profile(session, task)
     if profile is not None:
-        return OpenAICompatProvider(
+        provider = OpenAICompatProvider(
             base_url=profile["base_url"],
             api_key=profile["api_key"],
             model=profile["model"],
@@ -125,7 +127,29 @@ def build_llm_provider(session: Session, task: str = "extraction"):
             chat_path=profile["chat_path"] or "/chat/completions",
             max_tokens=s.llm_max_tokens,
         )
+        fb_profile = _fallback_profile(session, exclude_id=profile["id"])
+        if fb_profile is not None:
+            fallback = OpenAICompatProvider(
+                base_url=fb_profile["base_url"],
+                api_key=fb_profile["api_key"],
+                model=fb_profile["model"],
+                timeout_sec=s.llm_timeout_sec,
+                max_retries=s.llm_max_retries,
+                chat_path=fb_profile["chat_path"] or "/chat/completions",
+                max_tokens=s.llm_max_tokens,
+            )
+            return FallbackLLMProvider(provider, fallback, task=task)
+        return provider
     return _legacy_provider(session)
+
+
+def _fallback_profile(session: Session, *, exclude_id: str) -> dict | None:
+    """兜底模型档案（assignment.fallback）；与主模型同档案或不存在则 None。"""
+    profiles = get_llm_profiles(session, include_secrets=True)
+    fb_id = get_llm_assignment(session).get("fallback")
+    if not fb_id or fb_id == exclude_id:
+        return None
+    return next((p for p in profiles if p["id"] == fb_id), None)
 
 
 # --- 多模型档案 + 阶段分配（用户 2026-09-30：配多个大模型，各阶段各用各的）---
@@ -232,6 +256,8 @@ def get_llm_assignment(session: Session) -> dict[str, str | None]:
 
     从旧单配置迁移而来且未手动保存过分配时，review 默认指向迁移出的
     「复核模型」档案（若存在）——保持 EPIC-05 review_model 的语义。
+    另含 fallback 键：兜底模型档案 id（None=未启用；用户 2026-10-02——
+    某环节主模型坏掉时自动切兜底）。
     """
     row = session.get(AppSetting, LLM_ASSIGNMENT_KEY)
     stored = (row.value if row else {}) or {}
@@ -249,16 +275,22 @@ def get_llm_assignment(session: Session) -> dict[str, str | None]:
             out[key] = legacy_review
         else:
             out[key] = first
+    # 兜底模型：指向失效视为未启用（None）
+    fb = stored.get("fallback")
+    out["fallback"] = fb if fb and any(p["id"] == fb for p in profiles) else None
     return out
 
 
 def put_llm_assignment(session: Session, payload: dict) -> dict:
-    """保存阶段分配。全量替换（前端整体提交）；非法 stage 或未知档案 422。"""
+    """保存阶段分配。全量替换（前端整体提交）；非法 stage 或未知档案 422。
+
+    另接受 fallback 键（兜底模型档案 id，None=不启用）。
+    """
     profiles = get_llm_profiles(session)
     known = {p["id"] for p in profiles}
     clean: dict[str, str] = {}
     for key, value in payload.items():
-        if key not in _STAGE_KEYS:
+        if key != "fallback" and key not in _STAGE_KEYS:
             raise ValueError(f"未知阶段: {key}")
         if value is None:
             continue

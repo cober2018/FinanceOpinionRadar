@@ -194,3 +194,42 @@ class OpenAICompatProvider:
                 model=str(payload["model"]),
             )
         raise LLMError(message)
+
+
+class FallbackLLMProvider:
+    """主模型重试耗尽（LLMError，含网络/HTTP/解析失败）→ 自动切兜底模型重跑。
+
+    透明包装：调用方（抽取/复核/总结/润色）无感知，只在切换时留 warning 日志。
+    """
+
+    def __init__(self, primary: LLMProvider, fallback: LLMProvider, *, task: str = "") -> None:
+        self._primary = primary
+        self._fallback = fallback
+        self._task = task
+
+    def generate_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema: dict,
+        *,
+        model: str | None = None,
+        temperature: float = 0.2,
+    ) -> LLMResponse:
+        try:
+            return self._primary.generate_json(
+                system_prompt, user_prompt, schema, model=model, temperature=temperature
+            )
+        except LLMError as exc:
+            primary_name = getattr(self._primary, "_model", "") or type(self._primary).__name__
+            fallback_name = getattr(self._fallback, "_model", "") or type(self._fallback).__name__
+            logger.warning(
+                "llm_fallback_engaged",
+                task=self._task,
+                primary=primary_name,
+                fallback=fallback_name,
+                error=str(exc)[:200],
+            )
+            return self._fallback.generate_json(
+                system_prompt, user_prompt, schema, temperature=temperature
+            )
