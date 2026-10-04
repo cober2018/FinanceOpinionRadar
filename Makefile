@@ -22,11 +22,14 @@ dev: ## 启动 API 开发服务器 (前端开发服务器用 make web)
 	docker compose up -d
 	$(PYTHON) -m uvicorn app.main:app --reload --host $(HOST) --port $(PORT) --app-dir apps/api
 
-up: ## 一键幂等拉起全部组件：docker 依赖 + dtk + API :8010 + worker（已在跑的跳过）
+up: ## 一键幂等拉起全部组件：docker 依赖 + dtk + API :8010 + worker + gemini 隧道（已在跑的跳过）
 	@bash scripts/dev_up.sh up
 
-status: ## 诊断组件存活（Postgres/Redis/dtk/API/worker），DOWN 时提示 make up
+status: ## 诊断组件存活（Postgres/Redis/dtk/API/worker/gemini 隧道），DOWN 时提示 make up
 	@bash scripts/dev_up.sh status
+
+gemini-tunnel: ## 启动 gemini 复核模型隧道（异地经 Tailscale 跳板 → 复核机 :8317，幂等；见 scripts/gemini_tunnel.sh）
+	@bash scripts/dev_up.sh tunnel
 
 web: ## 启动前端 Vite 开发服务器
 	cd apps/web && npm run dev

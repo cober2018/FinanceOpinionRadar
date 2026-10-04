@@ -19,6 +19,7 @@ API_PORT=8010
 API_HOST=${API_HOST:-0.0.0.0}
 API_LOG=/tmp/radar-api-8010.log
 WORKER_LOG=/tmp/radar-worker-beat.log
+TUNNEL_PORT=8317
 PY=.venv/bin/python
 DTK_CONTAINERS=(douyin-api dtk-worker dtk-postgres dtk-redis)
 
@@ -79,6 +80,26 @@ start_worker() {
   return 1
 }
 
+# gemini 复核模型隧道（异地开发：本机与复核机撞 192.168.31.0/24 网段，
+# 只能经 Tailscale 跳板 SSH 端口转发，见 gemini_tunnel.sh 头注释）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+tunnel_alive() { pgrep -f "gemini_tunnel.sh" >/dev/null 2>&1; }
+tunnel_port_up() { lsof -ti:"$TUNNEL_PORT" >/dev/null 2>&1; }
+
+start_tunnel() {
+  echo "==> gemini 复核模型隧道 :${TUNNEL_PORT}（经 quantagents-prod 跳板）"
+  if tunnel_alive; then echo "    已在跑，跳过"; return 0; fi
+  start_detached "$SCRIPT_DIR/gemini_tunnel.sh" >/dev/null 2>&1
+  for _ in $(seq 1 15); do
+    tunnel_port_up && { echo "    隧道就绪"; return 0; }
+    sleep 1
+  done
+  # 跳板暂不可达也照常返回：守护会自动重试，LLM 复核届时走兜底模型
+  echo "    隧道未就绪（守护已起会自动重试，日志 logs/gemini_tunnel.log）" >&2
+  return 0
+}
+
 report() {
   pg_alive && p=$c_ok || p=$c_down
   redis_alive && r=$c_ok || r=$c_down
@@ -92,6 +113,13 @@ report() {
   echo "  dtk 解析(:8080)  $d   （不监测抖音可忽略）"
   echo "  API(:$API_PORT)        $a"
   echo "  worker+beat      $w"
+  if tunnel_port_up; then
+    echo "  gemini 隧道(:$TUNNEL_PORT)  $c_ok"
+  elif tunnel_alive; then
+    echo "  gemini 隧道(:$TUNNEL_PORT)  $c_down   （跳板不可达，守护自动重试，复核走兜底）"
+  else
+    echo "  gemini 隧道(:$TUNNEL_PORT)  未启动   （复核主模型走跳板转发，可 make gemini-tunnel 拉起）"
+  fi
   if [[ $a == *DOWN* || $w == *DOWN* || $p == *DOWN* ]]; then
     echo
     echo "有组件 DOWN：运行 make up 一键拉起（幂等，可重复执行）。"
@@ -103,6 +131,7 @@ cmd_up() {
   wait_pg || { echo "Postgres 30s 未就绪" >&2; exit 1; }
   if api_alive; then echo "==> API :$API_PORT 已在跑，跳过"; else start_api; fi
   if worker_alive; then echo "==> worker 已在跑，跳过"; else start_worker; fi
+  start_tunnel
   report
 }
 
@@ -111,5 +140,6 @@ cmd_status() { report; }
 case "${1:-up}" in
   up) cmd_up ;;
   status) cmd_status ;;
-  *) echo "用法: $0 [up|status]" >&2; exit 2 ;;
+  tunnel) start_tunnel ;;
+  *) echo "用法: $0 [up|status|tunnel]" >&2; exit 2 ;;
 esac
