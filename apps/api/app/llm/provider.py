@@ -161,11 +161,21 @@ class OpenAICompatProvider:
             content = ""
             try:
                 body = resp.json()
+                # MiniMax 出错时返回 200 + {"choices": null, "base_resp": {...}}（HTTP 层看不出异常），
+                # 不是 dict / 没有 choices 都按响应异常处理，并把 base_resp 的真实原因带出来
+                if not isinstance(body, dict) or not body.get("choices"):
+                    base = body.get("base_resp") if isinstance(body, dict) else None
+                    detail = (
+                        f"base_resp {base.get('status_code')}: {base.get('status_msg')}"
+                        if isinstance(base, dict) and base.get("status_msg")
+                        else repr(body)[:200]
+                    )
+                    raise ValueError(f"响应无 choices（{detail}）")
                 message = body["choices"][0]["message"]
                 content = (message.get("content") or "").strip()
                 usage = body.get("usage") or {}
                 data = _extract_json(content)
-            except (KeyError, json.JSONDecodeError, ValueError) as exc:
+            except (KeyError, TypeError, json.JSONDecodeError, ValueError) as exc:
                 head = repr(content[:60]) if isinstance(content, str) else "?"
                 last_err = f"响应解析失败: {exc}（content 头部={head}）"
                 last_error_kind = "parse"

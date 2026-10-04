@@ -90,6 +90,37 @@ def test_generate_json_raises_on_invalid_json():
         p.generate_json("s", "u", SCHEMA)
 
 
+def test_generate_json_raises_on_choices_null_with_base_resp():
+    """MiniMax 出错形状：HTTP 200 + {"choices": null, "base_resp": {...}}（2026-10-04 实录）。
+
+    修前 TypeError（None 不可下标）炸穿 FallbackLLMProvider；修后按解析失败重试、
+    耗尽抛 LLMError 且错误信息带 base_resp 真实原因。
+    """
+    calls: list = []
+    body = {"choices": None, "usage": None,
+            "base_resp": {"status_code": 2013, "status_msg": "invalid params, unknown model 'x'"}}
+    p = _provider(calls, [_resp(body)] * 3)
+    monkeypatch_sleep(p)
+    with pytest.raises(LLMError, match="unknown model"):
+        p.generate_json("s", "u", SCHEMA)
+    assert len(calls) == 3  # 200 不算 HTTP 失败，走的是解析重试
+
+
+def test_fallback_survives_choices_null_primary_then_healthy_fallback():
+    """主模型返回 choices:null 抛 LLMError（而非 TypeError）→ 兜底正常接管。"""
+    from app.llm.provider import FallbackLLMProvider
+
+    calls: list = []
+    bad = {"choices": None, "base_resp": {"status_code": 2013, "status_msg": "unknown model"}}
+    good = {"choices": [{"message": {"content": '{"viewpoints": []}'}}], "usage": {}}
+    primary = _provider(calls, [_resp(bad)] * 3)
+    fallback = _provider(calls, [_resp(good)])
+    monkeypatch_sleep(primary)
+    monkeypatch_sleep(fallback)
+    out = FallbackLLMProvider(primary, fallback, task="review").generate_json("s", "u", SCHEMA)
+    assert out.data == {"viewpoints": []}
+
+
 def test_mock_provider_returns_schema_shaped_empty():
     p = MockLLMProvider()
     out = p.generate_json("s", "u", SCHEMA)
