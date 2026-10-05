@@ -821,3 +821,102 @@ button.danger:hover:not(:disabled) { border-color: var(--live); }
   margin: 4px 0 0;
   font-size: 12px;
 }
+
+/* --- 观点表：横向滚动容器 + 冻结列（发布时间/观点/内容状态 左冻结，操作 右冻结） --- */
+.board-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+/* 卡片外框交给滚动容器；sticky 需要表格自身无 overflow:hidden，且边框改 separate 避免折叠边框跟随异常 */
+table.vp-freeze {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow: visible;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+table.vp-freeze th,
+table.vp-freeze td {
+  padding: 9px 8px;
+}
+
+table.vp-freeze th:nth-child(1),
+table.vp-freeze td:not([colspan]):nth-child(1) {
+  position: sticky; left: 0; z-index: 1; width: 124px; min-width: 124px;
+}
+table.vp-freeze th:nth-child(2),
+table.vp-freeze td:not([colspan]):nth-child(2) {
+  position: sticky; left: 124px; z-index: 1; width: 188px; min-width: 188px;
+}
+table.vp-freeze th:nth-child(3),
+table.vp-freeze td:not([colspan]):nth-child(3) {
+  position: sticky; left: 312px; z-index: 1; width: 96px; min-width: 96px;
+}
+table.vp-freeze th:nth-child(8),
+table.vp-freeze td:not([colspan]):nth-child(8) {
+  position: sticky; right: 0; z-index: 1; width: 108px; min-width: 108px;
+}
+
+/* 冻结单元格必须不透明，否则滚动内容会透出来 */
+table.vp-freeze td:not([colspan]):nth-child(-n+3),
+table.vp-freeze td:not([colspan]):nth-child(8) {
+  background: var(--card);
+  overflow: hidden;
+}
+/* 冻结区与滚动区的分界 */
+table.vp-freeze td:not([colspan]):nth-child(3) {
+  border-right: 1px solid var(--line-soft);
+  box-shadow: 6px 0 8px -6px rgba(0, 0, 0, 0.55);
+}
+table.vp-freeze td:not([colspan]):nth-child(8) {
+  border-left: 1px solid var(--line-soft);
+  box-shadow: -6px 0 8px -6px rgba(0, 0, 0, 0.55);
+}
+table.vp-freeze th:nth-child(3) {
+  box-shadow: 6px 0 8px -6px rgba(0, 0, 0, 0.55);
+}
+table.vp-freeze th:nth-child(8) {
+  box-shadow: -6px 0 8px -6px rgba(0, 0, 0, 0.55);
+}
+/* hover 时冻结列同步变色（冻结列背景规则特异性更高，需显式覆盖回来） */
+table.board.vp-freeze tbody tr:hover td:nth-child(-n+3),
+table.board.vp-freeze tbody tr:hover td:nth-child(8) {
+  background: #161b22;
+}
+
+/* 操作列小图标按钮 */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-500);
+  cursor: pointer;
+}
+.icon-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.icon-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.icon-btn.danger:hover {
+  color: var(--live);
+  border-color: var(--live);
+  background: var(--live-soft);
+}

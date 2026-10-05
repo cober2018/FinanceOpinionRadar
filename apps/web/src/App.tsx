@@ -1455,6 +1455,38 @@ const VP_STATUS_CN: Record<string, string> = {
   rejected: '已驳回',
 }
 
+/* 观点表操作列的小图标（内联 SVG，不引图标库） */
+const iconSvgProps = {
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+} as const
+
+const IconQuote = (
+  <svg {...iconSvgProps}>
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+)
+const IconDoc = (
+  <svg {...iconSvgProps}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
+  </svg>
+)
+const IconRefresh = (
+  <svg {...iconSvgProps}>
+    <polyline points="23 4 23 10 17 10" />
+    <polyline points="1 20 1 14 7 14" />
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+  </svg>
+)
+
 function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
   const [rows, setRows] = useState<VPVideoRow[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -1512,72 +1544,89 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
       <p className="hint">
         一个视频一条记录；点行或「观点」查看该视频抽出的全部观点（立场是每条观点自己的属性），「文案」看视频转写原文，证据在观点列表里逐条查看。
       </p>
-      <table className="board">
-        <thead>
-          <tr>
-            <th>主播</th>
-            <th>视频标题</th>
-            <th>立场标签</th>
-            <th>总结</th>
-            <th>发布时间</th>
-            <th>观点</th>
-            <th>内容状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="clickable" onClick={() => setVpDrawer(r)}>
-              <td>{r.display_name}</td>
-              <td className="title-cell" title={r.title ?? ''}>{r.title ?? '-'}</td>
-              <td><StanceSummary summary={r.stance_summary} /></td>
-              <td
-                className="summary-cell"
-                title={r.viewpoint_summary ?? '全部复核完成后自动生成'}
-              >
-                {r.viewpoint_summary ?? <span className="muted">-</span>}
-              </td>
-              <td className="muted" style={{ fontSize: 11 }}>{fmtDateTime(r.published_at)}</td>
-              <td>
-                <b>{r.viewpoint_total}</b> 条{' '}
-                {r.viewpoint_needs_review > 0 && (
-                  <span className="badge run">{r.viewpoint_needs_review} 待审</span>
-                )}{' '}
-                {r.viewpoint_confirmed > 0 && (
-                  <span className="badge ok">{r.viewpoint_confirmed} 已确认</span>
-                )}
-              </td>
-              <td>{statusBadge(r.status)}</td>
-              <td onClick={(e) => e.stopPropagation()}>
-                <button onClick={() => setVpDrawer(r)}>观点</button>{' '}
-                <button className="ghost" onClick={() => setTextDrawer(r)}>文案</button>{' '}
-                <button
-                  className="ghost"
-                  title="删除旧观点并用 v2 整体理解引擎重新抽取"
-                  onClick={() => {
-                    if (window.confirm(`重抽「${r.title ?? r.id}」的观点？旧观点将删除重新抽取。`)) {
-                      api(`/viewpoints/re-extract/${r.id}`, { method: 'POST' })
-                        .then(() => reload())
-                        .catch((e: Error) => setError(e.message))
-                    }
-                  }}
-                >
-                  重抽
-                </button>
-              </td>
-            </tr>
-          ))}
-          {rows.length === 0 && (
+      <div className="board-scroll">
+        <table className="board vp-freeze">
+          <thead>
             <tr>
-              <td colSpan={8} className="muted pad">
-                {mode === 'review'
-                  ? '复核队列为空（自动复核通过的不进队列）'
-                  : '暂无观点：先在视频库转写内容并点「抽取观点」'}
-              </td>
+              <th>发布时间</th>
+              <th>观点</th>
+              <th>内容状态</th>
+              <th>主播</th>
+              <th>视频标题</th>
+              <th>立场标签</th>
+              <th>总结</th>
+              <th>操作</th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="clickable" onClick={() => setVpDrawer(r)}>
+                <td className="muted" style={{ fontSize: 11 }}>{fmtDateTime(r.published_at)}</td>
+                <td>
+                  <b>{r.viewpoint_total}</b> 条{' '}
+                  {r.viewpoint_needs_review > 0 && (
+                    <span className="badge run">{r.viewpoint_needs_review} 待审</span>
+                  )}{' '}
+                  {r.viewpoint_confirmed > 0 && (
+                    <span className="badge ok">{r.viewpoint_confirmed} 已确认</span>
+                  )}
+                </td>
+                <td>{statusBadge(r.status)}</td>
+                <td>{r.display_name}</td>
+                <td className="title-cell" title={r.title ?? ''}>{r.title ?? '-'}</td>
+                <td><StanceSummary summary={r.stance_summary} /></td>
+                <td
+                  className="summary-cell"
+                  title={r.viewpoint_summary ?? '全部复核完成后自动生成'}
+                >
+                  {r.viewpoint_summary ?? <span className="muted">-</span>}
+                </td>
+                <td onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className="icon-btn"
+                    title="查看观点"
+                    aria-label="查看观点"
+                    onClick={() => setVpDrawer(r)}
+                  >
+                    {IconQuote}
+                  </button>{' '}
+                  <button
+                    className="icon-btn"
+                    title="查看文案（转写原文）"
+                    aria-label="查看文案"
+                    onClick={() => setTextDrawer(r)}
+                  >
+                    {IconDoc}
+                  </button>{' '}
+                  <button
+                    className="icon-btn danger"
+                    title="删除旧观点并用 v2 整体理解引擎重新抽取"
+                    aria-label="重新抽取"
+                    onClick={() => {
+                      if (window.confirm(`重抽「${r.title ?? r.id}」的观点？旧观点将删除重新抽取。`)) {
+                        api(`/viewpoints/re-extract/${r.id}`, { method: 'POST' })
+                          .then(() => reload())
+                          .catch((e: Error) => setError(e.message))
+                      }
+                    }}
+                  >
+                    {IconRefresh}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={8} className="muted pad">
+                  {mode === 'review'
+                    ? '复核队列为空（自动复核通过的不进队列）'
+                    : '暂无观点：先在视频库转写内容并点「抽取观点」'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
       {vpDrawer !== null && (
         <VideoViewpointsDrawer
           item={vpDrawer}
