@@ -1427,24 +1427,40 @@ function StanceBadge({ stance }: { stance: string }) {
   return <span className={`badge ${cls}`}>{STANCE_CN[stance] ?? stance}</span>
 }
 
-// 视频级立场标签：一个期限一行，每个标签 = 标的+立场（一个完整的观点），期限用原始编码
+// 视频级立场标签：期限分组纵排，组内按立场分行（看多/看空/中性…），重复标的计 ×次数；
+// 整体限宽，超出换行，避免观点多时把整行拉宽
 function StanceSummary({ summary }: { summary: VPVideoRow['stance_summary'] }) {
   if (!summary || summary.length === 0) return <span className="muted">-</span>
+  const order = ['strong_bullish', 'bullish', 'neutral', 'bearish', 'strong_bearish', 'unclear']
   return (
-    <span className="stance-summary">
+    <div className="stance-grid">
       {summary.map((g, i) => (
-        <span key={i}>
-          <span className="muted" style={{ marginRight: 4 }}>{g.horizon ?? '未定期限'}</span>
-          {g.tags.map((t, j) => (
-            <span key={j} className="stance-tag">
-              {t.entity && <span className="stance-entity">{t.entity}</span>}
-              <StanceBadge stance={t.stance} />
-              {t.count > 1 && <span className="muted" style={{ fontSize: 11 }}>×{t.count}</span>}
-            </span>
-          ))}
-        </span>
+        <div key={i} className="stance-grid-row">
+          <span className="stance-horizon">
+            {g.horizon === 'intraday' ? '日内' : (g.horizon ?? '未定期限')}
+          </span>
+          <div className="stance-grid-groups">
+            {order.map((s) => {
+              const items = g.tags.filter((t) => t.stance === s)
+              if (items.length === 0) return null
+              return (
+                <div key={s} className="stance-grid-line">
+                  <StanceBadge stance={s} />
+                  <span className="stance-grid-items">
+                    {items.map((t, k) => (
+                      <span key={k} className="stance-grid-item">
+                        {t.entity ?? '—'}
+                        {t.count > 1 && <span className="muted">×{t.count}</span>}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       ))}
-    </span>
+    </div>
   )
 }
 
@@ -1574,7 +1590,7 @@ function ViewpointsPage({ mode }: { mode: 'all' | 'review' }) {
                 <td>{statusBadge(r.status)}</td>
                 <td>{r.display_name}</td>
                 <td className="title-cell" title={r.title ?? ''}>{r.title ?? '-'}</td>
-                <td><StanceSummary summary={r.stance_summary} /></td>
+                <td className="stance-cell"><StanceSummary summary={r.stance_summary} /></td>
                 <td
                   className="summary-cell"
                   title={r.viewpoint_summary ?? '全部复核完成后自动生成'}
