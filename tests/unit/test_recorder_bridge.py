@@ -17,6 +17,7 @@ def _settings(tmp_path: Path, **over):
     base = {
         "recorder_config_path": str(tmp_path / "config" / "recordings.json"),
         "recorder_container_name": "streamcap",
+        "recorder_quality": "HD",
     }
     base.update(over)
     return SimpleNamespace(**base)
@@ -60,6 +61,8 @@ def test_build_recording_normalizes_https_and_segment_time():
     assert rec["record_format"] == "TS"
     assert rec["segment_record"] is True
     assert rec["monitor_status"] is True
+    # 清晰度跟随配置（ASR 只用音轨，默认 HD 省磁盘；不再写死 OD）
+    assert rec["quality"] == "HD"
     # rec_id 确定性（同 URL 同 id）→ diff 天然稳定，不产生重启风暴
     assert rec["rec_id"] == recorder_bridge.build_recording(_account())["rec_id"]
 

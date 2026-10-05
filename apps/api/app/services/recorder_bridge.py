@@ -84,7 +84,7 @@ def build_recording(account) -> dict | None:
         "url": url,
         "streamer_name": account.external_id,  # 仅 UI 展示；目录名取自开播 API 的 anchor_name
         "record_format": "TS",
-        "quality": "OD",
+        "quality": get_settings().recorder_quality,
         "segment_record": True,
         "segment_time": clamp_segment_time(account.monitor_interval_sec),
         "monitor_status": True,

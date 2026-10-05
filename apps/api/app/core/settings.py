@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     recorder_config_path: str = ""
     recorder_container_name: str = "streamcap"  # 配置变更后 docker restart 的目标容器
     recorder_sync_interval_sec: int = 600  # beat：账号 → 录制器配置同步
+    # 录制清晰度：OD原画/UHD超高清/HD高清/SD标清/LD流畅（StreamCap 枚举）。
+    # 内容解析只用音轨（ASR），默认高清——原画码率 4-8Mbps，高清 ~2Mbps，磁盘占用减半以上
+    recorder_quality: str = "HD"
     # --- Plan #5 直播弹幕采集（外部 jwwsjlm/douyinLive 服务，见 docker-compose.douyin.yml）---
     # douyinLive WS 代理地址（ws://127.0.0.1:1088）；空 = 弹幕派发/采集/ingest 全链不启用
     danmaku_ws_base_url: str = ""
