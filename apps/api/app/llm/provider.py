@@ -14,7 +14,17 @@ from typing import Any, Protocol
 import httpx
 import structlog
 
+from app.core.settings import get_settings
+from app.services.download_gate import EgressBusyError, get_download_gate
+
 logger = structlog.get_logger(__name__)
+
+# LLM 外呼全局并发闸（Redis 信号量，key=llm）：所有真实外呼都经 OpenAICompatProvider._post，
+# 在此统一占闸——抽取/复核/总结/润色共用 llm_concurrency 上限（0=不闸）。
+# 排队超时转 LLMError：上层重试与兜底切换按既有语义接管。
+_LLM_GATE_KEY = "llm"
+_LLM_GATE_TTL_SEC = 900  # 位次兜底回收：须大于最慢单次 LLM 调用（含重试内单次）
+_LLM_GATE_WAIT_SEC = 600.0
 
 
 class LLMError(Exception):
@@ -113,6 +123,18 @@ class OpenAICompatProvider:
     def _post(self, payload: dict) -> httpx.Response:
         # trust_env=False：不继承环境代理（no_proxy 含 IPv6 CIDR 时 httpx 构造即崩，
         # 2026-09-27 实录全 LLM 管线瘫痪）；LLM 出口由部署环境直连
+        limit = get_settings().llm_concurrency
+        if limit <= 0:
+            return self._post_once(payload)
+        try:
+            with get_download_gate().slot(
+                _LLM_GATE_KEY, limit=limit, ttl_sec=_LLM_GATE_TTL_SEC, timeout_sec=_LLM_GATE_WAIT_SEC
+            ):
+                return self._post_once(payload)
+        except EgressBusyError as exc:
+            raise LLMError(f"LLM 并发闸（上限 {limit}）排队超时: {exc}") from exc
+
+    def _post_once(self, payload: dict) -> httpx.Response:
         with httpx.Client(trust_env=False) as client:
             return client.post(
                 f"{self._base}{self._chat_path}",

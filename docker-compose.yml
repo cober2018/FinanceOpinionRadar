@@ -17,6 +17,7 @@ services:
       POSTGRES_DB: radar
     ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
+    mem_limit: 1g  # 实测 ~190MB，留连接/缓存峰值余量
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U radar -d radar"]
       interval: 5s
@@ -27,6 +28,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports: ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
+    mem_limit: 256m  # 实测 ~12MB
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -44,6 +46,7 @@ services:
       - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes: ["miniodata:/data"]
+    mem_limit: 768m  # 实测 ~280MB
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s

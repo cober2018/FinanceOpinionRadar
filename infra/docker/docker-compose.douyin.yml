@@ -32,6 +32,7 @@ services:
       POSTGRES_PASSWORD: dtk
       POSTGRES_DB: dtk
     volumes: ["dtk_pgdata:/var/lib/postgresql/data"]
+    mem_limit: 1g  # 实测 ~320MB
     networks: [dtk-net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dtk -d dtk"]
@@ -42,6 +43,7 @@ services:
   dtk-redis:
     image: redis:7-alpine
     container_name: dtk-redis
+    mem_limit: 256m  # 实测 ~11MB
     networks: [dtk-net]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -75,6 +77,7 @@ services:
     volumes:
       # cookie jar 只读挂载仅为容器内取用方便；radar 的 import 走 API（curl 在宿主侧读文件）
       - "${DOUYIN_COOKIES_FILE:-/dev/null}:/cookies/douyin.cookies.txt:ro"
+    mem_limit: 768m  # 实测 ~120MB
     depends_on:
       dtk-migrate: { condition: service_completed_successfully }
     networks: [dtk-net]
@@ -92,6 +95,7 @@ services:
     entrypoint: ["dtk-entrypoint"]
     command: ["worker"]
     environment: *dtk_env
+    mem_limit: 768m  # 实测 ~130MB
     depends_on:
       dtk-migrate: { condition: service_completed_successfully }
     networks: [dtk-net]
@@ -103,6 +107,7 @@ services:
     environment:
       # 分片目录日期键用容器本地时间；radar ingest 会话键按日期目录归并，须与观测时区一致
       TZ: Asia/Shanghai
+    mem_limit: 1g  # 实测 ~65MB；录制时 ffmpeg 峰值数倍，留足
     ports: ["127.0.0.1:${STREAMCAP_UI_PORT:-5001}:6006"]
     volumes:
       - "${DOUYIN_STATE_DIR:-../../data/douyin}/streamcap-config:/app/config"
@@ -116,6 +121,7 @@ services:
     image: ghcr.io/jwwsjlm/douyinlive:v2.2.1
     container_name: douyinlive
     ports: ["127.0.0.1:${DOUYINLIVE_PORT:-1088}:1088"]
+    mem_limit: 256m  # 实测 ~46MB
     restart: unless-stopped
 
 volumes:

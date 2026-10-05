@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     egress_max_concurrency: int = 3
     # 位次 TTL：worker 崩溃遗留的闸位自动过期回收（须大于最慢单次下载）
     egress_slot_ttl_sec: int = 900
+    # --- LLM 外呼并发闸（2026-10-05 与用户对齐）---
+    # 全局同时最多 N 路打 LLM API（抽取/复核/总结/润色共用）；防多批同时派发打爆限速。
+    # 复用出口闸的 Redis 信号量（key=llm）。0 = 关闭闸门不限制。
+    llm_concurrency: int = 3
     s3_endpoint_url: str = "http://localhost:9000"
     s3_access_key: str = "radar"
     s3_secret_key: str = "radar-secret"
