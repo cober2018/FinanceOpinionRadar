@@ -28,8 +28,8 @@ from app.services.entity_normalizer import (
 
 logger = structlog.get_logger(__name__)
 
-EXTRACTOR_VERSION = "v2"
-PROMPT_VERSION = "extraction@v2"
+EXTRACTOR_VERSION = "v3"
+PROMPT_VERSION = "extraction@v3"
 # v2 整体理解：全文单次抽取的上限（≈50 分钟口播）。超长转写（罕见，长直播）
 # 回落 v1 chunked 路径（prompt_version 记实际使用的版本，幂等两者都算已抽）。
 PROMPT_VERSION_CHUNKED = "extraction@v1"

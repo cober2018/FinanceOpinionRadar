@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "properties": {
+    "viewpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "claim": {"type": "string"},
+          "stance": {"type": "string"},
+          "horizon": {"type": "string"},
+          "confidence": {"type": "number"},
+          "importance": {"type": "number"},
+          "topic": {"type": "string"},
+          "conditional": {"type": "boolean"},
+          "entities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "raw_name": {"type": "string"},
+                "entity_type": {"type": "string"}
+              },
+              "required": ["raw_name"]
+            }
+          },
+          "evidence_segment_ids": {"type": "array", "items": {"type": "integer"}}
+        },
+        "required": ["claim", "stance", "confidence", "evidence_segment_ids"]
+      }
+    }
+  },
+  "required": ["viewpoints"]
+}
