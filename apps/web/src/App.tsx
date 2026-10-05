@@ -723,7 +723,8 @@ function AddAccountModal(props: {
         : 'https://space.bilibili.com/<uid>'
 
   return (
-    <div className="modal-mask" onClick={props.onClose}>
+    // 表单弹窗不允许点遮罩关闭（误触会丢已填内容），只能走「取消/保存」
+    <div className="modal-mask" onClick={(e) => e.stopPropagation()}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>添加主播</h3>
         {error && <p className="error">{error}</p>}
@@ -2074,7 +2075,9 @@ function EditViewpointModal(props: {
   }
 
   return (
-    <div className="modal-mask" onClick={props.onClose}>
+    // 表单弹窗不允许点遮罩关闭（误触会丢已填内容），只能走「取消/保存」；
+    // 遮罩点击阻断冒泡——嵌在抽屉里时不能让外层 drawer-mask 把抽屉关掉
+    <div className="modal-mask" onClick={(e) => e.stopPropagation()}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>修改观点 #{props.vp.id}</h3>
         {error && <p className="error">{error}</p>}
