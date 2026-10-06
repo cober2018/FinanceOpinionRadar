@@ -3,8 +3,9 @@
 # DATABASE_URL / REDIS_URL / S3_* 假设的端口与凭据一致):
 #   POSTGRES_PORT=5432  REDIS_PORT=6379  MINIO_API_PORT=9000  MINIO_CONSOLE_PORT=9001
 #   MINIO_ROOT_USER=radar  MINIO_ROOT_PASSWORD=radar-secret
-# MinIO 镜像按 D6/D51 固定 RELEASE tag (禁止 :latest); mc 从 quay.io 拉取, 因本机
-# registry mirror 对 docker.io/minio/mc 仓库返回 403, quay.io 为 MinIO 官方发布源。
+# MinIO 镜像按 D6/D51 固定 RELEASE tag (禁止 :latest); mc 用 Docker Hub 官方源
+# (曾因本机 registry mirror 对 docker.io/minio/mc 返回 403 改用 quay.io，2026-10-06 起
+#  quay.io 对该 tag 返回 401 且 docker.io 已恢复可拉，故换回)。
 
 services:
   postgres:
@@ -54,7 +55,8 @@ services:
       retries: 12
 
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
+    # quay.io 对原 RELEASE tag 返回 401（2026-10-06 实录，卡死整个 compose up），换回 Docker Hub
+    image: minio/mc:latest
     depends_on:
       minio: { condition: service_healthy }
     entrypoint: >
