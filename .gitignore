@@ -23,3 +23,7 @@ tests/golden/expected/
 # 隧道脚本不入 git（用户 2026-10-06；权威归档在 ~/Project/needdocx/网络环境/）
 scripts/gemini_tunnel.sh
 infra/launchd/com.financeopinionradar.gemini-tunnel.plist
+
+# 本地备份与工具目录：含 DB 全量 dump（内含真实 LLM key）等，绝不入库（2026-10-06）
+backups/
+.zcode/
