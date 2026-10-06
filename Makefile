@@ -22,30 +22,30 @@ dev: ## 启动 API 开发服务器 (前端开发服务器用 make web)
 	docker compose up -d
 	$(PYTHON) -m uvicorn app.main:app --reload --host $(HOST) --port $(PORT) --app-dir apps/api
 
-up: ## 一键幂等拉起全部组件：docker 依赖 + dtk + API :8010 + worker + gemini 隧道（已在跑的跳过）
+up: ## 一键幂等拉起全部组件：docker 依赖 + dtk + API :8010 + worker + CPA API 隧道（已在跑的跳过）
 	@bash scripts/dev_up.sh up
 
-status: ## 诊断组件存活（Postgres/Redis/dtk/API/worker/gemini 隧道），DOWN 时提示 make up
+status: ## 诊断组件存活（Postgres/Redis/dtk/API/worker/CPA API 隧道），DOWN 时提示 make up
 	@bash scripts/dev_up.sh status
 
-gemini-tunnel: ## 临时拉起 gemini 复核模型隧道（本会话有效，重启即失；要开机自启用 gemini-tunnel-keeper）
+cpa-tunnel: ## 临时拉起 CPA API 隧道（本会话有效，重启即失；要开机自启用 cpa-tunnel-keeper）
 	@bash scripts/dev_up.sh tunnel
 
-gemini-tunnel-keeper: ## 安装并启动 gemini 隧道 launchd 常驻（登录自启 + 崩溃自愈，幂等；推荐）
+cpa-tunnel-keeper: ## 安装并启动 CPA API 隧道 launchd 常驻（登录自启 + 崩溃自愈，幂等；推荐）
 	mkdir -p logs $(HOME)/Library/LaunchAgents
-	sed -e "s|__REPO_DIR__|$(CURDIR)|g" infra/launchd/com.financeopinionradar.gemini-tunnel.plist \
-		> $(HOME)/Library/LaunchAgents/com.financeopinionradar.gemini-tunnel.plist
-	-launchctl bootout gui/$$(id -u)/com.financeopinionradar.gemini-tunnel 2>/dev/null
-	-pkill -f scripts/gemini_tunnel.sh 2>/dev/null
+	sed -e "s|__REPO_DIR__|$(CURDIR)|g" infra/launchd/com.shengran.cpa-api-tunnel.plist \
+		> $(HOME)/Library/LaunchAgents/com.shengran.cpa-api-tunnel.plist
+	-launchctl bootout gui/$$(id -u)/com.shengran.cpa-api-tunnel 2>/dev/null
+	-pkill -f scripts/cpa_api_tunnel.sh 2>/dev/null
 	-@lsof -ti:8317 | xargs kill 2>/dev/null; sleep 1   # 孤儿 ssh 占着端口会让新守护绑不上
-	launchctl bootstrap gui/$$(id -u) $(HOME)/Library/LaunchAgents/com.financeopinionradar.gemini-tunnel.plist
-	@echo "gemini 隧道已交给 launchd 常驻（登录自启）。日志: logs/gemini_tunnel.log"
+	launchctl bootstrap gui/$$(id -u) $(HOME)/Library/LaunchAgents/com.shengran.cpa-api-tunnel.plist
+	@echo "CPA API 隧道已交给 launchd 常驻（登录自启）。日志: logs/cpa_api_tunnel.log"
 
-gemini-tunnel-keeper-stop: ## 停止并卸载 gemini 隧道 launchd 常驻
-	launchctl bootout gui/$$(id -u)/com.financeopinionradar.gemini-tunnel 2>/dev/null || true
-	pkill -f scripts/gemini_tunnel.sh 2>/dev/null || true
+cpa-tunnel-keeper-stop: ## 停止并卸载 CPA API 隧道 launchd 常驻
+	launchctl bootout gui/$$(id -u)/com.shengran.cpa-api-tunnel 2>/dev/null || true
+	pkill -f scripts/cpa_api_tunnel.sh 2>/dev/null || true
 	lsof -ti:8317 | xargs kill 2>/dev/null || true
-	@echo "gemini 隧道已停止并卸载"
+	@echo "CPA API 隧道已停止并卸载"
 
 web: ## 启动前端 Vite 开发服务器
 	cd apps/web && npm run dev

@@ -80,23 +80,23 @@ start_worker() {
   return 1
 }
 
-# gemini 复核模型隧道（异地开发：本机与复核机撞 192.168.31.0/24 网段，
-# 只能经 Tailscale 跳板 SSH 端口转发，见 gemini_tunnel.sh 头注释）
+# CPA API 隧道（异地开发：本机与复核机撞 192.168.31.0/24 网段，
+# 只能经 Tailscale 跳板 SSH 端口转发，见 cpa_api_tunnel.sh 头注释）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-tunnel_alive() { pgrep -f "gemini_tunnel.sh" >/dev/null 2>&1; }
+tunnel_alive() { pgrep -f "cpa_api_tunnel.sh" >/dev/null 2>&1; }
 tunnel_port_up() { lsof -ti:"$TUNNEL_PORT" >/dev/null 2>&1; }
 
 start_tunnel() {
-  echo "==> gemini 复核模型隧道 :${TUNNEL_PORT}（经 quantagents-prod 跳板）"
+  echo "==> CPA API 隧道 :${TUNNEL_PORT}（经 quantagents-prod 跳板）"
   if tunnel_alive; then echo "    已在跑，跳过"; return 0; fi
-  start_detached "$SCRIPT_DIR/gemini_tunnel.sh" >/dev/null 2>&1
+  start_detached "$SCRIPT_DIR/cpa_api_tunnel.sh" >/dev/null 2>&1
   for _ in $(seq 1 15); do
     tunnel_port_up && { echo "    隧道就绪"; return 0; }
     sleep 1
   done
   # 跳板暂不可达也照常返回：守护会自动重试，LLM 复核届时走兜底模型
-  echo "    隧道未就绪（守护已起会自动重试，日志 logs/gemini_tunnel.log）" >&2
+  echo "    隧道未就绪（守护已起会自动重试，日志 logs/cpa_api_tunnel.log）" >&2
   return 0
 }
 
@@ -114,11 +114,11 @@ report() {
   echo "  API(:$API_PORT)        $a"
   echo "  worker+beat      $w"
   if tunnel_port_up; then
-    echo "  gemini 隧道(:$TUNNEL_PORT)  $c_ok"
+    echo "  CPA API 隧道(:$TUNNEL_PORT)  $c_ok"
   elif tunnel_alive; then
-    echo "  gemini 隧道(:$TUNNEL_PORT)  $c_down   （跳板不可达，守护自动重试，复核走兜底）"
+    echo "  CPA API 隧道(:$TUNNEL_PORT)  $c_down   （跳板不可达，守护自动重试，复核走兜底）"
   else
-    echo "  gemini 隧道(:$TUNNEL_PORT)  未启动   （复核主模型走跳板转发，可 make gemini-tunnel 拉起）"
+    echo "  CPA API 隧道(:$TUNNEL_PORT)  未启动   （复核主模型走跳板转发，可 make cpa-tunnel 拉起）"
   fi
   if [[ $a == *DOWN* || $w == *DOWN* || $p == *DOWN* ]]; then
     echo
