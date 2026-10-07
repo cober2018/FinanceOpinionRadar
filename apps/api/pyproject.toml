@@ -19,6 +19,10 @@ dependencies = [
   "structlog>=24.1",
   "boto3>=1.34",
   "faster-whisper>=1.0",
+  # 生产实录（2026-10-07，Intel Mac）：av 19 移除 metadata_errors 参数致 faster-whisper 1.2.1
+  # 转录全崩；huggingface_hub 1.33 的缓存校验/离线路径不兼容。两处上限是验证过的组合上限。
+  "av<19",
+  "huggingface_hub>=1.0,<1.32",
 ]
 
 [project.optional-dependencies]
