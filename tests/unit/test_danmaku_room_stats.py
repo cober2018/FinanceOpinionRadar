@@ -106,3 +106,55 @@ def test_tail_window_seek_used(monkeypatch, tmp_path: Path) -> None:
     f.write_text(pad + "\n" + _stats_envelope("1234") + "\n")
     assert f.stat().st_size > 4096
     assert latest_viewer_count(f) == 1234
+
+
+def _timed_stats_envelope(total: object, received_at: str) -> str:
+    doc = json.loads(_stats_envelope(total))
+    doc["received_at"] = received_at
+    return json.dumps(doc, ensure_ascii=False)
+
+
+def test_at_time_picks_stats_near_slice_time(tmp_path: Path) -> None:
+    """按切片时刻取值：先取窗口内最新的统计（补转写/恢复也拿当时人数）。"""
+    from datetime import datetime
+
+    f = tmp_path / "a.jsonl"
+    f.write_text(
+        "\n".join(
+            [
+                _timed_stats_envelope("100", "2026-10-08T02:00:00+00:00"),
+                _timed_stats_envelope("300", "2026-10-08T02:02:00+00:00"),
+                _timed_stats_envelope("999", "2026-10-08T03:00:00+00:00"),  # 收尾后的停摆值
+            ]
+        )
+        + "\n"
+    )
+    at = datetime.fromisoformat("2026-10-08T02:03:00+00:00")
+    assert latest_viewer_count(f, at_time=at) == 300
+
+
+def test_at_time_rejects_stale_and_future_stats(tmp_path: Path) -> None:
+    """窗口外（过旧 >15min / 过新 >10min）的统计不取 → None（宁缺毋错）。"""
+    from datetime import datetime
+
+    f = tmp_path / "a.jsonl"
+    f.write_text(_timed_stats_envelope("50", "2026-10-08T02:00:00+00:00") + "\n")
+    late = datetime.fromisoformat("2026-10-08T02:30:00+00:00")  # 统计在 30min 前
+    assert latest_viewer_count(f, at_time=late) is None
+
+    f2 = tmp_path / "b.jsonl"
+    f2.write_text(_timed_stats_envelope("70", "2026-10-08T02:20:00+00:00") + "\n")
+    early = datetime.fromisoformat("2026-10-08T02:00:00+00:00")  # 统计在 20min 后
+    assert latest_viewer_count(f2, at_time=early) is None
+
+
+def test_no_at_time_returns_latest_ignoring_age(tmp_path: Path) -> None:
+    """不传 at_time 保持旧语义：最新一条（监控面板「当前人气」用）。"""
+    f = tmp_path / "a.jsonl"
+    f.write_text(
+        _timed_stats_envelope("111", "2020-01-01T00:00:00+00:00")
+        + "\n"
+        + _timed_stats_envelope("222", "2020-01-01T01:00:00+00:00")
+        + "\n"
+    )
+    assert latest_viewer_count(f) == 222

@@ -598,8 +598,11 @@ def _process_segment(
             "at": datetime.now(UTC).isoformat(),
         }
         if sink_file is not None:
-            # 房间人数采样（用户 2026-10-08）：每切片记账当下在线观众数；缺档不阻断
-            viewers = latest_viewer_count(sink_file)
+            # 房间人数采样（用户 2026-10-08）：每切片记账「切片时刻」的在线观众数
+            # （按分片 mtime 对齐，补转写/恢复也取当时值）；缺档/错位不阻断
+            viewers = latest_viewer_count(
+                sink_file, at_time=datetime.fromtimestamp(seg.mtime, UTC)
+            )
             if viewers is not None:
                 processed[key]["viewer_count"] = viewers
                 live_meta["last_viewer_count"] = viewers
