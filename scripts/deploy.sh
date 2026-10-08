@@ -49,4 +49,4 @@ ssh "$PROD_SSH" "
   tail -1 ~/radar-worker.log | cut -c1-70
 "
 
-echo "✅ 发版完成（$PROD_SSH）"
+echo "✅ 发版完成（${PROD_SSH}）"
