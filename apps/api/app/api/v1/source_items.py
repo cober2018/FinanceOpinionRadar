@@ -295,6 +295,10 @@ def list_source_items(
             "expires_at": _expires_at(item),
             "viewpoint_summary": item.viewpoint_summary,
             "summary_generated_at": item.summary_generated_at,
+            # 直播人气（用户 2026-10-08）：last=在播当前值，avg/peak=收尾汇总；vod 行为 None
+            "viewer_count": ((item.metadata_json or {}).get("live") or {}).get("last_viewer_count"),
+            "viewer_avg": ((item.metadata_json or {}).get("live") or {}).get("viewer_avg"),
+            "viewer_peak": ((item.metadata_json or {}).get("live") or {}).get("viewer_peak"),
             **_viewpoint_stats(item.id),
             "stance_summary": _stance_summary(item.id),
         }

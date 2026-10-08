@@ -24,6 +24,10 @@ type LiveMonitor = {
   segment_count: number
   transcript_count: number
   last_segment_at: string | null
+  viewer_count: number | null
+  viewer_avg: number | null
+  viewer_peak: number | null
+  viewer_sample_count: number | null
 }
 
 type LibraryItem = {
@@ -42,6 +46,9 @@ type LibraryItem = {
   chat_count: number
   is_asset: boolean
   expires_at: string | null
+  viewer_count?: number | null
+  viewer_avg?: number | null
+  viewer_peak?: number | null
   viewpoint_total?: number
   viewpoint_needs_review?: number
   viewpoint_confirmed?: number
@@ -323,6 +330,13 @@ function OverviewPage({ go }: { go: (tab: string) => void }) {
                 <div className="room-meta">
                   最近会话 {statusBadge(m.session_status)} · {m.segment_count} 片 / {m.transcript_count} 段
                 </div>
+                <div className="room-meta">
+                  {m.is_live === true && m.viewer_count != null
+                    ? `人气 ${m.viewer_count} 人在看`
+                    : m.viewer_avg != null
+                      ? `人气 平均 ${m.viewer_avg} 人 / 峰值 ${m.viewer_peak ?? '-'}`
+                      : '人气 -'}
+                </div>
               </div>
             ))}
           {watching === 0 && <p className="muted pad">还没有开启直播值守的主播。到「主播」页添加并打开值守开关。</p>}
@@ -520,6 +534,7 @@ function AccountsPage() {
             <th>录制器</th>
             <th>最近会话</th>
             <th>分片/转录</th>
+            <th>人气</th>
             <th>最近活动</th>
             <th>操作</th>
           </tr>
@@ -576,6 +591,15 @@ function AccountsPage() {
                   : '-'}
               </td>
               <td>{r.session_status ? `${r.segment_count}/${r.transcript_count}` : '-'}</td>
+              <td>
+                {r.is_live === true && r.viewer_count != null ? (
+                  <span className="live-text">● {r.viewer_count} 人在看</span>
+                ) : r.viewer_avg != null ? (
+                  `均 ${r.viewer_avg}${r.viewer_peak != null ? ` / 峰 ${r.viewer_peak}` : ''}（${r.viewer_sample_count ?? '-'}片）`
+                ) : (
+                  '-'
+                )}
+              </td>
               <td>{fmtAgo(r.last_segment_at)}</td>
               <td>
                 {editing === r.account_id && draft ? (
@@ -1057,6 +1081,7 @@ function LibraryPage() {
             <th>进度</th>
             <th>时长</th>
             <th>发布</th>
+            <th>人气</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -1099,6 +1124,15 @@ function LibraryPage() {
               </td>
               <td>{r.duration_ms ? `${Math.round(r.duration_ms / 60000)} 分` : '-'}</td>
               <td>{fmtDateTime(r.published_at)}</td>
+              <td>
+                {r.item_type === 'live'
+                  ? r.viewer_avg != null
+                    ? `均 ${r.viewer_avg}${r.viewer_peak != null ? ` / 峰 ${r.viewer_peak}` : ''}`
+                    : r.viewer_count != null
+                      ? `${r.viewer_count} 人在看`
+                      : '-'
+                  : '-'}
+              </td>
               <td onClick={(e) => e.stopPropagation()}>
                 <button className="ghost" title={r.is_asset ? '取消精华' : '标记精华（永久保留）'} onClick={() => toggleAsset(r.id)}>
                   {r.is_asset ? '⭐' : '☆'}

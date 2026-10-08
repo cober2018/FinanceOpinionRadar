@@ -569,3 +569,81 @@ def test_disk_activity_blocks_close(
     db_session.expire_all()
     item = db_session.get(SourceItem, item.id)
     assert item.status == "transcribing"  # 未被误 close
+
+
+def test_viewer_sampling_and_close_average(
+    db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """房间人数（用户 2026-10-08）：每切片采样当下在线观众数；收尾按切片加和算平均。
+
+    首片处理时弹幕档案尚不存在 → 无采样且不阻断；档案就位后逐片采样；
+    收尾（G1 同款手法）汇总 avg/peak/sample_count 进 live 元数据。
+    """
+    import json as _json
+
+    from app.services.danmaku.collector import build_envelope, sink_path
+
+    _ensure_watch_account(db_session)
+    _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
+    settings = _settings(tmp_path)
+    settings.danmaku_sink_dir = str(tmp_path / "danmaku")
+    monkeypatch.setattr(live_ingest, "get_settings", lambda: settings)
+    monkeypatch.setattr(live_ingest, "normalize_audio", _fake_normalize(60_000))
+
+    def _stats_line(total: int) -> str:
+        return build_envelope(
+            _json.dumps(
+                {
+                    "common": {"method": "WebcastRoomStatsMessage"},
+                    "displayLong": f"{total}在线观众",
+                    "total": str(total),
+                    "method": "WebcastRoomStatsMessage",
+                }
+            )
+        )
+
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    db_session.expire_all()
+    item = _live_item(db_session)
+    live = item.metadata_json["live"]
+    assert live["processed"]["0"] == {  # 档案缺失 → 无采样字段，转写照常
+        "duration_ms": 60_000,
+        "at": live["processed"]["0"]["at"],
+    }
+
+    sink = sink_path(settings.danmaku_sink_dir, item.external_item_id, item.id)
+    sink.parent.mkdir(parents=True)
+    sink.write_text(_stats_line(700) + "\n")
+    _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 1)
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    db_session.expire_all()
+    item = db_session.get(SourceItem, item.id)
+    live = item.metadata_json["live"]
+    assert live["processed"]["1"]["viewer_count"] == 700
+    assert live["last_viewer_count"] == 700
+
+    sink.write_text(_stats_line(700) + "\n" + _stats_line(900) + "\n")  # 最新一条=900
+    _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 2)
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    db_session.expire_all()
+    item = db_session.get(SourceItem, item.id)
+    live = item.metadata_json["live"]
+    assert live["processed"]["2"]["viewer_count"] == 900
+
+    # 收尾：静默超 grace + 磁盘活动过期（G1 同款手法）
+    stale = datetime.now(UTC) - timedelta(seconds=3600)
+    meta = dict(item.metadata_json)
+    live_meta = dict(meta["live"])
+    live_meta["last_segment_at"] = stale.isoformat()
+    meta["live"] = live_meta
+    db_session.get(SourceItem, item.id).metadata_json = meta
+    db_session.commit()
+    _age_dir_segs(tmp_path)
+
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    db_session.expire_all()
+    live = db_session.get(SourceItem, item.id).metadata_json["live"]
+    assert live["closed"] is True
+    assert live["viewer_avg"] == 800  # (700+900)/2
+    assert live["viewer_peak"] == 900
+    assert live["viewer_sample_count"] == 2

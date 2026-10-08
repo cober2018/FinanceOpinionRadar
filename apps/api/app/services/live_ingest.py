@@ -23,6 +23,7 @@ from app.domain.pipeline_states import ensure_transition
 from app.repositories.media_assets import MediaAssetRepository
 from app.repositories.source_items import SourceItemRepository
 from app.repositories.transcripts import TranscriptRepository, TranscriptWrite
+from app.services.danmaku.room_stats import latest_viewer_count
 from app.services.media.audio import normalize_audio
 
 logger = structlog.get_logger(__name__)
@@ -172,8 +173,12 @@ def ingest_live_segments(session, provider=None) -> dict:
                 live_meta = _normalize_live_meta(base_meta)
                 _persist_live_meta(item, base_meta)
                 session.commit()  # 会话行先落库：分片级 rollback 不得回滚会话本身
+                sink_file = _sink_file_for(s, item)
                 for seg in sd.segments:
-                    outcome = _process_segment(session, item, base_meta, live_meta, seg, s, provider)
+                    outcome = _process_segment(
+                        session, item, base_meta, live_meta, seg, s, provider,
+                        sink_file=sink_file,
+                    )
                     if outcome == "processed":
                         newly.append(item.id)
                     elif outcome == "failed":
@@ -214,7 +219,8 @@ def prepare_live_segment(item_id: int, segment_index: int, path: str) -> dict:
             live_meta = _normalize_live_meta(base_meta)
             _persist_live_meta(item, base_meta)
             outcome = _process_segment(
-                session, item, base_meta, live_meta, seg, s, get_transcription_provider()
+                session, item, base_meta, live_meta, seg, s, get_transcription_provider(),
+                sink_file=_sink_file_for(s, item),
             )
             _persist_live_meta(item, base_meta)
             session.commit()
@@ -528,8 +534,18 @@ def _advance_chain(session, item: SourceItem) -> None:
     session.flush()
 
 
+def _sink_file_for(s, item: SourceItem) -> Path | None:
+    """会话 → 弹幕 jsonl 档案路径（房间人数采样用）；弹幕链路未启用 → None。"""
+    if not getattr(s, "danmaku_sink_dir", "") or not item.external_item_id:
+        return None
+    from app.services.danmaku.collector import sink_path
+
+    return sink_path(s.danmaku_sink_dir, item.external_item_id, item.id)
+
+
 def _process_segment(
-    session, item: SourceItem, base_meta: dict, live_meta: dict, seg: LiveSegment, s, provider
+    session, item: SourceItem, base_meta: dict, live_meta: dict, seg: LiveSegment, s, provider,
+    *, sink_file: Path | None = None,
 ) -> str:
     """单分片处理：幂等 → 重试上限 → 残片跳过 → ASR+落库。返回 processed/skipped/failed。
 
@@ -581,6 +597,13 @@ def _process_segment(
             "duration_ms": normalized.duration_ms,
             "at": datetime.now(UTC).isoformat(),
         }
+        if sink_file is not None:
+            # 房间人数采样（用户 2026-10-08）：每切片记账当下在线观众数；缺档不阻断
+            viewers = latest_viewer_count(sink_file)
+            if viewers is not None:
+                processed[key]["viewer_count"] = viewers
+                live_meta["last_viewer_count"] = viewers
+                live_meta["last_viewer_at"] = datetime.now(UTC).isoformat()
         live_meta["segment_count"] = len(processed)
         live_meta["last_segment_at"] = datetime.now(UTC).isoformat()
         session.commit()
@@ -643,6 +666,25 @@ def _append_transcript(session, item: SourceItem, segments, offset_ms: int) -> N
     repo.replace_for_item(item.id, writes)
 
 
+def summarize_viewer_samples(live_meta: dict) -> dict:
+    """分片采样 → 收尾汇总（用户 2026-10-08：按切片人数加和算平均）。
+
+    只有带 viewer_count 的分片计入；无任何样本 → 空 dict（弹幕链路未覆盖的场次）。
+    """
+    samples = [
+        int(v["viewer_count"])
+        for v in (live_meta.get("processed") or {}).values()
+        if isinstance(v, dict) and isinstance(v.get("viewer_count"), int)
+    ]
+    if not samples:
+        return {}
+    return {
+        "viewer_avg": round(sum(samples) / len(samples)),
+        "viewer_peak": max(samples),
+        "viewer_sample_count": len(samples),
+    }
+
+
 def _count_pending(live_meta: dict) -> int:
     """F12：已见但未处理、且未永久排除（残片/超限跳过不挂 pending）。"""
     processed = set(live_meta.get("processed") or {})
@@ -699,6 +741,10 @@ def _close_stale_sessions(session, grace_sec: int) -> int:
         base_meta = dict(item.metadata_json or {})
         live_meta = _normalize_live_meta(base_meta)
         live_meta["closed"] = True
+        summary = summarize_viewer_samples(live_meta)
+        if summary:
+            live_meta.update(summary)
+            logger.info("live_session_viewer_summary", item_id=item.id, **summary)
         _persist_live_meta(item, base_meta)
         closed += 1
         logger.info("live_session_closed", item_id=item.id)

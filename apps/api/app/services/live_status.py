@@ -90,6 +90,17 @@ def _latest_live_session(session: Session, account_id: int) -> SourceItem | None
     )
 
 
+def viewer_fields(live_meta: dict) -> dict:
+    """监控行人气字段（用户 2026-10-08）：last_viewer_count 在播时≈当前在线观众；
+    viewer_avg/peak/sample_count 由收尾路径写（summarize_viewer_samples）。"""
+    return {
+        "viewer_count": live_meta.get("last_viewer_count"),
+        "viewer_avg": live_meta.get("viewer_avg"),
+        "viewer_peak": live_meta.get("viewer_peak"),
+        "viewer_sample_count": live_meta.get("viewer_sample_count"),
+    }
+
+
 def build_live_monitors(session: Session) -> list[dict]:
     """监控看板行：所有 douyin 账号（含未值守的，前端据此渲染开关）。"""
     s = get_settings()
@@ -157,6 +168,7 @@ def build_live_monitors(session: Session) -> list[dict]:
                 "segment_count": live_meta.get("segment_count", 0),
                 "transcript_count": counts.get(sess_item.id, 0) if sess_item else 0,
                 "last_segment_at": live_meta.get("last_segment_at"),
+                **viewer_fields(live_meta),
             }
         )
     return rows

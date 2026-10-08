@@ -34,3 +34,23 @@ def test_closed_session_keeps_probe_result():
     assert _derive_is_live(None, "transcribed", (NOW - timedelta(minutes=1)).isoformat(), NOW) is None
     assert _derive_is_live(False, "ready", None, NOW) is False
     assert _derive_is_live(None, None, None, NOW) is None
+
+
+def test_viewer_fields_from_live_meta():
+    """监控行人气字段（用户 2026-10-08）：last=在播当前值，avg/peak=收尾汇总。"""
+    from app.services.live_status import viewer_fields
+
+    assert viewer_fields(
+        {"last_viewer_count": 780, "viewer_avg": 733, "viewer_peak": 900, "viewer_sample_count": 12}
+    ) == {
+        "viewer_count": 780,
+        "viewer_avg": 733,
+        "viewer_peak": 900,
+        "viewer_sample_count": 12,
+    }
+    assert viewer_fields({}) == {
+        "viewer_count": None,
+        "viewer_avg": None,
+        "viewer_peak": None,
+        "viewer_sample_count": None,
+    }

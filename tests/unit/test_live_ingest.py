@@ -189,3 +189,28 @@ def test_rename_if_stale_sets_published_at_and_duration(monkeypatch) -> None:
     assert item.title == "全能的野人 直播 2026-09-17 22:22"
     assert item.duration_ms == 610000  # 分片时长加总
     assert item.published_at == live_ingest._index_start_utc(202609172222020000)
+
+
+def test_summarize_viewer_samples_avg_peak_count() -> None:
+    """收尾汇总（用户 2026-10-08）：按切片采样加和算平均，附峰值与样本数。"""
+    live = {"processed": {
+        "0": {"duration_ms": 300000, "viewer_count": 500},
+        "1": {"duration_ms": 300000, "viewer_count": 900},
+        "2": {"duration_ms": 300000, "viewer_count": 700},
+        "3": {"duration_ms": 300000},  # 弹幕链路未覆盖的分片：不计入
+    }}
+    assert live_ingest.summarize_viewer_samples(live) == {
+        "viewer_avg": 700,
+        "viewer_peak": 900,
+        "viewer_sample_count": 3,
+    }
+
+
+def test_summarize_viewer_samples_empty_when_no_samples() -> None:
+    assert live_ingest.summarize_viewer_samples({"processed": {"0": {"duration_ms": 1}}}) == {}
+    assert live_ingest.summarize_viewer_samples({}) == {}
+
+
+def test_summarize_viewer_samples_rounds_half_up() -> None:
+    live = {"processed": {"0": {"viewer_count": 3}, "1": {"viewer_count": 4}}}
+    assert live_ingest.summarize_viewer_samples(live)["viewer_avg"] == 4  # round(3.5)
