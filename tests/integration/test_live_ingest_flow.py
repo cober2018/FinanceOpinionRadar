@@ -647,3 +647,37 @@ def test_viewer_sampling_and_close_average(
     assert live["viewer_avg"] == 800  # (700+900)/2
     assert live["viewer_peak"] == 900
     assert live["viewer_sample_count"] == 2
+
+
+def test_zero_processed_session_closes(
+    db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """零处理会话收尾（生产 1029 实录）：唯一分片被残片跳过 → 永无 last_segment_at →
+    旧逻辑永不收尾（还吞掉本账号后续开播的归并、养着永久弹幕采集器）。
+    建号超 grace + 磁盘无活动 → 自动收尾。"""
+    _ensure_watch_account(db_session)
+    _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
+    _set_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(live_ingest, "normalize_audio", _fake_normalize(1_000))  # <30s 残片
+
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    db_session.expire_all()
+    item = _live_item(db_session)
+    live = item.metadata_json["live"]
+    assert live["skipped_segments"] and not live["processed"]
+    assert item.status == "transcribing"  # 残片不当场收尾
+    assert "last_segment_at" not in live
+
+    stale = datetime.now(UTC) - timedelta(seconds=3600)
+    db_session.execute(
+        text("UPDATE source_item SET created_at = :t WHERE id = :i"),
+        {"t": stale, "i": item.id},
+    )
+    db_session.commit()
+    _age_dir_segs(tmp_path)
+
+    live_ingest.ingest_live_segments(db_session, provider=_fake_provider())
+    db_session.expire_all()
+    item = db_session.get(SourceItem, item.id)
+    assert item.status == "transcribed"
+    assert item.metadata_json["live"]["closed"] is True

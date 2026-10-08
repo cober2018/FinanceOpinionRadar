@@ -727,15 +727,24 @@ def _close_stale_sessions(session, grace_sec: int) -> int:
     )
     closed = 0
     for item in items:
-        last = (item.metadata_json or {}).get("live", {}).get("last_segment_at")
+        live = (item.metadata_json or {}).get("live", {})
+        last = live.get("last_segment_at")
         if last is None:
-            continue
-        if datetime.fromisoformat(last) >= cutoff:
-            continue
-        if _disk_recent_activity(item, cutoff):
-            # 注册表过期但磁盘分片仍在落/等待转写（在写分片被 settle 门禁跳过期间
-            # 注册表不更新）——不能 close，否则后续分片被终态守卫整场丢弃
-            continue
+            # 零处理会话（1029 实录：唯一分片被残片跳过 → 永无 last_segment_at →
+            # 永不收尾，还以 transcribing 吞掉本账号后续开播的会话归并，并让弹幕
+            # 派发器永远养着一个采集器）：建号超 grace 且无待处理、磁盘无活动 → 收尾。
+            # 新建会话靠 created_at 挡住（首分片未注册期间不得误关）。
+            if item.created_at is None or item.created_at >= cutoff:
+                continue
+            if _count_pending(live) or _disk_recent_activity(item, cutoff):
+                continue
+        else:
+            if datetime.fromisoformat(last) >= cutoff:
+                continue
+            if _disk_recent_activity(item, cutoff):
+                # 注册表过期但磁盘分片仍在落/等待转写（在写分片被 settle 门禁跳过期间
+                # 注册表不更新）——不能 close，否则后续分片被终态守卫整场丢弃
+                continue
         ensure_transition(item.status, "transcribed")
         item.status = "transcribed"
         base_meta = dict(item.metadata_json or {})
@@ -751,7 +760,10 @@ def _close_stale_sessions(session, grace_sec: int) -> int:
         # 转录完即抽取（用户 2026-09-28）：直播转录收尾立即派发，不等补扫——
         # 纯直播值守账号（discovery_mode=manual）不进 dispatch_pending_extractions。
         # 已按分片增量抽取过的（用户 2026-09-30 滚动总结）：不再全文重抽（重复观点
-        # 与 LLM 成本双浪费），走 finalize 推进状态机 + 收尾总结闸
+        # 与 LLM 成本双浪费），走 finalize 推进状态机 + 收尾总结闸。零处理会话
+        # （无任何转录内容）不派发。
+        if not (live_meta.get("processed") or live_meta.get("incremental_extracted_ms")):
+            continue
         from app.worker.celery_app import celery_app
 
         if live_meta.get("incremental_extracted_ms"):
