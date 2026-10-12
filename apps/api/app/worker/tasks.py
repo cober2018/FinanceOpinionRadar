@@ -621,6 +621,14 @@ def sweep_live_segments_task() -> dict:
     return sweep_live_segments()
 
 
+@celery_app.task(name="sweep_danmaku_sinks_task")
+def sweep_danmaku_sinks_task() -> dict:
+    """弹幕 jsonl 档案保留期清理（默认 7 天，0=禁用）。"""
+    from app.services.live_retention import sweep_danmaku_sinks
+
+    return sweep_danmaku_sinks()
+
+
 @celery_app.task(name="llm_review_source_item")
 def llm_review_source_item(item_id: int) -> dict:
     """EPIC-05：LLM 二道复核——规则复核未放行的候选逐条裁决（只放行不驳回）。"""

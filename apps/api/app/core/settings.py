@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     danmaku_collector_max_duration_sec: int = 43200  # 单采集任务寿命上限（12h）
     danmaku_heartbeat_stale_sec: int = 120  # sink 文件 mtime 超过此值视为采集器不在
     danmaku_max_collectors: int = 4  # 并发采集任务上限
+    danmaku_sink_retention_days: int = 7  # jsonl 档案保留天数（0=禁用清理；消费窗口都在数小时内）
     # --- Plan #6 内容生命周期 ---
     # 非精华条目保留天数（自 created_at 起算），到期物理删除、只留结论快照；0 = 禁用清理
     content_retention_days: int = 30
@@ -117,7 +118,10 @@ class Settings(BaseSettings):
     asr_model_name: str = "medium"
     asr_device: str = "cpu"
     asr_compute_type: str = "int8"
-    asr_beam_size: int = 5
+    # 生产 Intel 实测（2026-10-12 真分片基准）：beam1 比 beam5 快 1.46x，文本一致；
+    # 批量推理（BatchedInferencePipeline）虽 2x 但把 ~50 段并成 4 个大段——
+    # 证据引用/时间锚定依赖细分段，不可用。故默认贪心解码。
+    asr_beam_size: int = 1
     # 段末超 音频时长×该系数 判为幻觉丢弃（voice-pro 实战补丁，防长静音段漂移死循环）
     asr_max_segment_end_ratio: float = 1.05
     enable_whisperx: bool = False  # RAD-035：默认关，V1 不依赖

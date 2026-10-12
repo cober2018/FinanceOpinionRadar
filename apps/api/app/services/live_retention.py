@@ -16,6 +16,51 @@ from app.core.settings import get_settings
 logger = structlog.get_logger(__name__)
 
 
+def sweep_danmaku_sinks(settings=None, *, now: datetime | None = None) -> dict:
+    """弹幕 jsonl 档案保留（2026-10-12 补）：mtime 超 N 天删除，空日期目录自底向上清。
+
+    档案三用途都在「会话进行中/刚收尾」窗口内：弹幕 ingest（收尾即完成）、
+    房间人数采样（分片处理时刻读）、失败排查。默认 7 天远大于所有消费窗口。
+    每场大直播可达 ~80MB，不清理是磁盘慢泄漏（生产 256G 盘）。
+    """
+    s = settings or get_settings()
+    if not s.danmaku_sink_dir or s.danmaku_sink_retention_days <= 0:
+        return {"noop": True}
+    root = Path(s.danmaku_sink_dir)
+    if not root.is_dir():
+        return {"noop": True}
+    cutoff = (now or datetime.now(UTC)).timestamp() - s.danmaku_sink_retention_days * 86400
+    files_deleted, freed = 0, 0
+    for path in root.rglob("*.jsonl"):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if stat.st_mtime < cutoff:
+            try:
+                path.unlink()
+                files_deleted += 1
+                freed += stat.st_size
+            except OSError as exc:
+                logger.warning("danmaku_sink_unlink_failed", path=str(path)[:150], error=str(exc)[:120])
+    for dirpath, _dirnames, _files in os.walk(root, topdown=False):
+        p = Path(dirpath)
+        if p == root:
+            continue
+        try:
+            if not any(p.iterdir()):
+                p.rmdir()
+        except OSError:
+            pass
+    if files_deleted:
+        logger.info(
+            "danmaku_sink_retention_done",
+            files=files_deleted,
+            mb_freed=round(freed / 1e6, 1),
+        )
+    return {"files_deleted": files_deleted, "bytes_freed": freed}
+
+
 def sweep_live_segments(settings=None, *, now: datetime | None = None) -> dict:
     """beat/手动入口：返回 {noop|files_deleted, dirs_deleted, bytes_freed}。"""
     s = settings or get_settings()

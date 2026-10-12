@@ -90,4 +90,8 @@ celery_app.conf.beat_schedule = {
         "task": "sweep_live_segments_task",
         "schedule": get_settings().retention_sweep_interval_sec,
     },
+    "danmaku-sink-retention": {
+        "task": "sweep_danmaku_sinks_task",
+        "schedule": get_settings().retention_sweep_interval_sec,
+    },
 }

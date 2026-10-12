@@ -29,17 +29,23 @@ echo "  rsync OK"
 echo "▶ 3/5 库结构迁移（无新迁移则为空跑）"
 ssh "$PROD_SSH" "cd '$PROD_DIR' && .venv/bin/python -m alembic -c apps/api/alembic.ini upgrade head | tail -1"
 
-echo "▶ 4/5 重启 API 与 worker（radar@prod，-c 3）"
+echo "▶ 4/5 重启 API 与 worker（radar@prod -c 3 带 beat；radar-danmaku@prod 专职弹幕采集）"
 ssh "$PROD_SSH" "
   export PATH=\$HOME/bin:/usr/local/bin:\$PATH
+  pkill -f 'radar-danmaku@prod' 2>/dev/null || true
   pkill -f 'radar@prod' 2>/dev/null || true; sleep 4
+  pkill -9 -f 'radar-danmaku@prod' 2>/dev/null || true
   pkill -9 -f 'radar@prod' 2>/dev/null || true
   pkill -f 'uvicorn app.main:app' 2>/dev/null || true; sleep 2
   cd '$PROD_DIR'
   nohup .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8010 --app-dir apps/api >> ~/radar-api.log 2>&1 &
-  nohup .venv/bin/python -m celery -A app.worker.celery_app worker --beat \
-    -Q default,media,llm,danmaku --concurrency=3 --loglevel=info -n radar@prod \
-    >> ~/radar-worker.log 2>&1 &
+  nohup .venv/bin/python -m celery -A app.worker.celery_app worker \
+    -Q default,media,llm --concurrency=3 --loglevel=info -n radar@prod \
+    --beat >> ~/radar-worker.log 2>&1 &
+  nohup .venv/bin/python -m celery -A app.worker.celery_app worker \
+    -Q danmaku --concurrency=4 --loglevel=info -n radar-danmaku@prod \
+    >> ~/radar-danmaku-worker.log 2>&1 &
+  sleep 8
   echo '  processes restarted'
 "
 
@@ -48,6 +54,7 @@ sleep 12
 ssh "$PROD_SSH" "
   curl -s -o /dev/null -w '  console=%{http_code}\n' http://localhost:8010/console/
   tail -1 ~/radar-worker.log | cut -c1-70
+  tail -1 ~/radar-danmaku-worker.log | cut -c1-70
 "
 
 echo "✅ 发版完成（${PROD_SSH}）"
