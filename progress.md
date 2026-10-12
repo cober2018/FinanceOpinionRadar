@@ -1,5 +1,17 @@
 # 配置进度
 
+## 2026-10-12 默认日期筛选排查
+
+- 用户要求观点、视频库、复核队列首次进入只显示当天视频。已只读核对本地当前代码：视频库日期状态初始为 null；观点/复核队列已将当天传入共用 source-items API。
+- 周历对“今天”的边框标记与实际筛选状态相互独立，且再次点击已选日期会取消筛选。后端发布日期边界目前依赖执行主机时区。
+- 用户已明确：沿用现有时间口径，单点日期筛选正常，只调整默认状态与取数不一致。此前旧地址访问超时；已按当前部署脚本定位实际主机并只读核对，源码初始化逻辑与本地一致。
+- 已建立 `fix-default-video-date-filter` 的 proposal、design、specs、tasks；用户已明确确认，进入 apply。复用干净独立工作区，从当前 main 创建 `codex/default-video-date-filter`；先复现并核验缺失初始化。
+- 浏览器已复现修复前视频库请求仅有 limit=200，没有日期参数；周历标记今天但没有 active 日期。已补 dayFilter 的现有当天初始化，业务代码改动仅一行，接下来核验首次请求和返回列表。
+- 2026-10-12 浏览器核验完成：视频库首次请求携带当天 date_from/date_to，返回 9 条当天视频；观点保留 has_viewpoints=true，返回 7 个当天视频；复核队列保留 pending_review=true，返回空列表。三个请求均为 200，选中状态与请求一致。
+- 切到 10-13 后返回空数组并保持该日选中；点击“全部”后不带日期、按原 limit 返回 200 条；重新进入视频库恢复当天 9 条。没有回退全量或改变时间口径。
+- 前端 build、lint、现有测试退出 0，测试 1/1 通过；lint 有 6 条未改位置警告。独立 code-reviewer 审阅通过，未发现回归；未新增测试代码。
+- README 与流程记录已同步，规范严格校验通过；主规范已同步，OpenSpec 4/4 任务完成并归档至 `openspec/changes/archive/2026-10-12-fix-default-video-date-filter/`。工作区 `/Users/mshengran/.codex/worktrees/video-summary-gateway/FinanceOpinionRadar`，分支 `codex/default-video-date-filter`。本地页面仅通过隧道读取当前 API；未更新生产静态资源、合并或推送。
+
 ## 2026-09-29 main 合入与分支清理
 
 - 用户明确要求先合入本地 main 再删除所有其他分支；已将 `9bc4756` 快进合入。合并后前端 build 和现有 1 项测试通过。

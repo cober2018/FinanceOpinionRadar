@@ -12,6 +12,7 @@
 
 ## 已完成
 
+- `changes/archive/2026-10-12-fix-default-video-date-filter/`：三个视频列表默认选中日期与首次请求一致；只补视频库初始化，日期口径不变。主规范为 `specs/default-video-date-filter/spec.md`；代码与浏览器核验完成，尚未合并或部署。
 - `changes/archive/2026-09-29-catalog-broadcaster-open-interface/`：补齐主播清单的开放接口目录、契约及真实试读入口；仅拉取，代码完成但尚未部署运行页面。
 - 使用本机 OpenSpec 1.2.0 初始化项目，生成 `.codex/` 下的 Codex skills 和命令模板。
 - 第一批质量基线已完成实施和归档，主规范位于 `specs/finance-label-quality-baseline/spec.md`，全量严格校验通过。

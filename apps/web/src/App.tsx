@@ -820,7 +820,7 @@ function LibraryPage() {
   const [chatDrawer, setChatDrawer] = useState<number | null>(null)
   const [drillAccount, setDrillAccount] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [dayFilter, setDayFilter] = useState<string | null>(null)
+  const [dayFilter, setDayFilter] = useState<string | null>(weekbarFmt(new Date()))
 
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
