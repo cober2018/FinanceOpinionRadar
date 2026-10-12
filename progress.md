@@ -4,7 +4,13 @@
 
 - 用户已明确授权合入 main、上传 Git 和发布生产。只读检查本地 main 与 origin/main 一致，功能分支仅含已验收的日期修复及文档。
 - 主目录未提交内容是本次提案草稿；另有两个无关未跟踪文件，将分别保留。生产 API 健康，前端由现有 dist 静态目录提供；本次按前端资源发布，不需要迁移或重启后台进程。
-- 下一步：备份草稿、合入 main、构建验证并推送，再备份生产产物并切换页面。
+- 已用独立 stash 保存主目录的本次提案草稿；无关隧道日志和 launchd 文件保留原位。功能修复 `958e6f6` 与发布计划 `37ef382` 已快进合入本地 main。
+- main 的 build、lint、现有测试均退出 0，1/1 测试通过，6 条未改处警告。已推送 origin/main 并读回 `37ef382ee3efb95641dd524ba17096e4fac5478c` 与本地一致；下一步备份生产产物和切换页面。
+- 生产完整旧 dist 与 App.tsx 已备份至 `backups/web-2026-10-12-before-958e6f6.mFim3O/`；上传后的文件哈希核对通过，新资源先到位，再原子替换 index.html。生产现引用 `index-CNWYxQjE.js`，源码与 main 一致，API 健康正常；正在核验实际网页请求。
+- 生产真实浏览器核验通过：发布前视频库首次请求只有 limit=200、返回 200 条；发布后首次请求带 `date_from=2026-10-12&date_to=2026-10-12`，返回当日 10 条。观点保留 has_viewpoints=true、返回当日 8 个视频；复核队列保留 pending_review=true、返回当日 1 个视频。三个响应均为 200，日期 active 状态一致；数量为验收时刻快照。
+- 从 HTTP 读回的 JS SHA-256 为 `18f48035575efb006da1b48bd53f05ecbe2cbabd07a76f40cebee20fdcc3a014`，与本地构建一致；index.html 与 App.tsx 的磁盘哈希也一致。旧 JS 与 CSS 仍返回 200，API 健康正常，API/worker 原进程 PID 未改变。
+- 回滚材料保留在生产 `/Users/mshengran/Documents/project/FinanceOpinionRadar/backups/web-2026-10-12-before-958e6f6.mFim3O/`：异常时恢复其中的 App.tsx 和 dist/index.html；旧资源仍在，不需要迁移数据库或重启服务。
+- 合入、Git 上传和生产发布均已完成；最终仅补充发布记录，业务代码仍只有已审阅的一行修复。主目录原提案草稿保留在命名 stash，两个无关未跟踪文件保持原状。
 
 ## 2026-10-12 默认日期筛选排查
 

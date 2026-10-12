@@ -378,7 +378,7 @@ openspec/            变更提案、验收规范和归档后的主规范
 
 ## 已完成
 
-- 2026-10-12：修正视频库默认日期初始化，核验观点、视频库、复核队列首次请求与默认选中日一致；沿用现有日期口径。浏览器读回、前端构建、lint 和现有测试通过；变更仅在 `codex/default-video-date-filter`，未合并、推送或部署。规范见 [默认日期筛选归档](openspec/changes/archive/2026-10-12-fix-default-video-date-filter/proposal.md)。
+- 2026-10-12：默认日期修复 `958e6f6` 已合入本地 main、推送 Git 并发布到生产 `192.168.31.37:8010/console/`；生产视频库、观点、复核队列首次请求均按默认选中日取数，沿用现有日期口径。main 构建、lint、现有测试通过；生产引用 `index-CNWYxQjE.js`，HTTP 资源哈希与本地一致，API 健康正常。旧前端已备份，详情见 [发布记录](progress.md) 与 [规范归档](openspec/changes/archive/2026-10-12-fix-default-video-date-filter/proposal.md)。
 - 2026-09-22：首批标注质量基线工具已实现并验证；现有两条样例仅完成演示流程，正式业务质量仍为未验收。
 - RAD-001~003：仓库基线、Makefile/pre-commit、CI（6 jobs）、API Dockerfile、docker compose 开发依赖（postgres/redis/minio）
 - RAD-010~013：API 骨架与健康检查、领域枚举、Alembic + 14 张表迁移（含约束/级联/UTC 集成测试）、repository 层、开发种子数据
