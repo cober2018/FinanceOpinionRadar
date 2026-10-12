@@ -27,6 +27,10 @@ services:
   dtk-postgres:
     image: timescale/timescaledb:latest-pg16@sha256:f495f2bc25ca7596ca8e1606c6241ca250ccc56a0c082b9f2ec0d290e0126cd9
     container_name: dtk-postgres
+    # 日志上限（2026-10-12）：json-file 默认无限增长（streamcap/douyinlive 高频打日志）
+    logging: &log_opts
+      driver: json-file
+      options: {max-size: "20m", max-file: "3"}
     environment:
       POSTGRES_USER: dtk
       POSTGRES_PASSWORD: dtk
@@ -43,6 +47,7 @@ services:
   dtk-redis:
     image: redis:7-alpine
     container_name: dtk-redis
+    logging: *log_opts
     mem_limit: 256m  # 实测 ~11MB
     networks: [dtk-net]
     healthcheck:
@@ -55,6 +60,7 @@ services:
   dtk-migrate:
     image: evil0ctal/douyin_tiktok_download_api:5.1.0
     container_name: dtk-migrate
+    logging: *log_opts
     entrypoint: ["dtk-entrypoint"]
     command: ["migrate"]
     environment: &dtk_env
@@ -70,6 +76,7 @@ services:
   douyin-api:
     image: evil0ctal/douyin_tiktok_download_api:5.1.0
     container_name: douyin-api
+    logging: *log_opts
     entrypoint: ["dtk-entrypoint"]
     command: ["api"]
     environment: *dtk_env
@@ -92,6 +99,7 @@ services:
   dtk-worker:
     image: evil0ctal/douyin_tiktok_download_api:5.1.0
     container_name: dtk-worker
+    logging: *log_opts
     entrypoint: ["dtk-entrypoint"]
     command: ["worker"]
     environment: *dtk_env
@@ -104,6 +112,7 @@ services:
   streamcap:
     image: ihmily/streamcap:v1.0.3
     container_name: streamcap
+    logging: *log_opts
     environment:
       # 分片目录日期键用容器本地时间；radar ingest 会话键按日期目录归并，须与观测时区一致
       TZ: Asia/Shanghai
@@ -120,6 +129,7 @@ services:
   douyinlive:
     image: ghcr.io/jwwsjlm/douyinlive:v2.2.1
     container_name: douyinlive
+    logging: *log_opts
     ports: ["127.0.0.1:${DOUYINLIVE_PORT:-1088}:1088"]
     mem_limit: 256m  # 实测 ~46MB
     restart: unless-stopped

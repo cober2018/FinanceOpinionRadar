@@ -102,6 +102,7 @@ class Settings(BaseSettings):
     # 非精华条目保留天数（自 created_at 起算），到期物理删除、只留结论快照；0 = 禁用清理
     content_retention_days: int = 30
     retention_sweep_interval_sec: int = 86400  # beat：每日清理一轮
+    ops_retention_days: int = 30  # job_run/api_call_log 运维流水保留天数（0=禁用清理）
     # --- Plan #7 开放数据层（/open/v1 + 推送）---
     open_push_interval_sec: int = 60  # beat：确认观点推送扫描
     open_push_max_attempts: int = 5  # 单观点单渠道失败上限，达到后置 dead 不再重试

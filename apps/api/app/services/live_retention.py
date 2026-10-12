@@ -31,7 +31,7 @@ def sweep_danmaku_sinks(settings=None, *, now: datetime | None = None) -> dict:
         return {"noop": True}
     cutoff = (now or datetime.now(UTC)).timestamp() - s.danmaku_sink_retention_days * 86400
     files_deleted, freed = 0, 0
-    for path in root.rglob("*.jsonl"):
+    for path in (*root.rglob("*.jsonl"), *root.rglob("*.jsonl.pos")):  # .pos=ingest 水位线边车
         try:
             stat = path.stat()
         except OSError:

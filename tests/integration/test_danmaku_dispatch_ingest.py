@@ -213,3 +213,83 @@ def test_ingest_noop_without_config(db_session):
         db_session, settings=_settings(Path("/tmp"), danmaku_sink_dir="")
     )
     assert "noop" in out
+
+
+def test_ingest_watermark_incremental_and_partial_tail(migrated_db, db_session, tmp_path):
+    """字节水位线（2026-10-12）：二轮只读增量；无换行的半行留待下轮。"""
+    from app.db.models import LiveChatMessage
+
+    _, item = _make_account_item(db_session, external_id="MS4wLjABwm1")
+    sink = _write_sink(tmp_path, item.id, [CHAT_ENV])
+
+    first = danmaku_ingest.ingest_danmaku_files(db_session, settings=_settings(tmp_path))
+    assert first["messages_inserted"] == 1
+    assert first["files_unchanged"] == 0
+    pos_file = sink.with_name(sink.name + ".pos")
+    assert pos_file.exists() and int(pos_file.read_text()) == sink.stat().st_size
+
+    # 未变化 → 零解析快路径
+    second = danmaku_ingest.ingest_danmaku_files(db_session, settings=_settings(tmp_path))
+    assert second["files_unchanged"] == 1 and second["messages_inserted"] == 0
+
+    # 追加一条完整 + 一条无换行半行：半行不入库，水位线停在其前
+    other = CHAT_ENV.replace('"msgId": "9001"', '"msgId": "9003"')
+    with sink.open("a") as fh:
+        fh.write(other + "\n")
+        fh.write('{"v":1,"rece')
+    third = danmaku_ingest.ingest_danmaku_files(db_session, settings=_settings(tmp_path))
+    assert third["messages_inserted"] == 1
+    assert int(pos_file.read_text()) == sink.stat().st_size - len('{"v":1,"rece')
+
+    # 半行补完（补换行）→ 下轮读走
+    with sink.open("a") as fh:
+        fh.write('ived_at":"2026-10-12T00:00:00+00:00"}\n')
+    fourth = danmaku_ingest.ingest_danmaku_files(db_session, settings=_settings(tmp_path))
+    assert fourth["messages_skipped"] == 1  # 坏 JSON 但被完整读到
+    assert int(pos_file.read_text()) == sink.stat().st_size
+    assert db_session.query(LiveChatMessage).count() == 2
+
+
+def test_ingest_watermark_resets_on_truncation(migrated_db, db_session, tmp_path):
+    """文件被截断（size < pos）→ 水位线归零重读，幂等靠唯一约束。"""
+    _, item = _make_account_item(db_session, external_id="MS4wLjABwm2")
+    sink = _write_sink(tmp_path, item.id, [CHAT_ENV])
+    danmaku_ingest.ingest_danmaku_files(db_session, settings=_settings(tmp_path))
+    pos_file = sink.with_name(sink.name + ".pos")
+
+    sink.write_text(CHAT_ENV + "\n")  # 重写（比 pos 短不了多少但触发 size<pos 分支需更小）
+    pos_file.write_text(str(sink.stat().st_size + 500))  # 人为超前水位线
+    out = danmaku_ingest.ingest_danmaku_files(db_session, settings=_settings(tmp_path))
+    assert out["messages_inserted"] == 0  # 重读但去重零新增（F5 幂等）
+    assert int(pos_file.read_text()) == sink.stat().st_size
+
+
+def test_housekeeping_prunes_ops_rows(migrated_db, db_session, monkeypatch, tmp_path):
+    """运维流水保留：job_run/api_call_log 超 30 天删除，新行保留。"""
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models import ApiCallLog, JobRun
+    from app.worker import tasks as tasks_mod
+    from sqlalchemy.orm import sessionmaker
+
+    # 任务模块级导入了 get_session_factory，需补丁在 tasks 命名空间上
+    factory = sessionmaker(bind=db_session.get_bind(), expire_on_commit=False)
+    monkeypatch.setattr(tasks_mod, "get_session_factory", lambda: factory)
+
+    old = datetime.now(UTC) - timedelta(days=40)
+    new = datetime.now(UTC) - timedelta(days=1)
+    db_session.add_all([
+        JobRun(job_type="prepare", status="success", created_at=old),
+        JobRun(job_type="extract", status="success", created_at=new),
+        ApiCallLog(api_key_id=None, method="GET", path="/open/v1/x",
+                   status_code=200, created_at=old),
+        ApiCallLog(api_key_id=None, method="GET", path="/open/v1/y",
+                   status_code=200, created_at=new),
+    ])
+    db_session.commit()
+
+    out = tasks_mod.housekeeping_stale_jobs()
+
+    assert out["job_run_pruned"] == 1 and out["api_call_log_pruned"] == 1
+    assert db_session.query(JobRun).count() == 1
+    assert db_session.query(ApiCallLog).count() == 1

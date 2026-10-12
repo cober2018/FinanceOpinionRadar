@@ -89,8 +89,32 @@ def ingest_danmaku_files(session, *, repo=None, settings=None) -> dict:
         session.commit()
 
 
+def _pos_file(path: Path) -> Path:
+    return path.with_name(path.name + ".pos")
+
+
+def _read_pos(path: Path) -> int:
+    try:
+        return int(_pos_file(path).read_text().strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def _write_pos(path: Path, pos: int) -> None:
+    try:
+        _pos_file(path).write_text(str(pos))
+    except OSError:
+        pass  # 写失败下轮全量重读，幂等无害（F5 唯一约束兜底）
+
+
 def _ingest_all(session, root: Path, repo) -> dict:
-    counters = {"files": 0, "files_skipped": 0, "messages_inserted": 0, "messages_skipped": 0}
+    counters = {
+        "files": 0,
+        "files_skipped": 0,
+        "files_unchanged": 0,
+        "messages_inserted": 0,
+        "messages_skipped": 0,
+    }
     repo = repo or LiveChatMessageRepository(session)
     for path in _iter_sink_files(root):
         item_id = int(path.stem)
@@ -102,19 +126,39 @@ def _ingest_all(session, root: Path, repo) -> dict:
             logger.warning("danmaku_ingest_no_item", path=str(path))
             continue
         counters["files"] += 1
+        # 水位线（2026-10-12）：按字节偏移增量读。旧实现每轮全量重解析全部档案
+        # （7 天保留 × 多场 × 单场可达 ~100MB，每 120s 重解析数百 MB 纯浪费且随
+        # 保留期线性放大）。尾部半行留在水位线之后下轮再读；崩溃后重读由唯一
+        # 约束兜底幂等。二进制读 + errors=replace 同时修掉半字符行炸整轮的隐患。
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        pos = _read_pos(path)
+        if size < pos:
+            pos = 0  # 文件被截断/重建（理论上不发生，防御）
+        if size == pos:
+            counters["files_unchanged"] += 1
+            continue
+        with path.open("rb") as fh:
+            fh.seek(pos)
+            blob = fh.read()
+        # split 末元素两种情况都丢弃：以 \n 结尾时是空串（非行），否则是尾部半行（下轮读）
+        complete = blob.split(b"\n")[:-1]
+        end_pos = pos + sum(len(c) + 1 for c in complete)
         batch: list = []
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                record = parse_envelope_line(line)
-                if record is None:
-                    counters["messages_skipped"] += 1
-                    continue
-                batch.append(record)
-                if len(batch) >= _BATCH_SIZE:
-                    counters["messages_inserted"] += repo.insert_many(item_id, batch)
-                    batch.clear()
+        for raw in complete:
+            record = parse_envelope_line(raw.decode("utf-8", errors="replace"))
+            if record is None:
+                counters["messages_skipped"] += 1
+                continue
+            batch.append(record)
+            if len(batch) >= _BATCH_SIZE:
+                counters["messages_inserted"] += repo.insert_many(item_id, batch)
+                batch.clear()
         if batch:
             counters["messages_inserted"] += repo.insert_many(item_id, batch)
+        _write_pos(path, end_pos)
         session.commit()
     logger.info("danmaku_ingest_scan", **counters)
     return counters

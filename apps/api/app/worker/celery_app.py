@@ -94,4 +94,9 @@ celery_app.conf.beat_schedule = {
         "task": "sweep_danmaku_sinks_task",
         "schedule": get_settings().retention_sweep_interval_sec,
     },
+    # 僵尸 JobRun 收尾 + job_run/api_call_log 流水保留（2026-10-12 前漏接从未跑过）
+    "housekeeping": {
+        "task": "housekeeping_stale_jobs",
+        "schedule": 3600,
+    },
 }
