@@ -1,5 +1,14 @@
 # 配置进度
 
+## 2026-11-03 统一架构开发实施（开发 Agent 自检）
+
+- 分支 `codex/unify-radar-product-architecture`（基线 main b013bfe），7 个提交完成开发，检查全绿：pytest 491 通过；ruff 53 项全部为基线同类既有项（基线 84）；mypy 42=基线；tsc 0；前端 build/test 通过、oxlint 13（基线 18）；`openspec validate --all --strict` 7 通过 0 失败；`git diff --check` 通过。
+- 后端按 design 目标布局归位：bootstrap（asgi/api/celery 组装）+ runtime（settings/db/storage/pipeline/任务）+ modules/{workflows,sources,collection,content,insights,delivery}；原 8 个顶层包移除无残留；alembic env 指向 runtime.db.models 聚合注册。
+- 四引擎迁入并逐一独立实证：recording 无头引擎容器内监控循环自启（无浏览器会话，原 keepalive 缺陷消除）；danmaku go build + WS/状态接口契约信封；media 镜像依赖逐包 pin + dtk migrate + 两个雷达端点契约信封（UNAUTHENTICATED 正确拒绝）；transcription worker 与来源 diff 为空。
+- 前端 3620 行 App.tsx 拆为 app/features/shared（13 feature + 7 shared），行为零改动。
+- compose 三服务切换为产品内构建（engines/*），volume/端口/网络契约不变；streamcap_keepalive.sh 退役标注（生产未动）。
+- 未做（交接待验收）：存量副本完整五段演练、真实上游链路（凭据不在开发环境）；未合并 main、未推送、未发布、未停用生产任何服务。
+
 ## 2026-11-02 财经雷达统一产品架构
 
 - 2026-11-03 开发交接准备：新增同目录 development_agent_prompt.md，包含未提交规范带入工作区、三项审查修订、隔离验证、证据清单和交接要求；用户指定本对话 Agent 开发后验收，tasks 4.3 同步验收后归档顺序。仅生成提示词，未调度开发 Agent、未执行 apply，代码基线仍为 main b013bfe。

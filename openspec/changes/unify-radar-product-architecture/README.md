@@ -6,9 +6,10 @@
 
 ## 当前阶段、代码位置与版本
 
-- 阶段：2026-11-03 用户已通过 development_agent_prompt.md 确认提案并授权开发；开发已启动，分支 `codex/unify-radar-product-architecture`。
+- 阶段：2026-11-03 **开发自检完成，已交接待验收**。任务 1.1-3.3 全部完成，4.1 完成，4.2 部分完成（引擎接管已实证、存量副本完整演练待验收），4.3 保持未勾选待验收归档。分支 `codex/unify-radar-product-architecture`。
 - **唯一继续维护的工作区**：`/Users/mshengran/Project/FinanceOpinionRadar`（本目录，分支 `codex/unify-radar-product-architecture`，基线 main `b013bfe`，规范带入提交 `b3a2251`）。不复制第二套需求目录。
 - 无关未跟踪文件 `cpa_api_tunnel.log`、`infra/launchd/com.shengran.cpa-api-tunnel.plist` 保留原位不提交；既有 stash 不动。
+- 开发提交链：`b3a2251`→`6a20557`→`c321070`→`aeceb8b`→`d93d8cc`→`0b8a3ac`→`0a7798c`（交接详情见 review.md「开发自检与交接」）。
 
 ## 目录结构与成果文件
 
@@ -30,8 +31,8 @@
 
 ## 待完成 / TODO
 
-- 实施后验证三项修订的真实效果；目前仅完成文档修订，未执行事务、引擎恢复或切换演练。
-- 用户确认完整提案后实施；代码、独立环境验证及归档均未开始。
+- 验收 Agent 验收：重点为存量副本完整演练（4.2 剩余段）与真实上游链路（cookie/直播间/模型，凭据不在开发环境）。
+- 验收通过后归档（任务 4.3）；合并 main、推送、生产切换与旧环境下线另需对应授权。
 
 ## 关键设计决策
 

@@ -1,5 +1,13 @@
 # 配置发现
 
+## 2026-11-03 统一架构实施发现
+
+- 外部引擎本质：dtk/StreamCap 为镜像内 pip 包或 Python 工程（可 vendor），douyinLive 镜像内是 Go 编译产物（源码取上游 tag v2.2.1 并与镜像 BuildID 对应关系记录）；voice-pro 的 mlx worker 是自包含脚本（diff 为空复制即可）。
+- StreamCap 结构性缺陷实证：web 模式监控循环只在首个浏览器会话接入时启动，会话死亡即永久失效（keepalive 脚本注释与本次无头引擎日志互证）。产品无头入口以 stub page 复用原版 main 协程，仅吸收 UI 交互（switch_page 过滤），生命周期任务真实派发。
+- dtk 引擎依赖按镜像内实测版本逐包 pin（requirements.frozen.txt）；asyncpg 0.31 prefer-SSL 语义对新 timescale 构建（ssl=off）报"rejected SSL upgrade"——生产原库正常，部署时注意。
+- git mv 到已存在文件会静默失败留下空壳（__init__.py 踩坑两次）；拆分模型文件必须校验闭合（VPRow 截断踩坑）。
+- 前端拆分用 tsc 错误驱动收敛（468→0）效率最高；oxlint 警告数从 18 降至 13（按文件拆分后每文件检查面变小）。
+
 ## 2026-11-02 财经雷达统一产品架构
 
 ### 阶段与边界
