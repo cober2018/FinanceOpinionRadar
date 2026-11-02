@@ -19,6 +19,7 @@
 
 ## 待完成 / TODO
 
+- `changes/unify-radar-product-architecture/`：全项目按统一架构重整，迁入必要采集、录制、弹幕及转写实现，统一产品运行与交付；四类规范产物齐备，14 项任务未实施。2026-11-03 已将三项审查意见写入设计、规范与任务并复核对应关系，待用户确认完整提案。入口 README 引用已有根计划、进度及发现文件，不重复建成果目录。
 - `changes/query-video-summaries-and-control-push/`：按视频时间的三种当前总结查询，以及单视频自动/手动推送提案；规范已校验，待用户确认，尚未实施。
 - 真实人工基准覆盖与质量验收按实际材料状态推进，不因工具完成而标成通过。
 - `changes/archive/2026-09-27-catalog-video-summary-open-interfaces/`：已确认并实施的视频总结 API 与推送事件目录展示。

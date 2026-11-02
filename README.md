@@ -4,6 +4,14 @@
 
 需求与设计见 `01_finance_opinion_radar_PRD.md`；任务拆解见 `02_finance_opinion_radar_execution_plan.md`。
 
+## 统一产品架构提案（2026-11-02）
+
+开发交接入口：[开发 Agent 提示词](openspec/changes/unify-radar-product-architecture/development_agent_prompt.md)。开发 Agent 实现并自检后，由本对话 Agent 验收；当前只完成提示词准备，未启动开发。
+
+2026-11-03 提案修订：模块事务归属、直播/弹幕持续运行契约、迁移时任务与文件接续三项意见已写入 OpenSpec，设计、验收场景与任务对应关系已复核，详见 [审查及修订记录](openspec/changes/unify-radar-product-architecture/review.md)。本轮仅更新规范，尚未实施重构或进行运行验收。
+
+只独立财经媒体雷达，内容中心与量化平台保持独立。用户进一步明确：整个项目按一套新架构统一组织，成熟功能与实现迁入复用，旧工程目录不作为保留约束。统一提案入口为 [unify-radar-product-architecture](openspec/changes/unify-radar-product-architecture/README.md)，规范产物齐备且严格校验通过，待用户确认，未实施重构。本地代码基线为 main `b013bfe`；依赖依据与历史方案比较见 [findings.md](findings.md)，沿用 [task_plan.md](task_plan.md) 与 [progress.md](progress.md)。
+
 ## 需求背景与近期目标（2026-09-22）
 
 面向公司内部生产研究，近期优先为 AI 内容中心提供可加工、有出处的素材。当前改进重点是多来源非结构化数据的清洗、标签识别与准确性，允许较慢处理。雷达承担素材与证据交付，内容中心承担最终选题、写作和发布，量化平台提供独立分析材料。
