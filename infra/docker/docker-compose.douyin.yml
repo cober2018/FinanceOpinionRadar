@@ -1,4 +1,5 @@
-# Plan #4 抖音外部服务栈：Evil0ctal dtk 5.1.0（VOD 解析）+ StreamCap v1.0.3（直播录制）。
+# 统一产品架构：三个能力引擎全部由本仓库源码构建（engines/{media,recording,danmaku}，
+# 来源与版本见各 SOURCE.md）。原外部 pin 镜像仅作为回退产物保留在引擎 SOURCE.md 记录。
 # 与仓库根 docker-compose.yml（radar 自身 dev 依赖）相互独立、可并存。
 # 部署/引导序列与每步预期输出见 README「抖音 Quickstart」；镜像升级见「升级外部镜像」。
 #
@@ -58,11 +59,12 @@ services:
 
   # dtk 迁移强制 hypertable（TimescaleDB）；一次性容器，api/worker 等它成功后再起
   dtk-migrate:
-    image: evil0ctal/douyin_tiktok_download_api:5.1.0
+    build: { context: ../../engines/media, dockerfile: Dockerfile }
+    image: radar-engine-media
     container_name: dtk-migrate
     logging: *log_opts
-    entrypoint: ["dtk-entrypoint"]
-    command: ["migrate"]
+    entrypoint: []
+    command: ["python", "-m", "dtk.cli.main", "migrate"]
     environment: &dtk_env
       DTK_SECRET_KEY: ${DTK_SECRET_KEY:?未设置——openssl rand -base64 48 生成后 export，见文件头注释}
       DTK_DATABASE_URL: postgresql+asyncpg://dtk:dtk@dtk-postgres:5432/dtk
@@ -74,11 +76,12 @@ services:
     restart: "no"
 
   douyin-api:
-    image: evil0ctal/douyin_tiktok_download_api:5.1.0
+    build: { context: ../../engines/media, dockerfile: Dockerfile }
+    image: radar-engine-media
     container_name: douyin-api
     logging: *log_opts
-    entrypoint: ["dtk-entrypoint"]
-    command: ["api"]
+    entrypoint: []
+    command: ["uvicorn", "engines.media.server:app", "--host", "0.0.0.0", "--port", "8000"]
     environment: *dtk_env
     ports: ["127.0.0.1:${DOUYIN_API_PORT:-8080}:8000"]
     volumes:
@@ -97,11 +100,11 @@ services:
       start_period: 20s
 
   dtk-worker:
-    image: evil0ctal/douyin_tiktok_download_api:5.1.0
+    image: radar-engine-media
     container_name: dtk-worker
     logging: *log_opts
-    entrypoint: ["dtk-entrypoint"]
-    command: ["worker"]
+    entrypoint: []
+    command: ["python", "-m", "dtk.cli.main", "worker"]
     environment: *dtk_env
     mem_limit: 768m  # 实测 ~130MB
     depends_on:
@@ -109,25 +112,30 @@ services:
     networks: [dtk-net]
     restart: unless-stopped
 
+  # 统一架构：产品无头录制引擎（engines/recording），监控循环随进程自启，
+  # 不再需要浏览器 UI 会话激活（scripts/streamcap_keepalive.sh 由此退役）。
   streamcap:
-    image: ihmily/streamcap:v1.0.3
+    build: { context: ../../engines/recording, dockerfile: Dockerfile }
+    image: radar-engine-recording
     container_name: streamcap
     logging: *log_opts
     environment:
       # 分片目录日期键用容器本地时间；radar ingest 会话键按日期目录归并，须与观测时区一致
       TZ: Asia/Shanghai
+      STREAMCAP_CONFIG_DIR: /data/config
     mem_limit: 1g  # 实测 ~65MB；录制时 ffmpeg 峰值数倍，留足
-    ports: ["127.0.0.1:${STREAMCAP_UI_PORT:-5001}:6006"]
     volumes:
-      - "${DOUYIN_STATE_DIR:-../../data/douyin}/streamcap-config:/app/config"
-      - "${DOUYIN_STATE_DIR:-../../data/douyin}/live_segments:/app/downloads"
+      - "${DOUYIN_STATE_DIR:-../../data/douyin}/streamcap-config:/data/config"
+      - "${DOUYIN_STATE_DIR:-../../data/douyin}/live_segments:/data/downloads"
     restart: unless-stopped
 
   # Plan #5 直播弹幕采集：jwwsjlm/douyinLive v2.2.1（本地 a_bogus 签名，免浏览器）。
   # radar 通过 ws://127.0.0.1:1088/ws/<room_id> 订阅弹幕流（.env: DANMAKU_WS_BASE_URL），
   # 通过 /api/v1/rooms/{id}/status 查询房间状态。上游断线重连/未开播轮询由其内部处理。
+  # 统一架构：弹幕引擎改由本仓库 engines/danmaku 构建（同 v2.2.1 源码）
   douyinlive:
-    image: ghcr.io/jwwsjlm/douyinlive:v2.2.1
+    build: { context: ../../engines/danmaku, dockerfile: Dockerfile }
+    image: radar-engine-danmaku
     container_name: douyinlive
     logging: *log_opts
     ports: ["127.0.0.1:${DOUYINLIVE_PORT:-1088}:1088"]
