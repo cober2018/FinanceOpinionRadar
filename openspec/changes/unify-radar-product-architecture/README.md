@@ -6,9 +6,9 @@
 
 ## 当前阶段、代码位置与版本
 
-- 阶段：2026-11-03 三项审查意见已更新至 OpenSpec 并完成文档对应关系复核，待用户确认完整提案，未进入实施。
-- 代码：`/Users/mshengran/Project/FinanceOpinionRadar`，本地 main 基线 `b013bfe`。
-- 本轮仅有文档改动，尚未提交；未修改业务代码、合并、推送或发布。本需求的授权不沿用此前日期修复的生产发布授权。
+- 阶段：2026-11-03 用户已通过 development_agent_prompt.md 确认提案并授权开发；开发已启动，分支 `codex/unify-radar-product-architecture`。
+- **唯一继续维护的工作区**：`/Users/mshengran/Project/FinanceOpinionRadar`（本目录，分支 `codex/unify-radar-product-architecture`，基线 main `b013bfe`，规范带入提交 `b3a2251`）。不复制第二套需求目录。
+- 无关未跟踪文件 `cpa_api_tunnel.log`、`infra/launchd/com.shengran.cpa-api-tunnel.plist` 保留原位不提交；既有 stash 不动。
 
 ## 目录结构与成果文件
 
