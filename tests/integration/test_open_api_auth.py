@@ -1,13 +1,12 @@
 """开放 API 鉴权与调用审计（Plan #7）：401/200/吊销 + api_call_log 记账。"""
 
 import pytest
+from app.modules.delivery.open_api import deps as open_deps
+from app.runtime.db.models import ApiCallLog, ApiKey
+from app.runtime.db.session import get_db
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-from app.api.open import deps as open_deps
-from app.db.models import ApiCallLog, ApiKey
-from app.db.session import get_db
 
 
 @pytest.fixture
@@ -15,7 +14,7 @@ def client(db_session, migrated_db, monkeypatch):
     # 审计 middleware 用独立会话工厂——替换成测试库，避免写开发库
     engine = create_engine(migrated_db)
     monkeypatch.setattr(open_deps, "audit_session", sessionmaker(bind=engine))
-    from app.main import app
+    from app.bootstrap.asgi import app
 
     app.dependency_overrides[get_db] = lambda: db_session
     yield TestClient(app)
@@ -27,7 +26,7 @@ RAW_KEY = "rk_" + "a1b2c3d4" * 4
 
 
 def _mk_key(db_session, *, status="active") -> ApiKey:
-    from app.api.open.deps import hash_key
+    from app.modules.delivery.open_api.deps import hash_key
 
     row = ApiKey(name="测试 Key", key_hash=hash_key(RAW_KEY), prefix=RAW_KEY[:8], status=status)
     db_session.add(row)

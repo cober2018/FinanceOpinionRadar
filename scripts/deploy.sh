@@ -36,13 +36,13 @@ ssh "$PROD_SSH" "
   pkill -f 'radar@prod' 2>/dev/null || true; sleep 4
   pkill -9 -f 'radar-danmaku@prod' 2>/dev/null || true
   pkill -9 -f 'radar@prod' 2>/dev/null || true
-  pkill -f 'uvicorn app.main:app' 2>/dev/null || true; sleep 2
+  pkill -f 'uvicorn app.bootstrap.asgi:app' 2>/dev/null || true; sleep 2
   cd '$PROD_DIR'
-  nohup .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8010 --app-dir apps/api >> ~/radar-api.log 2>&1 &
-  nohup .venv/bin/python -m celery -A app.worker.celery_app worker \
+  nohup .venv/bin/uvicorn app.bootstrap.asgi:app --host 0.0.0.0 --port 8010 --app-dir apps/api >> ~/radar-api.log 2>&1 &
+  nohup .venv/bin/python -m celery -A app.bootstrap.celery worker \
     -Q default,media,llm --concurrency=3 --loglevel=info -n radar@prod \
     --beat >> ~/radar-worker.log 2>&1 &
-  nohup .venv/bin/python -m celery -A app.worker.celery_app worker \
+  nohup .venv/bin/python -m celery -A app.bootstrap.celery worker \
     -Q danmaku --concurrency=4 --loglevel=info -n radar-danmaku@prod \
     >> ~/radar-danmaku-worker.log 2>&1 &
   sleep 8

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CPA API 内网隧道守护（scripts/cpa_api_tunnel.sh）的 launchd 常驻配置——仓库集成变体。
+  脚本本体不入 git（.gitignore），权威归档在 ~/Project/needdocx/网络环境/
+  （那里的模板用 __SCRIPT_DIR__ 自足安装；本变体面向仓库内运行副本，日志归 logs/）。
+  安装：make cpa-tunnel-keeper（幂等，登录自启 + KeepAlive 崩溃自愈）。
+  卸载：make cpa-tunnel-keeper-stop。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.shengran.cpa-api-tunnel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>__REPO_DIR__/scripts/cpa_api_tunnel.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__REPO_DIR__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd 默认 PATH 不含 brew -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>__REPO_DIR__/logs/cpa_api_tunnel.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO_DIR__/logs/cpa_api_tunnel.log</string>
+</dict>
+</plist>

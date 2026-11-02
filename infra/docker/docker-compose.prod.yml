@@ -50,7 +50,7 @@ services:
 
   worker-default:
     build: { context: ../.., dockerfile: infra/docker/Dockerfile.api }
-    command: celery -A app.worker.celery_app worker -Q default --loglevel=info
+    command: celery -A app.bootstrap.celery worker -Q default --loglevel=info
     environment: &worker_env
       DATABASE_URL: postgresql+psycopg://radar:${POSTGRES_PASSWORD}@postgres:5432/radar
       REDIS_URL: redis://redis:6379/0
@@ -63,7 +63,7 @@ services:
 
   worker-media:
     build: { context: ../.., dockerfile: infra/docker/Dockerfile.api }
-    command: celery -A app.worker.celery_app worker -Q media --concurrency=2 --loglevel=info
+    command: celery -A app.bootstrap.celery worker -Q media --concurrency=2 --loglevel=info
     environment: *worker_env
     volumes: ["models:/root/.cache/huggingface"]
     depends_on:
@@ -71,7 +71,7 @@ services:
 
   worker-llm:
     build: { context: ../.., dockerfile: infra/docker/Dockerfile.api }
-    command: celery -A app.worker.celery_app worker -Q llm --concurrency=2 --loglevel=info
+    command: celery -A app.bootstrap.celery worker -Q llm --concurrency=2 --loglevel=info
     environment:
       <<: *worker_env
       LLM_API_KEY: ${LLM_API_KEY:-}

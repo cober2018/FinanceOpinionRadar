@@ -1,5 +1,5 @@
 import pytest
-from app.core.settings import Settings
+from app.runtime.settings import Settings
 from pydantic import ValidationError
 
 LOCAL_DEV_DATABASE_URL = "postgresql+psycopg://radar:radar@localhost:5432/radar"

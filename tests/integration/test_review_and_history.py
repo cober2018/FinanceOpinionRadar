@@ -2,7 +2,14 @@
 
 from datetime import UTC, datetime, timedelta
 
-from app.db.models import (
+from app.modules.insights.history import (
+    apply_expiry,
+    build_snapshot,
+    build_topic_consensus,
+    compute_change_type,
+)
+from app.modules.insights.reviewer import review_candidate
+from app.runtime.db.models import (
     AuditLog,
     Creator,
     CreatorTopicSnapshot,
@@ -12,13 +19,6 @@ from app.db.models import (
     TranscriptSegment,
     Viewpoint,
 )
-from app.services.history import (
-    apply_expiry,
-    build_snapshot,
-    build_topic_consensus,
-    compute_change_type,
-)
-from app.services.reviewer import review_candidate
 from fastapi.testclient import TestClient
 
 
@@ -34,7 +34,7 @@ def _mk_item_with_vp(
     as_of=None,
     evidence="我认为美联储九月必然降息几乎是确定的事情，黄金作为避险资产会有一波明确的上涨行情，可以看涨到年底。这个逻辑链条非常清晰，值得认真对待。",
 ):
-    from app.db.models import ViewpointEvidence
+    from app.runtime.db.models import ViewpointEvidence
 
     creator = Creator(display_name=f"主播{claim[:4]}", status="active")
     db_session.add(creator)
@@ -132,8 +132,8 @@ def test_reviewer_unclear_stance_needs_review(db_session):
 
 
 def test_confirm_reject_patch_write_audit_and_ready(db_session):
-    from app.db.session import get_db
-    from app.main import app
+    from app.bootstrap.asgi import app
+    from app.runtime.db.session import get_db
 
     app.dependency_overrides[get_db] = lambda: db_session
     client = TestClient(app)
@@ -166,9 +166,9 @@ def test_confirm_reject_patch_write_audit_and_ready(db_session):
 
 
 def test_patch_entity_name_hit_miss_and_clear(db_session):
-    from app.db.models import Entity, EntityCandidate
-    from app.db.session import get_db
-    from app.main import app
+    from app.bootstrap.asgi import app
+    from app.runtime.db.models import Entity, EntityCandidate
+    from app.runtime.db.session import get_db
 
     app.dependency_overrides[get_db] = lambda: db_session
     client = TestClient(app)
@@ -209,8 +209,8 @@ def test_patch_entity_name_hit_miss_and_clear(db_session):
 
 
 def test_patch_entity_conflict_and_bad_id_rejected(db_session):
-    from app.db.session import get_db
-    from app.main import app
+    from app.bootstrap.asgi import app
+    from app.runtime.db.session import get_db
 
     app.dependency_overrides[get_db] = lambda: db_session
     client = TestClient(app)

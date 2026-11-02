@@ -15,9 +15,9 @@ import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.core.settings import get_settings
-from app.db.models import Creator, SourceAccount, SourceItem, TranscriptSegment
-from app.db.session import get_session_factory
+from app.runtime.db.models import Creator, SourceAccount, SourceItem, TranscriptSegment
+from app.runtime.db.session import get_session_factory
+from app.runtime.settings import get_settings
 from sqlalchemy import select
 
 _ROOM_ID_RE = re.compile(r"live\.douyin\.com/(\d+)")

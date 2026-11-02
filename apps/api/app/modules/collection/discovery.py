@@ -1,0 +1,216 @@
+"""来源发现编排（RAD-022/023）：resolve → 建/联账号 → upsert 条目 → 派生下游任务。"""
+
+import random
+from collections.abc import Callable
+from datetime import UTC, datetime
+
+import structlog
+from sqlalchemy.orm import Session
+
+from app.modules.content.media.adapters.yt_dlp import normalize_channel_url
+from app.modules.content.media.contracts import (
+    AccountRef,
+    MediaSourceAdapter,
+    ResolvedMedia,
+)
+from app.modules.content.repositories.source_items import SourceItemRepository
+from app.modules.sources.creators import CreatorRepository
+from app.modules.sources.repository import SourceAccountRepository
+from app.runtime.db.models import SourceAccount, SourceItem
+
+logger = structlog.get_logger(__name__)
+
+# send 的具体实现由 worker 装配传入；服务层只依赖 Callable，便于测试（C7）
+SendFunc = Callable[..., object]
+
+FALLBACK_CREATOR_NAME = "未知来源"
+
+
+def _redraw_random_poll_interval(account: SourceAccount) -> None:
+    """配置了 [min, max] 区间时，本次成功后在区间内均匀重抽 poll_interval_sec。
+
+    到期判定仍是 last_success_at + poll_interval_sec，间隔本身每轮随机 ⇒ 访问到点随机，
+    模仿人工浏览节奏；未配置区间（NULL）的账号保持固定间隔不变。
+    """
+    lo, hi = account.poll_interval_min_sec, account.poll_interval_max_sec
+    if lo is not None and hi is not None and 0 < lo <= hi:
+        account.poll_interval_sec = random.randint(lo, hi)
+
+
+def resolve_url_preview(url: str, session: Session, adapter: MediaSourceAdapter) -> ResolvedMedia:
+    """RAD-022 预览：只解析不落库。"""
+    return adapter.resolve(url)
+
+
+def get_or_create_creator(session: Session, display_name: str | None):
+    """creator get-or-create（C5）：按名幂等，空名回退占位（Plan #4 Task 3 账号 API 复用）。"""
+    creators = CreatorRepository(session)
+    creator = creators.get_by_name(display_name or FALLBACK_CREATOR_NAME)
+    if creator is None:
+        creator = creators.create(display_name=display_name or FALLBACK_CREATOR_NAME)
+    return creator
+
+
+def create_item_from_url(url: str, session: Session, adapter: MediaSourceAdapter) -> SourceItem:
+    """RAD-022 确认后创建：服务端重新 resolve（C4），账号/creator get-or-create（C5）。"""
+    media = adapter.resolve(url)
+    creator = get_or_create_creator(session, media.channel_name)
+
+    accounts = SourceAccountRepository(session)
+    # channel 级账号；无 channel 信息回退为"每视频一账号"
+    account_external_id = media.channel_external_id or media.external_item_id
+    account = accounts.upsert_by_external(
+        creator_id=creator.id,
+        platform=media.platform,
+        external_id=account_external_id,
+        url=normalize_channel_url(media.channel_url, platform=media.platform),  # 注记③
+        discovery_mode="manual",
+    )
+    item, _created = SourceItemRepository(session).upsert_by_external(
+        source_account_id=account.id,
+        external_item_id=media.external_item_id,
+        title=media.title,
+        canonical_url=media.canonical_url,
+        thumbnail_url=media.thumbnail_url,
+        published_at=media.published_at,
+        duration_ms=media.duration_ms,
+        item_type=media.item_type,
+        metadata_json={
+            "resolved": True,
+            **{t.language: t.is_auto for t in media.subtitles},
+        },
+    )
+    session.commit()
+    logger.info(
+        "source_item_upserted",
+        item_id=item.id,
+        account_id=account.id,
+        external_item_id=item.external_item_id,
+        created=_created,
+    )
+    return item
+
+
+def discover_account(
+    account_id: int,
+    session: Session,
+    adapter: MediaSourceAdapter,
+    *,
+    send: SendFunc,
+) -> dict:
+    """RAD-023：load → discover → upsert → 新条目派发 → 记成功；失败计数并重抛（F2）。"""
+    account = session.get(SourceAccount, account_id)
+    if account is None or not account.enabled:
+        return {"account_id": account_id, "skipped": True, "discovered": 0, "created": 0}
+
+    # rollback 后 account 属性会过期，先取日志要用的字段
+    platform = account.platform
+    try:
+        items = adapter.discover(
+            AccountRef(
+                platform=account.platform,
+                external_id=account.external_id,
+                url=account.url,
+                config=account.config_json,
+            )
+        )
+        repo = SourceItemRepository(session)
+        created_ids: list[int] = []
+        # 墓碑过滤：用户显式物理删除过的内容不再重新导入（2026-09-18 指令）
+        from app.runtime.db.models import DeletedItemRef
+
+        tombstoned = {
+            (r.source_account_id, r.external_item_id)
+            for r in session.query(DeletedItemRef).filter(
+                DeletedItemRef.source_account_id == account.id
+            )
+        }
+        # 首扫 = 只建条目不投递转录（backfill 标记仅适配适配器拿不到发布时间的条目）；
+        # 之后的周期轮询才是"跟踪最新"，仅 auto_poll（视频监控开关开）才自动转录新视频。
+        first_scan = account.last_success_at is None
+        skipped_deleted = 0
+        skipped_cross_account = 0
+        skipped_before_registration = 0
+        for discovered in items:
+            if (account.id, discovered.external_item_id) in tombstoned:
+                skipped_deleted += 1
+                continue
+            # 跨账号去重：同一视频已在其他账号下入库（历史重复注册遗留）→ 不再建第二份
+            cross_dup = (
+                session.query(SourceItem.id)
+                .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+                .filter(
+                    SourceAccount.platform == account.platform,
+                    SourceItem.external_item_id == discovered.external_item_id,
+                    SourceItem.source_account_id != account.id,
+                )
+                .first()
+            )
+            if cross_dup is not None:
+                skipped_cross_account += 1
+                continue
+            # 登记即跟踪、不回填（2026-09-22 用户指令）：只入库「账号登记（created_at）
+            # 之后发布」的视频，主播的历史视频一律不导入。发布时间缺失的条目（个别
+            # 适配器拿不到）维持原行为入库，避免误伤正常跟踪。
+            if (
+                discovered.published_at is not None
+                and account.created_at is not None
+                and discovered.published_at < account.created_at
+            ):
+                skipped_before_registration += 1
+                continue
+            item, is_new = repo.upsert_by_external(
+                source_account_id=account.id,
+                external_item_id=discovered.external_item_id,
+                title=discovered.title,
+                canonical_url=discovered.url,
+                duration_ms=discovered.duration_ms,
+                metadata_json={
+                    "discovered_via": "discover_job",
+                    **({"backfill": True} if first_scan else {}),
+                },
+            )
+            if is_new:
+                created_ids.append(item.id)
+        auto_prepare = account.discovery_mode == "auto_poll" and not first_scan
+        account.last_success_at = datetime.now(UTC)
+        account.failure_count = 0
+        _redraw_random_poll_interval(account)
+        session.commit()
+    except Exception:
+        # F2：任务边界捕获——记完整上下文后重抛，绝不吞错
+        session.rollback()
+        fresh = session.get(SourceAccount, account_id)
+        if fresh is not None:
+            fresh.failure_count += 1
+            session.commit()
+        logger.exception(
+            "discover_failed",
+            account_id=account_id,
+            platform=platform,
+        )
+        raise
+
+    if auto_prepare:
+        for item_id in created_ids:
+            # C7：按名投递，EPIC-03 落地实现；G1：commit 后 send 失败由补扫兜底
+            # （补扫只接无 backfill 标记且账号开视频监控的条目）
+            send("prepare_source_item", args=[item_id])
+    logger.info(
+        "discover_ok",
+        account_id=account_id,
+        discovered=len(items),
+        created=len(created_ids),
+        backfill_scan=first_scan,
+        auto_prepare=auto_prepare,
+        skipped_deleted=skipped_deleted,
+        skipped_cross_account=skipped_cross_account,
+        skipped_before_registration=skipped_before_registration,
+    )
+    return {
+        "account_id": account_id,
+        "skipped": False,
+        "discovered": len(items),
+        "created": len(created_ids),
+        "skipped_before_registration": skipped_before_registration,
+    }

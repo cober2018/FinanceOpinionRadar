@@ -3,12 +3,11 @@
 import base64
 import hashlib
 import hmac
-import json
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-from app.db.models import PushChannel
-from app.services.push import _build_payload, _sign
+from app.modules.delivery.push import _build_payload, _sign
+from app.runtime.db.models import PushChannel
 
 
 def _capture_client(captured: list[httpx.Request], status: int = 200, body: dict | None = None):
@@ -29,7 +28,6 @@ def _channel(ctype: str, url="https://example.com/hook", secret=None) -> PushCha
 
 
 def test_feishu_sign_formula():
-    from app.services.push import _sign
 
     secret = "s3cret"
     ts = 1770000000

@@ -6,8 +6,8 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.services.danmaku import dispatch as danmaku_dispatch
-from app.services.danmaku import ingest as danmaku_ingest
+from app.modules.collection.danmaku import dispatch as danmaku_dispatch
+from app.modules.collection.danmaku import ingest as danmaku_ingest
 
 
 def _settings(tmp_path: Path, **over):
@@ -30,7 +30,7 @@ def _make_account_item(
     status="transcribing",
     item_type="live",
 ):
-    from app.db.models import Creator, SourceAccount, SourceItem
+    from app.runtime.db.models import Creator, SourceAccount, SourceItem
 
     creator = Creator(display_name=f"creator_{external_id}", status="active")
     session.add(creator)
@@ -156,7 +156,7 @@ def _write_sink(tmp_path: Path, item_id: int, lines: list[str]) -> Path:
 
 
 def test_ingest_parses_dedupes_and_counts(migrated_db, db_session, tmp_path):
-    from app.db.models import LiveChatMessage
+    from app.runtime.db.models import LiveChatMessage
 
     _, item = _make_account_item(db_session, external_id="MS4wLjABing1")
     member_env = CHAT_ENV.replace('"msgId": "9001"', '"msgId": "9002"').replace(
@@ -217,7 +217,7 @@ def test_ingest_noop_without_config(db_session):
 
 def test_ingest_watermark_incremental_and_partial_tail(migrated_db, db_session, tmp_path):
     """字节水位线（2026-10-12）：二轮只读增量；无换行的半行留待下轮。"""
-    from app.db.models import LiveChatMessage
+    from app.runtime.db.models import LiveChatMessage
 
     _, item = _make_account_item(db_session, external_id="MS4wLjABwm1")
     sink = _write_sink(tmp_path, item.id, [CHAT_ENV])
@@ -268,8 +268,8 @@ def test_housekeeping_prunes_ops_rows(migrated_db, db_session, monkeypatch, tmp_
     """运维流水保留：job_run/api_call_log 超 30 天删除，新行保留。"""
     from datetime import UTC, datetime, timedelta
 
-    from app.db.models import ApiCallLog, JobRun
-    from app.worker import tasks as tasks_mod
+    from app.runtime import tasks as tasks_mod
+    from app.runtime.db.models import ApiCallLog, JobRun
     from sqlalchemy.orm import sessionmaker
 
     # 任务模块级导入了 get_session_factory，需补丁在 tasks 命名空间上

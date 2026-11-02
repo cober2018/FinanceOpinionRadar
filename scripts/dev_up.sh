@@ -27,7 +27,7 @@ c_ok=$'\033[32mOK\033[0m'
 c_down=$'\033[31mDOWN\033[0m'
 
 api_alive() { lsof -nP -iTCP:"$API_PORT" -sTCP:LISTEN >/dev/null 2>&1; }
-worker_alive() { pgrep -f "celery -A app.worker.celery_app" >/dev/null 2>&1; }
+worker_alive() { pgrep -f "celery -A app.bootstrap.celery" >/dev/null 2>&1; }
 pg_alive() { docker exec financeopinionradar-postgres-1 pg_isready -U radar -d radar >/dev/null 2>&1; }
 # 本项目 Redis 为 compose 容器（端口见 .env REDIS_PORT，避开共用 6379）
 redis_alive() { redis-cli -h 127.0.0.1 -p "$REDIS_PORT" ping 2>/dev/null | grep -q PONG; }
@@ -58,7 +58,7 @@ start_detached() {
 
 start_api() {
   echo "==> 启动 API :${API_PORT}（日志 ${API_LOG}）"
-  start_detached "$PY" -m uvicorn app.main:app --reload --host "$API_HOST" --port "$API_PORT" --app-dir apps/api \
+  start_detached "$PY" -m uvicorn app.bootstrap.asgi:app --reload --host "$API_HOST" --port "$API_PORT" --app-dir apps/api \
     >"$API_LOG" 2>&1
   for _ in $(seq 1 20); do
     api_alive && { echo "    API 就绪"; return 0; }
@@ -70,7 +70,7 @@ start_api() {
 
 start_worker() {
   echo "==> 启动 worker+beat（全队列 default/media/llm/danmaku，日志 ${WORKER_LOG}）"
-  start_detached "$PY" -m celery -A app.worker.celery_app worker --beat \
+  start_detached "$PY" -m celery -A app.bootstrap.celery worker --beat \
     -Q default,media,llm,danmaku --loglevel=info >"$WORKER_LOG" 2>&1
   for _ in $(seq 1 20); do
     worker_alive && { echo "    worker 就绪"; return 0; }

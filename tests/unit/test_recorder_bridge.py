@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from app.services import recorder_bridge
+from app.modules.collection import recorder_bridge
 
 
 def _settings(tmp_path: Path, **over):

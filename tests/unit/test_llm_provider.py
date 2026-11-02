@@ -4,7 +4,7 @@ import json
 
 import httpx
 import pytest
-from app.llm.provider import (
+from app.modules.insights.llm.provider import (
     LLMError,
     LLMResponse,
     MockLLMProvider,
@@ -108,7 +108,7 @@ def test_generate_json_raises_on_choices_null_with_base_resp():
 
 def test_fallback_survives_choices_null_primary_then_healthy_fallback():
     """主模型返回 choices:null 抛 LLMError（而非 TypeError）→ 兜底正常接管。"""
-    from app.llm.provider import FallbackLLMProvider
+    from app.modules.insights.llm.provider import FallbackLLMProvider
 
     calls: list = []
     bad = {"choices": None, "base_resp": {"status_code": 2013, "status_msg": "unknown model"}}
@@ -129,6 +129,6 @@ def test_mock_provider_returns_schema_shaped_empty():
 
 
 def monkeypatch_sleep(p):
-    import app.llm.provider as mod
+    import app.modules.insights.llm.provider as mod
 
     mod.time.sleep = lambda s: None

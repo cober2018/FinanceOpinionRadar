@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from app.services.danmaku.parse import (
+from app.modules.collection.danmaku.parse import (
     classify,
     is_room_not_found,
     loads_line,
@@ -137,7 +137,7 @@ def test_chaos_dirty_docs_never_raise(doc):
 
 def test_envelope_line_received_at_fallback():
     """web 画像 protojson 省略零值 createTime → published_at 用采集接收时间兜底。"""
-    from app.services.danmaku.ingest import parse_envelope_line
+    from app.modules.collection.danmaku.ingest import parse_envelope_line
 
     envelope = {
         "v": 1,

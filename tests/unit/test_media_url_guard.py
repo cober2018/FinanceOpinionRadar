@@ -1,6 +1,6 @@
 import pytest
-from app.services.media.contracts import UrlNotAllowedError
-from app.services.media.url_guard import ensure_allowed_url
+from app.modules.content.media.contracts import UrlNotAllowedError
+from app.modules.content.media.url_guard import ensure_allowed_url
 
 ALLOW = ("youtube.com", "youtu.be", "bilibili.com", "douyin.com")
 

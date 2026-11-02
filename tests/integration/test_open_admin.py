@@ -1,20 +1,19 @@
 """开放层管理端点（Plan #7）：API Key 创建/吊销、推送渠道 CRUD + test 消息。"""
 
 import pytest
+from app.modules.delivery.open_api import deps as open_deps
+from app.runtime.db.models import ApiKey, PushChannel
+from app.runtime.db.session import get_db
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-from app.api.open import deps as open_deps
-from app.db.models import ApiKey, PushChannel
-from app.db.session import get_db
 
 
 @pytest.fixture
 def client(db_session, migrated_db, monkeypatch):
     engine = create_engine(migrated_db)
     monkeypatch.setattr(open_deps, "audit_session", sessionmaker(bind=engine))
-    from app.main import app
+    from app.bootstrap.asgi import app
 
     app.dependency_overrides[get_db] = lambda: db_session
     yield TestClient(app)

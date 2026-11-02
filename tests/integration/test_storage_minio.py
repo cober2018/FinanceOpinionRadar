@@ -3,8 +3,8 @@
 import socket
 
 import pytest
-from app.core.settings import get_settings
-from app.services.storage.s3 import MinioStorage
+from app.runtime.settings import get_settings
+from app.runtime.storage.s3 import MinioStorage
 
 
 @pytest.fixture(scope="module")

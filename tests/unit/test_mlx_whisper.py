@@ -5,8 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from app.services.transcription.contracts import TranscriptionError
-from app.services.transcription.mlx_whisper import MlxWhisperProvider
+from app.modules.content.transcription.contracts import TranscriptionError
+from app.modules.content.transcription.mlx_whisper import MlxWhisperProvider
 
 
 def _provider() -> MlxWhisperProvider:
@@ -39,7 +39,7 @@ def test_transcribe_parses_worker_json(monkeypatch: pytest.MonkeyPatch, tmp_path
         )
         return SimpleNamespace(returncode=0, stderr="")
 
-    monkeypatch.setattr("app.services.transcription.mlx_whisper.subprocess.run", fake_run)
+    monkeypatch.setattr("app.modules.content.transcription.mlx_whisper.subprocess.run", fake_run)
     monkeypatch.setattr("pathlib.Path.exists", lambda self: True)
 
     result = _provider().transcribe("/tmp/a.wav", language="zh")
@@ -62,7 +62,7 @@ def test_transcribe_raises_on_missing_env(monkeypatch: pytest.MonkeyPatch):
 def test_transcribe_raises_on_nonzero_exit(monkeypatch: pytest.MonkeyPatch, tmp_path):
     monkeypatch.setattr("pathlib.Path.exists", lambda self: True)
     monkeypatch.setattr(
-        "app.services.transcription.mlx_whisper.subprocess.run",
+        "app.modules.content.transcription.mlx_whisper.subprocess.run",
         lambda argv, **kw: SimpleNamespace(returncode=1, stderr="boom"),
     )
     with pytest.raises(TranscriptionError, match="退出码 1"):

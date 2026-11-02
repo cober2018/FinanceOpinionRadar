@@ -6,9 +6,9 @@
 
 from types import SimpleNamespace
 
-from app.db.models import ContentSummary, MediaAsset, SourceItem
-from app.services.live_retention import sweep_live_segments
-from app.services.orphan_sweep import sweep_orphan_media
+from app.modules.content.live_retention import sweep_live_segments
+from app.modules.content.orphan_sweep import sweep_orphan_media
+from app.runtime.db.models import ContentSummary, MediaAsset, SourceItem
 
 
 class FakeStorage:
@@ -27,7 +27,7 @@ class FakeStorage:
 def test_orphan_sweep_audio_only_by_default(db_session):
     from datetime import UTC, datetime
 
-    from app.db.models import Creator, SourceAccount
+    from app.runtime.db.models import Creator, SourceAccount
 
     creator = Creator(display_name="retention测试", status="active")
     db_session.add(creator)

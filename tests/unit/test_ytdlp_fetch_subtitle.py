@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
-from app.services.media.adapters.yt_dlp import GenericYtDlpAdapter
-from app.services.media.contracts import ItemRef, UrlNotAllowedError
+from app.modules.content.media.adapters.yt_dlp import GenericYtDlpAdapter
+from app.modules.content.media.contracts import ItemRef, UrlNotAllowedError
 
 from tests.fixtures.media.payloads import URL
 

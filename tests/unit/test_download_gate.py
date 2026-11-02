@@ -9,8 +9,8 @@ import uuid
 
 import pytest
 import redis as redis_lib
-from app.core.settings import get_settings
-from app.services.download_gate import DownloadGate, EgressBusyError
+from app.modules.collection.download_gate import DownloadGate, EgressBusyError
+from app.runtime.settings import get_settings
 
 
 @pytest.fixture()

@@ -1,7 +1,7 @@
 """source_account 直播值守字段迁移与 repository 集成测试（Plan #4 Task 3 Step 1/2）。"""
 
-from app.db.models import Creator, SourceAccount
-from app.repositories.source_accounts import SourceAccountRepository
+from app.modules.sources.repository import SourceAccountRepository
+from app.runtime.db.models import Creator, SourceAccount
 from sqlalchemy import select
 
 

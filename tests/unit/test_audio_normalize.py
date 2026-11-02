@@ -5,7 +5,7 @@ import wave
 from pathlib import Path
 
 import pytest
-from app.services.media.audio import MediaAudioError, normalize_audio
+from app.modules.content.media.audio import MediaAudioError, normalize_audio
 
 
 def _make_wav(path: Path, seconds: int = 1) -> None:

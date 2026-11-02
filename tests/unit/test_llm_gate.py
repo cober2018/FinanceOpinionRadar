@@ -7,9 +7,8 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from app.llm.provider import LLMError, OpenAICompatProvider
-from app.services.download_gate import EgressBusyError
+from app.modules.collection.download_gate import EgressBusyError
+from app.modules.insights.llm.provider import LLMError, OpenAICompatProvider
 
 
 def _provider() -> OpenAICompatProvider:
@@ -20,11 +19,11 @@ def _provider() -> OpenAICompatProvider:
 
 def test_post_skips_gate_when_disabled(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.llm.provider.get_settings", lambda: MagicMock(llm_concurrency=0)
+        "app.modules.insights.llm.provider.get_settings", lambda: MagicMock(llm_concurrency=0)
     )
     gate = MagicMock()
     with (
-        patch("app.llm.provider.get_download_gate", return_value=gate),
+        patch("app.modules.insights.llm.provider.get_download_gate", return_value=gate),
         patch.object(
             OpenAICompatProvider, "_post_once", return_value=MagicMock(status_code=200)
         ) as post_once,
@@ -37,11 +36,11 @@ def test_post_skips_gate_when_disabled(monkeypatch) -> None:
 
 def test_post_acquires_slot_with_configured_limit(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.llm.provider.get_settings", lambda: MagicMock(llm_concurrency=3)
+        "app.modules.insights.llm.provider.get_settings", lambda: MagicMock(llm_concurrency=3)
     )
     gate = MagicMock()
     with (
-        patch("app.llm.provider.get_download_gate", return_value=gate),
+        patch("app.modules.insights.llm.provider.get_download_gate", return_value=gate),
         patch.object(
             OpenAICompatProvider, "_post_once", return_value=MagicMock(status_code=200)
         ) as post_once,
@@ -56,12 +55,12 @@ def test_post_acquires_slot_with_configured_limit(monkeypatch) -> None:
 def test_post_wait_timeout_raises_llm_error(monkeypatch) -> None:
     """排队超时必须转 LLMError——上层重试/兜底按既有语义接管，异常类型不裸穿。"""
     monkeypatch.setattr(
-        "app.llm.provider.get_settings", lambda: MagicMock(llm_concurrency=3)
+        "app.modules.insights.llm.provider.get_settings", lambda: MagicMock(llm_concurrency=3)
     )
     gate = MagicMock()
     gate.slot.side_effect = EgressBusyError("llm 满载")
     with (
-        patch("app.llm.provider.get_download_gate", return_value=gate),
+        patch("app.modules.insights.llm.provider.get_download_gate", return_value=gate),
         patch.object(OpenAICompatProvider, "_post_once") as post_once,
         pytest.raises(LLMError, match="排队超时"),
     ):

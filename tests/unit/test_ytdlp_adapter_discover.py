@@ -2,8 +2,12 @@ import json
 from pathlib import Path
 
 import pytest
-from app.services.media.adapters.yt_dlp import GenericYtDlpAdapter
-from app.services.media.contracts import AccountRef, AdapterError, UrlNotAllowedError
+from app.modules.content.media.adapters.yt_dlp import GenericYtDlpAdapter
+from app.modules.content.media.contracts import (
+    AccountRef,
+    AdapterError,
+    UrlNotAllowedError,
+)
 
 from tests.fixtures.media.payloads import PLAYLIST_PAYLOAD
 

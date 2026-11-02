@@ -1,4 +1,4 @@
-from app.main import app
+from app.bootstrap.asgi import app
 from fastapi.testclient import TestClient
 
 

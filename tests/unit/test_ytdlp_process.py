@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 
 import pytest
-from app.services.media.adapters.yt_dlp import YtDlpProcess
-from app.services.media.contracts import (
+from app.modules.content.media.adapters.yt_dlp import YtDlpProcess
+from app.modules.content.media.contracts import (
     AdapterProcessError,
     AdapterTimeoutError,
     MembersOnlyError,

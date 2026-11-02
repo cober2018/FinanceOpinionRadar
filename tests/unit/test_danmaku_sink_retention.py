@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.services.live_retention import sweep_danmaku_sinks
+from app.modules.content.live_retention import sweep_danmaku_sinks
 
 
 def _settings(tmp_path: Path, days: int = 7) -> SimpleNamespace:

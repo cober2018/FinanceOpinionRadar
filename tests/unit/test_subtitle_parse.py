@@ -1,7 +1,11 @@
 """字幕解析（RAD-031 前半）：json3/vtt → 段落；坏载荷返回空列表交编排层走 ASR。"""
 
-from app.services.media.contracts import SubtitleResult
-from app.services.media.subtitles import SubtitleSegment, is_usable, parse_subtitle
+from app.modules.content.media.contracts import SubtitleResult
+from app.modules.content.media.subtitles import (
+    SubtitleSegment,
+    is_usable,
+    parse_subtitle,
+)
 
 JSON3 = (
     '{"events":['

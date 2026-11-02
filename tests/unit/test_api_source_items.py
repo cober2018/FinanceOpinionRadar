@@ -1,14 +1,14 @@
 from datetime import UTC, datetime
 
 import pytest
-from app.api.v1.source_items import (
+from app.bootstrap.asgi import app
+from app.modules.content.api_source_items import (
     CreateSourceItemRequest,
     ResolveUrlRequest,
     _create_adapter,
     _resolve_adapter,
 )
-from app.main import app
-from app.services.media.contracts import (
+from app.modules.content.media.contracts import (
     AdapterProcessError,
     AdapterTimeoutError,
     NotSingleItemError,

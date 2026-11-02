@@ -23,7 +23,7 @@ def _test_db_url() -> str:
     explicit = os.environ.get("RADAR_TEST_DATABASE_URL")
     if explicit:
         return explicit
-    from app.core.settings import get_settings
+    from app.runtime.settings import get_settings
 
     base = get_settings().database_url
     return base.rsplit("/", 1)[0] + "/radar_test"

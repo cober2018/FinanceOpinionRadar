@@ -3,9 +3,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.core.settings import get_settings
-from app.db import models  # noqa: F401  导入以将全部模型注册进 metadata（Task 8 落地）
-from app.db.base import Base
+from app.runtime.db import models  # noqa: F401  导入以将全部模型注册进 metadata（Task 8 落地）
+from app.runtime.db.base import Base
+from app.runtime.settings import get_settings
 from migrations.util import alembic_escape
 
 # this is the Alembic Config object, which provides

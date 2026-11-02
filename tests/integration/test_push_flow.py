@@ -4,8 +4,15 @@ import json
 
 import httpx
 import pytest
-from app.db.models import Creator, PushChannel, PushDelivery, SourceAccount, SourceItem, Viewpoint
-from app.services.push import deliver_pending_pushes, send_test_message
+from app.modules.delivery.push import deliver_pending_pushes, send_test_message
+from app.runtime.db.models import (
+    Creator,
+    PushChannel,
+    PushDelivery,
+    SourceAccount,
+    SourceItem,
+    Viewpoint,
+)
 
 
 def _capture(captured: list[httpx.Request], status: int = 200, body: dict | None = None):
@@ -134,8 +141,9 @@ def test_send_test_message_ok_and_business_error(db_session):
 
 def _mk_live_confirmed(db_session, *, display_name="李一恩", closed=False):
     """进行中的直播条目 + 2 条已确认观点（带证据偏移 5min/12min）。"""
-    from app.db.models import TranscriptSegment, ViewpointEvidence
     from datetime import UTC, datetime
+
+    from app.runtime.db.models import TranscriptSegment, ViewpointEvidence
 
     creator = Creator(display_name=display_name, status="active")
     db_session.add(creator)

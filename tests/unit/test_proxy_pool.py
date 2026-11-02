@@ -1,7 +1,7 @@
 """代理池单测：稳定绑定 / 冷却跳过 / 空池直连。"""
 
 
-from app.services.proxy_pool import ProxyPool
+from app.modules.collection.proxy_pool import ProxyPool
 
 
 class _Session:
@@ -9,7 +9,7 @@ class _Session:
 
 
 def _patch_settings(monkeypatch, pool):
-    from app.services import live_status
+    from app.modules.collection import live_status
 
     monkeypatch.setattr(
         live_status, "get_security_settings", lambda s: {"proxy_pool": pool}

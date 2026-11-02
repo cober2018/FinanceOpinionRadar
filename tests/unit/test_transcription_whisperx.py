@@ -5,9 +5,12 @@ import types
 from types import SimpleNamespace
 
 import pytest
-from app.services.transcription import build_transcription_provider
-from app.services.transcription.faster_whisper import FasterWhisperProvider
-from app.services.transcription.whisperx_provider import PROVIDER, WhisperXProvider
+from app.modules.content.transcription import build_transcription_provider
+from app.modules.content.transcription.faster_whisper import FasterWhisperProvider
+from app.modules.content.transcription.whisperx_provider import (
+    PROVIDER,
+    WhisperXProvider,
+)
 
 
 def _install_fake_whisperx(monkeypatch: pytest.MonkeyPatch, *, speaker: str | None):
@@ -115,7 +118,7 @@ def test_whisperx_provider_aligns_and_diarizes(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_whisperx_wraps_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.services.transcription.contracts import TranscriptionError
+    from app.modules.content.transcription.contracts import TranscriptionError
 
     mod = types.ModuleType("whisperx")
 

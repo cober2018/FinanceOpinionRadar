@@ -1,7 +1,8 @@
 """开发种子数据：3 creators / 5 topics / 10 entities / 2 source accounts。幂等。"""
 
-from app.db.models import Creator, Entity, SourceAccount, Topic
-from app.repositories import CreatorRepository, SourceAccountRepository
+from app.modules.sources.creators import CreatorRepository
+from app.modules.sources.repository import SourceAccountRepository
+from app.runtime.db.models import Creator, Entity, SourceAccount, Topic
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -90,6 +91,6 @@ def run_seed(factory: sessionmaker) -> None:
 
 
 if __name__ == "__main__":
-    from app.db.session import get_session_factory
+    from app.runtime.db.session import get_session_factory
 
     run_seed(get_session_factory())

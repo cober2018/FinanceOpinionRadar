@@ -1,9 +1,9 @@
 """POST /source-items 端到端（真库 + StubAdapter）：创建与幂等。"""
 
 import pytest
-from app.api.v1.source_items import _create_adapter
-from app.db.models import SourceItem
-from app.main import app
+from app.bootstrap.asgi import app
+from app.modules.content.api_source_items import _create_adapter
+from app.runtime.db.models import SourceItem
 from fastapi.testclient import TestClient
 
 from tests.fixtures.media.payloads import URL
@@ -13,8 +13,8 @@ from tests.integration.test_discovery_service import StubAdapter, _resolved
 @pytest.fixture
 def client(db_session):
     # get_db 也必须 override：否则 TestClient 会把测试数据写进开发库
-    from app.api.v1.source_items import CreateSourceItemRequest
-    from app.db.session import get_db
+    from app.modules.content.api_source_items import CreateSourceItemRequest
+    from app.runtime.db.session import get_db
 
     def fake_create(body: CreateSourceItemRequest) -> StubAdapter:
         # override 按替身签名解析参数，body 必须带类型标注（否则被当 query 参数 422）
@@ -27,7 +27,7 @@ def client(db_session):
 
 def teardown_module():
     app.dependency_overrides.pop(_create_adapter, None)
-    from app.db.session import get_db
+    from app.runtime.db.session import get_db
 
     app.dependency_overrides.pop(get_db, None)
 
@@ -51,8 +51,8 @@ def test_create_source_item_201_and_idempotent(client, db_session):
 
 def test_manual_registration_normalizes_channel_url(client, db_session):
     # ENG-2A：注册侧 normalize 接线生效——裸频道地址入库前补 /videos（注记③）
-    from app.db.models import SourceAccount
-    from app.services import discovery
+    from app.modules.collection import discovery
+    from app.runtime.db.models import SourceAccount
 
     bare = "https://www.youtube.com/@macro-diary"
     adapter = StubAdapter(_resolved(channel_url=bare))

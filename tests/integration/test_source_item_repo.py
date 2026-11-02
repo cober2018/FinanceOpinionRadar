@@ -1,5 +1,5 @@
-from app.db.models import Creator, SourceAccount
-from app.repositories.source_items import SourceItemRepository
+from app.modules.content.repositories.source_items import SourceItemRepository
+from app.runtime.db.models import Creator, SourceAccount
 from sqlalchemy.orm import Session
 
 

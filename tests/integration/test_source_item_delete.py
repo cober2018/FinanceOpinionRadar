@@ -3,15 +3,20 @@
 """
 
 import pytest
+from app.runtime.db.models import (
+    Creator,
+    DeletedItemRef,
+    MediaAsset,
+    SourceAccount,
+    SourceItem,
+)
+from app.runtime.db.session import get_db
 from fastapi.testclient import TestClient
-
-from app.db.models import Creator, DeletedItemRef, MediaAsset, SourceAccount, SourceItem
-from app.db.session import get_db
 
 
 @pytest.fixture
 def client(db_session):
-    from app.main import app
+    from app.bootstrap.asgi import app
 
     app.dependency_overrides[get_db] = lambda: db_session
     yield TestClient(app)
@@ -102,7 +107,7 @@ def test_delete_purges_s3_and_local_files(db_session, client, monkeypatch, tmp_p
     db_session.commit()
 
     fake = FakeStorage({"audio/x.wav": 1, "transcripts/y.json": 1})
-    monkeypatch.setattr("app.services.storage.get_storage", lambda: fake)
+    monkeypatch.setattr("app.runtime.storage.get_storage", lambda: fake)
 
     r = client.delete(f"/api/v1/source-items/{item.id}")
     assert r.status_code == 200

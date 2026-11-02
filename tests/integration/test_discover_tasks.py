@@ -3,10 +3,10 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.db.models import Creator, SourceAccount, SourceItem
-from app.repositories.source_accounts import SourceAccountRepository
-from app.worker import tasks as worker_tasks
-from app.worker.celery_app import celery_app
+from app.bootstrap.celery import celery_app
+from app.modules.collection import tasks as worker_tasks
+from app.modules.sources.repository import SourceAccountRepository
+from app.runtime.db.models import Creator, SourceAccount, SourceItem
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -49,7 +49,7 @@ def task_session_factory(monkeypatch: pytest.MonkeyPatch, database_url: str):
 
 @pytest.fixture
 def stub_adapter(monkeypatch: pytest.MonkeyPatch):
-    from app.services.media.contracts import DiscoveredItem
+    from app.modules.content.media.contracts import DiscoveredItem
 
     items = [
         DiscoveredItem("v1", "一", "https://www.youtube.com/watch?v=v1", None, None, {}),
@@ -95,9 +95,8 @@ def test_dispatch_due_only_enabled_and_due(
     db_session.commit()
 
     # 封闭 .env：stagger 显式 0 → payload 无 countdown（桩打在 live_status 的 env 读取点）
-    from types import SimpleNamespace
 
-    from app.services import live_status
+    from app.modules.collection import live_status
 
     # dispatch 优先读 DB 安全设置（get_security_settings），env 只是 None 回落——
     # 会话内其他用例可能写过 security 覆盖行，这里直接桩掉读取点保证确定性
@@ -124,7 +123,7 @@ def test_dispatch_due_only_enabled_and_due(
 
 
 def test_failure_marks_task_failed(db_session, monkeypatch, task_session_factory):
-    from app.services.media.contracts import AdapterError
+    from app.modules.content.media.contracts import AdapterError
 
     account = _make_account(db_session, external_id="bad", url="https://www.youtube.com/@b/videos")
     db_session.commit()
@@ -195,7 +194,7 @@ def test_retry_failed_prepares_backoff_and_cap(db_session, sent, task_session_fa
     """自动重试：首次立即派发；间隔未到不派；5 次封顶。"""
     from datetime import UTC, datetime
 
-    from app.db.models import Creator, SourceAccount, SourceItem
+    from app.runtime.db.models import Creator, SourceAccount, SourceItem
 
     creator = Creator(display_name="重试主播", status="active")
     db_session.add(creator)
@@ -220,7 +219,7 @@ def test_retry_failed_prepares_backoff_and_cap(db_session, sent, task_session_fa
     capped = _mk("v_capped", {"count": 5, "last_at": "2026-09-18T00:00:00+00:00"})  # 封顶
     db_session.commit()
 
-    import app.worker.tasks as wt
+    import app.modules.content.tasks as wt
 
     wt.get_session_factory = lambda: task_session_factory
     n = wt.retry_failed_prepares.run()

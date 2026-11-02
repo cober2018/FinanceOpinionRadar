@@ -2,7 +2,7 @@
 
 import botocore.exceptions
 import pytest
-from app.services.storage.s3 import MinioStorage, StorageError
+from app.runtime.storage.s3 import MinioStorage, StorageError
 
 
 class FakeClient:

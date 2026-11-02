@@ -1,7 +1,7 @@
 """频道 URL 规范化（注记③/ISSUE-003）：裸频道地址追加 /videos 页签。"""
 
 import pytest
-from app.services.media.adapters.yt_dlp import normalize_channel_url
+from app.modules.content.media.adapters.yt_dlp import normalize_channel_url
 
 
 @pytest.mark.parametrize(

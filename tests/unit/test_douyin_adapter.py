@@ -11,9 +11,9 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
-from app.services.media.adapters.douyin import DouyinAdapter
-from app.services.media.adapters import douyin as live_adapter
-from app.services.media.contracts import (
+from app.modules.content.media.adapters import douyin as live_adapter
+from app.modules.content.media.adapters.douyin import DouyinAdapter
+from app.modules.content.media.contracts import (
     AccountRef,
     AdapterProcessError,
     DiscoveredItem,
@@ -37,7 +37,7 @@ SEC_UID = "MS4wLjABAAAABjAuPf6auEmCtvGsI2TPBck_OhhcgHoeTruXjIaFYbw"
 @pytest.fixture(autouse=True)
 def _no_egress_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     """单测不依赖 Redis：关闭出口并发闸（egress_limit=0 走无闸分支）。"""
-    import app.services.download_gate as dg
+    import app.modules.collection.download_gate as dg
 
     monkeypatch.setattr(dg, "egress_limit", lambda: 0)
 

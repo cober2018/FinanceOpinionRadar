@@ -3,20 +3,25 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from app.modules.delivery.open_api import deps as open_deps
+from app.runtime.db.models import (
+    Creator,
+    SourceAccount,
+    SourceItem,
+    TranscriptSegment,
+    Viewpoint,
+)
+from app.runtime.db.session import get_db
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-from app.api.open import deps as open_deps
-from app.db.models import Creator, SourceAccount, SourceItem, TranscriptSegment, Viewpoint
-from app.db.session import get_db
 
 
 @pytest.fixture
 def client(db_session, migrated_db, monkeypatch):
     engine = create_engine(migrated_db)
     monkeypatch.setattr(open_deps, "audit_session", sessionmaker(bind=engine))
-    from app.main import app
+    from app.bootstrap.asgi import app
 
     app.dependency_overrides[get_db] = lambda: db_session
     yield TestClient(app)
@@ -30,8 +35,8 @@ HEADERS = {"X-API-Key": RAW_KEY}
 
 @pytest.fixture
 def seeded(db_session):
-    from app.api.open.deps import hash_key
-    from app.db.models import ApiKey
+    from app.modules.delivery.open_api.deps import hash_key
+    from app.runtime.db.models import ApiKey
 
     db_session.add(ApiKey(name="k", key_hash=hash_key(RAW_KEY), prefix=RAW_KEY[:8]))
     creator = Creator(display_name="张三", status="active")

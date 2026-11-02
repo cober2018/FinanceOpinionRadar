@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
-from app.services.media.adapters.yt_dlp import GenericYtDlpAdapter
-from app.services.media.contracts import AdapterProcessError, ItemRef
+from app.modules.content.media.adapters.yt_dlp import GenericYtDlpAdapter
+from app.modules.content.media.contracts import AdapterProcessError, ItemRef
 
 from tests.fixtures.media.payloads import URL
 
@@ -66,7 +66,7 @@ def test_download_args_use_bestaudio(
 
 
 def test_download_rejects_disallowed_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.services.media.contracts import UrlNotAllowedError
+    from app.modules.content.media.contracts import UrlNotAllowedError
 
     bad = ItemRef(external_item_id="x", canonical_url="https://evil.com/watch?v=x")
     with pytest.raises(UrlNotAllowedError):

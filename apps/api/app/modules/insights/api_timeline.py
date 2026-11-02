@@ -1,0 +1,170 @@
+"""时间轴（用户 2026-09-30）：当天各主播的事件流，从近到远，纵向时间轴展示。
+
+事件两类：
+- viewpoint：一条已确认观点；时刻 = live 用「起播时刻 + 证据在直播内的偏移」
+  （主播真正说出这句话的钟点），vod 用发布时刻
+- summary：视频观点总结；时刻 = summary_generated_at（直播滚动总结的每次
+  更新都刷新这一字段，时间轴上始终展示最新版本）
+"""
+
+from datetime import datetime, timedelta
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.runtime.db.models import (
+    Creator,
+    Entity,
+    SourceAccount,
+    SourceItem,
+    Viewpoint,
+)
+from app.runtime.db.session import get_db
+
+router = APIRouter(tags=["timeline"])
+
+DbDep = Annotated[Session, Depends(get_db)]
+
+_MAX_EVENTS = 300
+
+
+def _day_bounds(day: str) -> tuple[datetime, datetime] | None:
+    try:
+        start = datetime.fromisoformat(day).astimezone()
+    except ValueError:
+        return None
+    return start, start + timedelta(days=1)
+
+
+@router.get("/timeline")
+def get_timeline(
+    session: DbDep,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    event_type: str | None = None,
+):
+    """事件流（at 倒序）：当天确认观点 + 总结快照；live 观点时刻=起播+证据偏移。"""
+
+    def _published_filters(stmt):
+        if date_from:
+            b = _day_bounds(date_from)
+            if b:
+                stmt = stmt.where(SourceItem.published_at >= b[0])
+        if date_to:
+            b = _day_bounds(date_to)
+            if b:
+                stmt = stmt.where(SourceItem.published_at < b[1])
+        return stmt
+
+    events: list[dict] = []
+
+    # --- 观点事件 ---
+    vp_stmt = _published_filters(
+        select(
+            Viewpoint,
+            SourceItem,
+            Creator.display_name,
+            Creator.avatar_url,
+            Entity.canonical_name,
+        )
+        .join(SourceItem, SourceItem.id == Viewpoint.source_item_id)
+        .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+        .join(Creator, Creator.id == SourceAccount.creator_id)
+        .outerjoin(Entity, Entity.id == Viewpoint.entity_id)
+        .where(Viewpoint.verification_status == "confirmed")
+        .order_by(Viewpoint.id.desc())
+        .limit(_MAX_EVENTS)
+    )
+    vp_rows = session.execute(vp_stmt).all()
+    # 证据偏移批量取（与推送同口径：app/services/viewpoint_time）
+    vp_ids = [vp.id for vp, *_ in vp_rows]
+    from app.modules.insights.viewpoint_time import evidence_offset_map
+
+    first_offset = evidence_offset_map(session, vp_ids)
+
+    for vp, item, creator_name, avatar_url, entity_name in vp_rows:
+        at = None
+        if item.published_at:
+            at = item.published_at
+            if item.item_type == "live":
+                offset = first_offset.get(vp.id, 0)
+                if offset:
+                    at = at + timedelta(milliseconds=offset)
+        if at is None:
+            at = vp.created_at
+        events.append(
+            {
+                "type": "viewpoint",
+                "at": at.isoformat(),
+                "item_id": item.id,
+                "item_type": item.item_type,
+                "title": item.title,
+                "source_url": item.canonical_url,
+                "creator_name": creator_name,
+                "avatar_url": avatar_url,
+                "viewpoint_id": vp.id,
+                "claim": vp.claim,
+                "stance": vp.stance,
+                "horizon": vp.horizon,
+                "entity": entity_name or vp.entity_raw,
+                "conditional": vp.conditional,
+            }
+        )
+
+    # --- 总结事件（含直播滚动总结的最新版本）---
+    # 时刻与观点事件同口径：按**内容时刻**（发布/起播）定位与筛选——总结是视频
+    # 观点的浓缩，归属视频所在的那一天；生成时刻（滚动刷新时间）只作辅助展示。
+    # 按 summary_generated_at 定位曾把 9/30 的视频总结挂到 10/1（凌晨回填生成）。
+    def _summary_filters(stmt):
+        if date_from:
+            b = _day_bounds(date_from)
+            if b:
+                stmt = stmt.where(SourceItem.published_at >= b[0])
+        if date_to:
+            b = _day_bounds(date_to)
+            if b:
+                stmt = stmt.where(SourceItem.published_at < b[1])
+        return stmt
+
+    su_rows = session.execute(
+        _summary_filters(
+            select(SourceItem, Creator.display_name, Creator.avatar_url)
+            .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+            .join(Creator, Creator.id == SourceAccount.creator_id)
+            .where(SourceItem.viewpoint_summary.isnot(None))
+            .order_by(SourceItem.published_at.desc().nullslast())
+            .limit(_MAX_EVENTS)
+        )
+    ).all()
+    for item, creator_name, avatar_url in su_rows:
+        live_meta = (item.metadata_json or {}).get("live") or {}
+        events.append(
+            {
+                "type": "summary",
+                "at": item.published_at.isoformat() if item.published_at else None,
+                "generated_at": item.summary_generated_at.isoformat()
+                if item.summary_generated_at
+                else None,
+                "item_id": item.id,
+                "item_type": item.item_type,
+                "title": item.title,
+                "source_url": item.canonical_url,
+                "creator_name": creator_name,
+                "avatar_url": avatar_url,
+                "summary": item.viewpoint_summary,
+                "live_ongoing": item.item_type == "live" and not live_meta.get("closed"),
+                "confirmed_count": session.query(Viewpoint.id)
+                .filter(
+                    Viewpoint.source_item_id == item.id,
+                    Viewpoint.verification_status == "confirmed",
+                )
+                .count(),
+            }
+        )
+
+    if event_type in ("viewpoint", "summary"):
+        events = [e for e in events if e["type"] == event_type]
+    events.sort(key=lambda e: e["at"] or "", reverse=True)
+    return {"events": events[:_MAX_EVENTS]}

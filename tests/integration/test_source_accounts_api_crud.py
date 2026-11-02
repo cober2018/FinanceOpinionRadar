@@ -1,9 +1,9 @@
 """账号管理 API CRUD 集成测试（Plan #4 Task 3 Step 3/4）：真库 + TestClient。"""
 
 import pytest
-from app.db.models import Creator, SourceAccount
-from app.db.session import get_db
-from app.main import app
+from app.bootstrap.asgi import app
+from app.runtime.db.models import Creator, SourceAccount
+from app.runtime.db.session import get_db
 from fastapi.testclient import TestClient
 
 

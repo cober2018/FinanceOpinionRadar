@@ -5,9 +5,9 @@
 from datetime import UTC, datetime
 
 import pytest
-from app.db.models import SourceItem
-from app.repositories.source_accounts import SourceAccountRepository
-from app.repositories.source_items import SourceItemRepository
+from app.modules.content.repositories.source_items import SourceItemRepository
+from app.modules.sources.repository import SourceAccountRepository
+from app.runtime.db.models import SourceItem
 
 from tests.integration.test_discover_tasks import _make_account
 

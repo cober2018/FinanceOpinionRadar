@@ -2,8 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 
-from app.db.models import Creator, SourceAccount
-from app.services import discovery
+from app.modules.collection import discovery
+from app.runtime.db.models import Creator, SourceAccount
 
 
 def _make_account(session, *, platform="douyin", external_id="MS4wLjABrand1", **over):
@@ -92,7 +92,7 @@ def test_discover_success_redraws_interval(db_session, monkeypatch):
     """discover_account 成功路径整体生效：last_success_at 推进 + 间隔被重抽进区间。"""
     from unittest.mock import MagicMock
 
-    from app.services.media.contracts import DiscoveredItem
+    from app.modules.content.media.contracts import DiscoveredItem
 
     account = _make_account(
         db_session,

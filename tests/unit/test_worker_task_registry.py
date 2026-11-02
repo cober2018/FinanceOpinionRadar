@@ -3,7 +3,7 @@
 # 单测直调 task.run() 绕过注册表，未覆盖此路径。
 # Found by /qa on 2026-09-17
 # Report: .gstack/qa-reports/qa-report-localhost-2026-09-17.md
-from app.worker.celery_app import celery_app
+from app.bootstrap.celery import celery_app
 
 
 def test_worker_registry_contains_epic02_tasks() -> None:

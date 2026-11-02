@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock
 
-import app.db.session as session_mod
+import app.runtime.db.session as session_mod
 import pytest
-from app.db.session import get_db
+from app.runtime.db.session import get_db
 from sqlalchemy.exc import OperationalError
 
 

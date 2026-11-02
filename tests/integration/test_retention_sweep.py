@@ -4,7 +4,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.db.models import (
+from app.modules.content.retention import sweep_expired_content
+from app.runtime.db.models import (
     ContentSummary,
     Creator,
     DeletedItemRef,
@@ -14,7 +15,6 @@ from app.db.models import (
     SourceItem,
     Viewpoint,
 )
-from app.services.retention import sweep_expired_content
 
 OLD = datetime.now(UTC) - timedelta(days=60)  # 远超默认 30 天 TTL
 
@@ -212,7 +212,7 @@ def test_unasset_grace_period_and_expiry(db_session):
     """
     from datetime import UTC, datetime, timedelta
 
-    from app.db.models import (
+    from app.runtime.db.models import (
         ContentSummary,
         Creator,
         DeletedItemRef,

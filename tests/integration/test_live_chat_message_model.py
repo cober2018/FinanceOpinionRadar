@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from app.db.models import Creator, LiveChatMessage, SourceAccount, SourceItem
+from app.runtime.db.models import Creator, LiveChatMessage, SourceAccount, SourceItem
 from sqlalchemy.exc import IntegrityError
 
 

@@ -1,5 +1,12 @@
 import pytest
-from app.db.models import Creator, Entity, SourceAccount, SourceItem, Topic, Viewpoint
+from app.runtime.db.models import (
+    Creator,
+    Entity,
+    SourceAccount,
+    SourceItem,
+    Topic,
+    Viewpoint,
+)
 from sqlalchemy.exc import IntegrityError
 
 

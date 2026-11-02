@@ -1,6 +1,6 @@
 """枚举值集 = PRD-derived 契约（§4.3/§4.4/§11/§7.9）；抽取 spike（G1 tracer bullet）后复评。"""
 
-from app.domain.enums import (
+from app.runtime.enums import (
     ChangeType,
     DiscoveryMode,
     Horizon,

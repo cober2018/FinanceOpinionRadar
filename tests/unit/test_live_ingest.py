@@ -6,7 +6,7 @@ DB 相关行为（会话建立/幂等/单飞闸/收尾）在 tests/integration/t
 
 from pathlib import Path
 
-from app.services import live_ingest
+from app.modules.content import live_ingest
 
 
 def _make_tree(root: Path) -> Path:

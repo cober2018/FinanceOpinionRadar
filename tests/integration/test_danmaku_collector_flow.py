@@ -8,8 +8,8 @@ import json
 from pathlib import Path
 
 import pytest
-from app.db.models import Creator, LiveChatMessage, SourceAccount, SourceItem
-from app.services.danmaku import collector
+from app.modules.collection.danmaku import collector
+from app.runtime.db.models import Creator, LiveChatMessage, SourceAccount, SourceItem
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from websocket import WebSocketException, WebSocketTimeoutException
@@ -305,7 +305,7 @@ def test_envelope_keeps_raw_for_bad_json():
 
 def test_sink_rows_parse_and_dedupe(migrated_db, db_session, tmp_path):
     """端到端微缩：collector 落盘 → ingest 入库 → 重放不重复（F5）。"""
-    from app.services.danmaku import ingest as danmaku_ingest
+    from app.modules.collection.danmaku import ingest as danmaku_ingest
 
     item = _make_item(db_session)
     sink = tmp_path / "sink" / "2026-09-18" / f"{item.id}.jsonl"

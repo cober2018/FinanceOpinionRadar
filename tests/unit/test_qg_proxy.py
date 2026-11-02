@@ -2,7 +2,7 @@
 
 import httpx
 import pytest
-from app.services.qg_proxy import (
+from app.modules.collection.qg_proxy import (
     QgLongtermClient,
     QgProxyError,
     _prefix,

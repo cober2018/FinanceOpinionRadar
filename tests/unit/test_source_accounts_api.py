@@ -5,8 +5,8 @@ CRUD 全链路见 tests/integration/test_source_accounts_api.py。
 """
 
 import pytest
-from app.api.v1.source_accounts import CreateSourceAccountRequest
-from app.main import app
+from app.bootstrap.asgi import app
+from app.modules.sources.api import CreateSourceAccountRequest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 

@@ -1,4 +1,4 @@
-from app.core.settings import Settings
+from app.runtime.settings import Settings
 
 
 def test_media_defaults() -> None:

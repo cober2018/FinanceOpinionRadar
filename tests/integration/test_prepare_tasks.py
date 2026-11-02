@@ -4,11 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from app.db.models import SourceItem
-from app.services import preparation
-from app.services.media.audio import NormalizedAudio
-from app.worker import tasks as worker_tasks
-from app.worker.celery_app import celery_app
+from app.bootstrap.celery import celery_app
+from app.modules.content import preparation
+from app.modules.content import tasks as worker_tasks
+from app.modules.content.media.audio import NormalizedAudio
+from app.runtime.db.models import SourceItem
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -48,9 +48,9 @@ def test_prepare_task_runs_pipeline(db_session, task_session_factory, monkeypatc
     item = _make_discovered_item(db_session)
     db_session.commit()  # 任务用独立 session，先落库
     monkeypatch.setattr(worker_tasks, "build_adapter", lambda platform=None, **kw: FakeAdapter(_resolved()))
-    monkeypatch.setattr("app.services.storage.get_storage", lambda: FakeStorage())
+    monkeypatch.setattr("app.runtime.storage.get_storage", lambda: FakeStorage())
     monkeypatch.setattr(
-        "app.services.transcription.get_transcription_provider", lambda: FakeProvider()
+        "app.modules.content.transcription.get_transcription_provider", lambda: FakeProvider()
     )
     monkeypatch.setattr(preparation, "normalize_audio", _fake_normalize)
 
@@ -96,9 +96,9 @@ def test_sweep_respects_batch_size(db_session, task_session_factory, sent, monke
 
 
 def _make_douyin_discovered_item(session):
-    from app.db.models import Creator
-    from app.db.models.source import SourceAccount
-    from app.repositories.source_items import SourceItemRepository
+    from app.modules.content.repositories.source_items import SourceItemRepository
+    from app.modules.sources.models import SourceAccount
+    from app.runtime.db.models import Creator
 
     creator = Creator(display_name="抖音博主", status="active")
     session.add(creator)
@@ -135,9 +135,9 @@ def test_prepare_task_routes_douyin_platform(db_session, task_session_factory, m
         return FakeAdapter(_resolved())
 
     monkeypatch.setattr(worker_tasks, "build_adapter", fake_build)
-    monkeypatch.setattr("app.services.storage.get_storage", lambda: FakeStorage())
+    monkeypatch.setattr("app.runtime.storage.get_storage", lambda: FakeStorage())
     monkeypatch.setattr(
-        "app.services.transcription.get_transcription_provider", lambda: FakeProvider()
+        "app.modules.content.transcription.get_transcription_provider", lambda: FakeProvider()
     )
     monkeypatch.setattr(preparation, "normalize_audio", _fake_normalize)
 
@@ -149,8 +149,8 @@ def test_prepare_task_douyin_unconfigured_writes_last_error(
     db_session, task_session_factory, monkeypatch
 ):
     """douyin 未配置 dtk → 构造期 AdapterError 与其他 prepare 失败同语义落 last_error。"""
-    from app.core.settings import get_settings
-    from app.services.media.factory import get_media_adapter
+    from app.modules.content.media.factory import get_media_adapter
+    from app.runtime.settings import get_settings
 
     item = _make_douyin_discovered_item(db_session)
     db_session.commit()

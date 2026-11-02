@@ -6,7 +6,9 @@ LLM 用固定输出的 stub provider（不打桩 httpx，直接注入 provider �
 from datetime import UTC, datetime
 
 import pytest
-from app.db.models import (
+from app.modules.insights.extraction import extract_source_item
+from app.modules.insights.llm.provider import LLMResponse
+from app.runtime.db.models import (
     Creator,
     Entity,
     EntityCandidate,
@@ -16,8 +18,6 @@ from app.db.models import (
     Viewpoint,
     ViewpointEvidence,
 )
-from app.llm.provider import LLMResponse
-from app.services.extraction import extract_source_item
 
 
 class StubLLM:
@@ -192,7 +192,7 @@ def test_extraction_non_auto_account_not_dispatched_is_orthogonal(db_session, tr
 
 
 def test_entity_normalizer_four_steps(db_session):
-    from app.services.entity_normalizer import normalize_entity
+    from app.modules.insights.entity_normalizer import normalize_entity
 
     db_session.add(
         Entity(

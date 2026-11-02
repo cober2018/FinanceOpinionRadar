@@ -10,9 +10,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from app.db.models import Creator, SourceAccount, SourceItem, TranscriptSegment
-from app.services import live_ingest
-from app.services.media.audio import NormalizedAudio
+from app.modules.content import live_ingest
+from app.modules.content.media.audio import NormalizedAudio
+from app.runtime.db.models import Creator, SourceAccount, SourceItem, TranscriptSegment
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -425,7 +425,7 @@ def test_session_close_dispatches_extraction(
     db_session, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """收尾即派发观点抽取（用户 2026-09-28）：transcribing→transcribed 同事务派发。"""
-    from app.worker.celery_app import celery_app
+    from app.bootstrap.celery import celery_app
 
     _ensure_watch_account(db_session)
     _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
@@ -458,11 +458,10 @@ def test_extraction_sweep_covers_manual_account_live(
     """补扫放宽（用户 2026-09-28）：manual 纯直播值守账号的 transcribed 直播也被补扫。"""
     from datetime import UTC, datetime
 
+    from app.modules.insights import tasks as tasks_mod
+    from app.runtime.db.models import SourceAccount, SourceItem
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-
-    from app.db.models import SourceAccount, SourceItem
-    from app.worker import tasks as tasks_mod
 
     # 换绑 worker 会话工厂到测试库（否则补扫打开发库）
     factory = sessionmaker(bind=create_engine(database_url), expire_on_commit=False)
@@ -504,7 +503,7 @@ def test_writing_segment_skipped_until_settled(
     _ensure_watch_account(db_session)
     seg_path = _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)
     _set_dir(monkeypatch, tmp_path)
-    live_ingest.get_settings = lambda: SimpleNamespace(  # noqa: B010 显式开 settle 窗
+    live_ingest.get_settings = lambda: SimpleNamespace(
         live_segments_dir=str(tmp_path),
         live_close_grace_sec=900,
         live_min_segment_sec=30,
@@ -581,7 +580,7 @@ def test_viewer_sampling_and_close_average(
     """
     import json as _json
 
-    from app.services.danmaku.collector import build_envelope, sink_path
+    from app.modules.collection.danmaku.collector import build_envelope, sink_path
 
     _ensure_watch_account(db_session)
     _write_seg(tmp_path, "新闻联播", "2026-09-17", "base", 0)

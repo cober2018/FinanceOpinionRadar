@@ -2,8 +2,8 @@
 
 import httpx
 import pytest
-from app.services.media.adapters.douyin_client import DouyinApiClient
-from app.services.media.contracts import AdapterProcessError, AdapterTimeoutError
+from app.modules.content.media.adapters.douyin_client import DouyinApiClient
+from app.modules.content.media.contracts import AdapterProcessError, AdapterTimeoutError
 
 BASE = "http://dtk.test:8080"
 KEY = "dtk_test_key"
@@ -12,7 +12,7 @@ KEY = "dtk_test_key"
 @pytest.fixture(autouse=True)
 def _no_egress_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     """单测不依赖 Redis：关闭出口并发闸（egress_limit=0 走无闸分支）。"""
-    import app.services.download_gate as dg
+    import app.modules.collection.download_gate as dg
 
     monkeypatch.setattr(dg, "egress_limit", lambda: 0)
 

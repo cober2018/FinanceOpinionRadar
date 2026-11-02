@@ -5,10 +5,10 @@ launchctl 是宿主机副作用面，测试里整体替换 _apply_flag / _instal
 """
 
 import pytest
-from app.db.models import AppSetting
-from app.db.session import get_db
-from app.main import app
-from app.services import runtime_control
+from app.bootstrap.asgi import app
+from app.runtime import runtime_control
+from app.runtime.db.models import AppSetting
+from app.runtime.db.session import get_db
 from fastapi.testclient import TestClient
 
 

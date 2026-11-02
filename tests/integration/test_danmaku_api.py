@@ -1,15 +1,15 @@
 """观众互动 API 集成测试（2026-09-19）：/danmaku/stats + 弹幕详情 + 列表 chat_count。"""
 
 import pytest
-from app.db.models import (
+from app.bootstrap.asgi import app
+from app.runtime.db.models import (
     ContentSummary,
     Creator,
     LiveChatMessage,
     SourceAccount,
     SourceItem,
 )
-from app.db.session import get_db
-from app.main import app
+from app.runtime.db.session import get_db
 from fastapi.testclient import TestClient
 
 
@@ -157,7 +157,7 @@ def test_list_filters_by_asset(db_session, client):
 def test_retention_sweep_endpoint_dry_run(db_session, client):
     from datetime import UTC, datetime, timedelta
 
-    from app.db.models import Creator, SourceAccount, SourceItem
+    from app.runtime.db.models import Creator, SourceAccount, SourceItem
 
     creator = Creator(display_name="c_retdry", status="active")
     db_session.add(creator)

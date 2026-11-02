@@ -1,7 +1,7 @@
 """UTC 时间戳行为（tests/integration：依赖真实 PG 的 timestamptz）。"""
 
 
-from app.db.models import Creator
+from app.runtime.db.models import Creator
 from sqlalchemy import text
 
 

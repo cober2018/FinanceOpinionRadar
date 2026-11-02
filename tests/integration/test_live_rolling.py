@@ -1,23 +1,20 @@
 """直播滚动总结集成测试（2026-09-30）：增量抽取水位幂等、滚动总结跳门禁、close 收尾。"""
 
-import json
 from datetime import UTC, datetime, timedelta
 
-from app.db.models import (
+from app.modules.collection.live_rolling import (
+    extract_live_incremental,
+    finalize_after_close,
+    rolling_summarize_live,
+)
+from app.modules.insights.llm.provider import LLMResponse
+from app.runtime.db.models import (
     Creator,
-    LiveChatMessage,
-    MediaAsset,
     SourceAccount,
     SourceItem,
     TranscriptSegment,
     Viewpoint,
     ViewpointEvidence,
-)
-from app.llm.provider import LLMResponse
-from app.services.live_rolling import (
-    extract_live_incremental,
-    finalize_after_close,
-    rolling_summarize_live,
 )
 
 from tests.integration.test_review_and_history import _mk_item_with_vp
@@ -42,7 +39,7 @@ class FakeExtractProvider:
 
 def _mk_live_item(db_session, *, published_at=None, segments_text=("大盘今天看涨",)):
     """直播条目 + 若干转录段（start_ms 为直播内全局偏移）。"""
-    from app.db.models import TranscriptSegment
+    from app.runtime.db.models import TranscriptSegment
 
     creator = Creator(display_name="滚动主播", status="active")
     db_session.add(creator)
@@ -85,9 +82,9 @@ def test_extract_live_incremental_watermark_idempotent(db_session, monkeypatch):
     item = _mk_live_item(db_session, segments_text=("黄金短期看涨，避险情绪升温，美联储降息预期推动资金持续流入黄金ETF，避险与投机双轮驱动，金价有望继续上攻。", "大盘中期继续看多，流动性改善背景下指数有望震荡上行，关注量能变化。"))
     sent_llm_review: list[int] = []
     sent_summarize: list[int] = []
-    monkeypatch.setattr("app.services.reviewer.dispatch_llm_review", lambda iid: sent_llm_review.append(iid))
+    monkeypatch.setattr("app.modules.insights.reviewer.dispatch_llm_review", lambda iid: sent_llm_review.append(iid))
     monkeypatch.setattr(
-        "app.services.live_rolling.dispatch_rolling_summarize", lambda iid: sent_summarize.append(iid)
+        "app.modules.collection.live_rolling.dispatch_rolling_summarize", lambda iid: sent_summarize.append(iid)
     )
     provider = FakeExtractProvider(
         [
@@ -157,7 +154,7 @@ def test_finalize_after_close_promotes(db_session, monkeypatch):
     vp.verification_status = "confirmed"
     db_session.commit()
     sent = []
-    monkeypatch.setattr("app.services.summarizer.dispatch_summarize", lambda iid: sent.append(iid))
+    monkeypatch.setattr("app.modules.insights.summarizer.dispatch_summarize", lambda iid: sent.append(iid))
     out = finalize_after_close(db_session, item.id)
     db_session.expire_all()
     item = db_session.get(SourceItem, item.id)
@@ -166,9 +163,8 @@ def test_finalize_after_close_promotes(db_session, monkeypatch):
 
 def test_timeline_orders_desc_and_offsets_live(db_session):
     """时间轴：at 倒序；live 观点时刻 = 起播 + 证据偏移；总结事件带直播中标记。"""
+    from app.bootstrap.asgi import app
     from fastapi.testclient import TestClient
-
-    from app.main import app
 
     base = datetime.now(UTC).replace(hour=10, minute=0, second=0, microsecond=0)
     # 复用 helper 建 vod item + 观点（confirmed）
@@ -213,7 +209,7 @@ def test_timeline_orders_desc_and_offsets_live(db_session):
     live_item.summary_generated_at = base + timedelta(minutes=30)
     db_session.commit()
 
-    from app.db.session import get_db
+    from app.runtime.db.session import get_db
 
     app.dependency_overrides[get_db] = lambda: db_session
     client = TestClient(app)

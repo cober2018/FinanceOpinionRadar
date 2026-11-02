@@ -1,8 +1,11 @@
 """TranscriptRepository 集成测试（RAD-034）：替换语义 / 连续编号 / 非法段回滚。"""
 
 import pytest
-from app.repositories.source_items import SourceItemRepository
-from app.repositories.transcripts import TranscriptRepository, TranscriptWrite
+from app.modules.content.repositories.source_items import SourceItemRepository
+from app.modules.content.repositories.transcripts import (
+    TranscriptRepository,
+    TranscriptWrite,
+)
 
 from tests.integration.test_discover_tasks import _make_account
 

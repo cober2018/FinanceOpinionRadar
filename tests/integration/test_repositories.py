@@ -1,11 +1,9 @@
 import threading
 
-from app.db.models import Creator, SourceAccount, SourceItem, Topic, Viewpoint
-from app.repositories import (
-    CreatorRepository,
-    SourceAccountRepository,
-    ViewpointRepository,
-)
+from app.modules.insights.repository import ViewpointRepository
+from app.modules.sources.creators import CreatorRepository
+from app.modules.sources.repository import SourceAccountRepository
+from app.runtime.db.models import Creator, SourceAccount, SourceItem, Topic, Viewpoint
 from sqlalchemy.orm import sessionmaker
 
 

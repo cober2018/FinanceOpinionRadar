@@ -1,8 +1,8 @@
 """LLM 配置集成测试（PG）：模板覆盖/校验/provider 构造（Mock 回落与 OpenAI 路径差异）。"""
 
 import pytest
-from app.llm.templates import get_template
-from app.services import llm_config
+from app.modules.insights import llm_config
+from app.modules.insights.llm.templates import get_template
 
 
 def test_templates_cover_domestic_providers():
@@ -204,7 +204,6 @@ def test_build_wraps_fallback_provider(db_session):
              "api_key": "glm", "model": "glm-4-plus", "chat_path": "/chat/completions"},
         ],
     )
-    from app.llm.provider import FallbackLLMProvider, OpenAICompatProvider
 
     llm_config.put_llm_assignment(
         db_session, {"summary": "main", "fallback": saved[1]["id"]}
@@ -224,7 +223,11 @@ def test_build_wraps_fallback_provider(db_session):
 
 def test_fallback_engages_on_primary_failure(db_session):
     """主模型重试耗尽抛 LLMError → 兜底接管重跑；主模型正常不触发。"""
-    from app.llm.provider import FallbackLLMProvider, LLMError, LLMResponse
+    from app.modules.insights.llm.provider import (
+        FallbackLLMProvider,
+        LLMError,
+        LLMResponse,
+    )
 
     class FlakyPrimary:
         calls = 0

@@ -3,8 +3,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from app.services.media.adapters.yt_dlp import GenericYtDlpAdapter
-from app.services.media.contracts import (
+from app.modules.content.media.adapters.yt_dlp import GenericYtDlpAdapter
+from app.modules.content.media.contracts import (
     AdapterProcessError,
     AdapterTimeoutError,
     NotSingleItemError,

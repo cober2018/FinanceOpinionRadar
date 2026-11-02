@@ -1,18 +1,18 @@
 from datetime import UTC, datetime
 
 import pytest
-from app.db.models import Creator, SourceAccount, SourceItem
-from app.services.discovery import (
+from app.modules.collection.discovery import (
     create_item_from_url,
     discover_account,
     resolve_url_preview,
 )
-from app.services.media.contracts import (
+from app.modules.content.media.contracts import (
     AccountRef,
     DiscoveredItem,
     ResolvedMedia,
     SubtitleTrack,
 )
+from app.runtime.db.models import Creator, SourceAccount, SourceItem
 
 from tests.fixtures.media.payloads import URL
 

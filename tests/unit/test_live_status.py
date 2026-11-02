@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from app.services.live_status import _derive_is_live
+from app.modules.collection.live_status import _derive_is_live
 
 NOW = datetime.now(UTC)
 
@@ -38,7 +38,7 @@ def test_closed_session_keeps_probe_result():
 
 def test_viewer_fields_from_live_meta():
     """监控行人气字段（用户 2026-10-08）：last=在播当前值，avg/peak=收尾汇总。"""
-    from app.services.live_status import viewer_fields
+    from app.modules.collection.live_status import viewer_fields
 
     assert viewer_fields(
         {"last_viewer_count": 780, "viewer_avg": 733, "viewer_peak": 900, "viewer_sample_count": 12}

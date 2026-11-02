@@ -5,12 +5,12 @@ youtube 频道页签归一，platform 由调用方给定），故 detect_platfor
 """
 
 import pytest
-from app.core.settings import get_settings
-from app.services.media.adapters.douyin import DouyinAdapter
-from app.services.media.adapters.douyin_client import DouyinApiClient
-from app.services.media.adapters.yt_dlp import GenericYtDlpAdapter
-from app.services.media.contracts import AdapterError
-from app.services.media.factory import detect_platform, get_media_adapter
+from app.modules.content.media.adapters.douyin import DouyinAdapter
+from app.modules.content.media.adapters.douyin_client import DouyinApiClient
+from app.modules.content.media.adapters.yt_dlp import GenericYtDlpAdapter
+from app.modules.content.media.contracts import AdapterError
+from app.modules.content.media.factory import detect_platform, get_media_adapter
+from app.runtime.settings import get_settings
 
 
 @pytest.mark.parametrize(

@@ -7,9 +7,9 @@
 import json
 from pathlib import Path
 
-from app.services.danmaku import room_stats
-from app.services.danmaku.collector import build_envelope
-from app.services.danmaku.room_stats import latest_viewer_count
+from app.modules.collection.danmaku import room_stats
+from app.modules.collection.danmaku.collector import build_envelope
+from app.modules.collection.danmaku.room_stats import latest_viewer_count
 
 
 def _stats_envelope(total: object, method: str = "WebcastRoomStatsMessage") -> str:

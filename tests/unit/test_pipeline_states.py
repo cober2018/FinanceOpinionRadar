@@ -1,7 +1,7 @@
 from itertools import pairwise
 
 import pytest
-from app.domain.pipeline_states import (
+from app.runtime.pipeline import (
     PIPELINE_TRANSITIONS,
     InvalidTransitionError,
     ensure_transition,

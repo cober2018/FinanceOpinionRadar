@@ -9,22 +9,22 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from app.db.models import MediaAsset, SourceItem
-from app.repositories.source_items import SourceItemRepository
-from app.services import preparation
-from app.services.media.audio import NormalizedAudio
-from app.services.media.contracts import (
+from app.modules.content import preparation
+from app.modules.content.media.audio import NormalizedAudio
+from app.modules.content.media.contracts import (
     AdapterProcessError,
     DownloadResult,
     ResolvedMedia,
     SubtitleResult,
     SubtitleTrack,
 )
-from app.services.transcription.contracts import (
+from app.modules.content.repositories.source_items import SourceItemRepository
+from app.modules.content.transcription.contracts import (
     TranscriptionError,
     TranscriptResult,
     TranscriptSegmentResult,
 )
+from app.runtime.db.models import MediaAsset, SourceItem
 
 from tests.integration.test_discover_tasks import _make_account
 

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import faster_whisper
 import pytest
-from app.services.transcription.contracts import TranscriptionError
-from app.services.transcription.faster_whisper import FasterWhisperProvider
+from app.modules.content.transcription.contracts import TranscriptionError
+from app.modules.content.transcription.faster_whisper import FasterWhisperProvider
 
 
 @pytest.fixture

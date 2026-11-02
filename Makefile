@@ -20,7 +20,7 @@ setup: ## 创建 .venv 并安装后端/前端依赖
 
 dev: ## 启动 API 开发服务器 (前端开发服务器用 make web)
 	docker compose up -d
-	$(PYTHON) -m uvicorn app.main:app --reload --host $(HOST) --port $(PORT) --app-dir apps/api
+	$(PYTHON) -m uvicorn app.bootstrap.asgi:app --reload --host $(HOST) --port $(PORT) --app-dir apps/api
 
 up: ## 一键幂等拉起全部组件：docker 依赖 + dtk + API :8010 + worker + CPA API 隧道（已在跑的跳过）
 	@bash scripts/dev_up.sh up
@@ -99,10 +99,10 @@ migrate: ## 执行数据库迁移至最新版本
 	$(PYTHON) -m alembic -c apps/api/alembic.ini upgrade head
 
 worker: ## 启动 Celery worker
-	$(PYTHON) -m celery -A app.worker.celery_app worker --loglevel=info
+	$(PYTHON) -m celery -A app.bootstrap.celery worker --loglevel=info
 
 worker-beat: ## 启动 Celery worker + beat（dev：全队列消费 default/media/llm/danmaku）
-	$(PYTHON) -m celery -A app.worker.celery_app worker --beat -Q default,media,llm,danmaku --loglevel=info
+	$(PYTHON) -m celery -A app.bootstrap.celery worker --beat -Q default,media,llm,danmaku --loglevel=info
 
 streamcap-keeper: ## 安装并启动 StreamCap 会话保活（launchd 常驻，登录自启，幂等；背景见脚本头注释）
 	mkdir -p logs $(HOME)/Library/LaunchAgents

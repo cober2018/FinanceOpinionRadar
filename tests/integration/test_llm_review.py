@@ -2,9 +2,9 @@
 
 import json
 
-from app.db.models import SourceItem, Viewpoint
-from app.llm.provider import LLMResponse
-from app.services.reviewer import llm_review_pending
+from app.modules.insights.llm.provider import LLMResponse
+from app.modules.insights.reviewer import llm_review_pending
+from app.runtime.db.models import SourceItem, Viewpoint
 
 from tests.integration.test_review_and_history import _mk_item_with_vp
 
@@ -56,7 +56,7 @@ def test_llm_review_accept_confirms_with_correction_and_promotes(db_session, mon
         horizon="1-3M",
     )
     sent = []
-    monkeypatch.setattr("app.services.summarizer.dispatch_summarize", lambda iid: sent.append(iid))
+    monkeypatch.setattr("app.modules.insights.summarizer.dispatch_summarize", lambda iid: sent.append(iid))
     provider = FakeReviewProvider(
         [[_review(vp.id, "accept", reason="证据直接支撑", corrected_stance="neutral")]]
     )
@@ -101,8 +101,8 @@ def test_llm_review_ignores_out_of_range_and_bad_ids(db_session):
 
 
 def test_llm_review_skips_when_disabled_or_no_pending(db_session):
-    from app.services import live_status
-    from app.services.reviewer import llm_review_enabled
+    from app.modules.collection import live_status
+    from app.modules.insights.reviewer import llm_review_enabled
 
     vp, item = _mk_item_with_vp(db_session)
     # 开关关：security 设置落库
@@ -136,9 +136,9 @@ def test_llm_review_bad_shape_leaves_queue_intact(db_session):
 
 def test_llm_review_prompt_carries_calibration():
     """system prompt 注入了人工修正校准规则（防占位符漏替换回归）。"""
-    from app.llm.calibration import REVIEW_CALIBRATION_MD
-    from app.llm.registry import get_prompt_registry
-    from app.services.reviewer import REVIEW_PROMPT_VERSION
+    from app.modules.insights.llm.calibration import REVIEW_CALIBRATION_MD
+    from app.modules.insights.llm.registry import get_prompt_registry
+    from app.modules.insights.reviewer import REVIEW_PROMPT_VERSION
 
     pack = get_prompt_registry().get(REVIEW_PROMPT_VERSION)
     assert "__STANCE_CALIBRATION__" in pack.system  # 模板含占位符，渲染时替换
@@ -148,7 +148,10 @@ def test_llm_review_prompt_carries_calibration():
 
 
 def test_security_switch_roundtrip(db_session):
-    from app.services.live_status import get_security_settings, put_security_settings
+    from app.modules.collection.live_status import (
+        get_security_settings,
+        put_security_settings,
+    )
 
     out = put_security_settings(db_session, {"llm_review_enabled": False})
     assert out["effective"]["llm_review_enabled"] is False

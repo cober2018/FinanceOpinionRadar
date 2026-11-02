@@ -1,7 +1,8 @@
-from app.db.models import Creator as CreatorModel
-from app.db.models import Entity, Topic
-from app.db.models import SourceAccount as SourceAccountModel
-from app.repositories import CreatorRepository, SourceAccountRepository
+from app.modules.sources.creators import CreatorRepository
+from app.modules.sources.repository import SourceAccountRepository
+from app.runtime.db.models import Creator as CreatorModel
+from app.runtime.db.models import Entity, Topic
+from app.runtime.db.models import SourceAccount as SourceAccountModel
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 

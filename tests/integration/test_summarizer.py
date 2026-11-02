@@ -3,8 +3,8 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from app.db.models import Creator, SourceAccount, SourceItem, Viewpoint
-from app.services.summarizer import summarize_source_item
+from app.modules.insights.summarizer import summarize_source_item
+from app.runtime.db.models import Creator, SourceAccount, SourceItem, Viewpoint
 
 
 class StubLLM:
@@ -142,10 +142,12 @@ def test_summarize_key_drift_fallback(db_session):
 
 def test_promote_item_if_reviewed_dispatches(db_session, monkeypatch):
     """收尾闸：reviewing + 全确认 → ready + 派总结；有待审不动；非 reviewing 不动。"""
-    from app.services.summarizer import dispatch_summarize, promote_item_if_reviewed
+    from app.modules.insights.summarizer import (
+        promote_item_if_reviewed,
+    )
 
     sent: list[int] = []
-    monkeypatch.setattr("app.services.summarizer.dispatch_summarize", lambda iid: sent.append(iid))
+    monkeypatch.setattr("app.modules.insights.summarizer.dispatch_summarize", lambda iid: sent.append(iid))
 
     item = _mk_item_with_confirmed(db_session, confirmed=2, pending=0)
     item.status = "reviewing"

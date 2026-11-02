@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from app.services.media.contracts import (
+from app.modules.content.media.contracts import (
     AccountRef,
     AdapterError,
     AdapterProcessError,

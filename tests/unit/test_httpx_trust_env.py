@@ -21,8 +21,8 @@ def test_vanilla_client_crashes_on_poisoned_no_proxy(monkeypatch):
 def test_douyin_clients_construct_under_poisoned_env(monkeypatch):
     from unittest.mock import Mock
 
-    from app.services.media.adapters.douyin import DouyinAdapter
-    from app.services.media.adapters.douyin_client import DouyinApiClient
+    from app.modules.content.media.adapters.douyin import DouyinAdapter
+    from app.modules.content.media.adapters.douyin_client import DouyinApiClient
 
     monkeypatch.setenv("no_proxy", POISON_NO_PROXY)
     DouyinApiClient(base_url="http://127.0.0.1:8080", api_key="k")  # 构造期建客户端（曾在此崩溃）
@@ -36,13 +36,13 @@ def test_douyin_clients_construct_under_poisoned_env(monkeypatch):
 
 
 def test_qg_and_llm_clients_construct_under_poisoned_env(monkeypatch):
-    from app.services.qg_proxy import QgLongtermClient
+    from app.modules.collection.qg_proxy import QgLongtermClient
 
     monkeypatch.setenv("no_proxy", POISON_NO_PROXY)
     c = QgLongtermClient("key", "pwd")
     c._client.close()
     # LLM provider 构造（_post 才发请求，构造期建客户端的路径覆盖 push/douyin 已足）
-    from app.llm.provider import OpenAICompatProvider
+    from app.modules.insights.llm.provider import OpenAICompatProvider
 
     provider = OpenAICompatProvider(
         base_url="http://127.0.0.1:9/v1", api_key="k", model="m"

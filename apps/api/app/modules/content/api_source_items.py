@@ -1,0 +1,646 @@
+from datetime import datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, HttpUrl
+from sqlalchemy.orm import Session
+
+from app.modules.collection import discovery
+from app.modules.content.media.contracts import (
+    AdapterError,
+    AdapterTimeoutError,
+    MediaSourceAdapter,
+    NotSingleItemError,
+    UrlNotAllowedError,
+)
+from app.modules.content.media.factory import detect_platform, get_media_adapter
+from app.runtime.db.session import get_db
+
+router = APIRouter(prefix="/source-items", tags=["source-items"])
+
+
+class ResolveUrlRequest(BaseModel):
+    url: HttpUrl
+
+
+class ResolveUrlResponse(BaseModel):
+    platform: str
+    external_id: str
+    title: str | None
+    duration_ms: int | None
+    thumbnail_url: str | None
+    item_type: str
+    published_at: datetime | None
+    channel_name: str | None
+    subtitle_languages: list[str]
+
+
+class CreateSourceItemRequest(BaseModel):
+    url: HttpUrl
+
+
+class SourceItemResponse(BaseModel):
+    id: int
+    source_account_id: int
+    external_item_id: str
+    item_type: str
+    title: str | None
+    canonical_url: str | None
+    thumbnail_url: str | None
+    published_at: datetime | None
+    duration_ms: int | None
+    status: str
+
+    model_config = ConfigDict(from_attributes=True)  # E2：显式 ConfigDict，与 settings.py 风格一致
+
+
+def _map_adapter_errors(exc: AdapterError) -> HTTPException:
+    """F7：两端点共用的错误映射（400 白名单 / 502 上游失败 / 504 超时）。"""
+    if isinstance(exc, (UrlNotAllowedError, NotSingleItemError)):
+        return HTTPException(status_code=400, detail=str(exc))
+    if isinstance(exc, AdapterTimeoutError):
+        return HTTPException(status_code=504, detail=str(exc))
+    return HTTPException(status_code=502, detail=str(exc))
+
+
+DbDep = Annotated[Session, Depends(get_db)]
+
+
+def _resolve_adapter(body: ResolveUrlRequest) -> MediaSourceAdapter:
+    # per-platform 分流（Task 2 Step 5）：douyin URL → 外部 dtk adapter
+    return get_media_adapter(detect_platform(str(body.url)))
+
+
+def _create_adapter(body: CreateSourceItemRequest) -> MediaSourceAdapter:
+    return get_media_adapter(detect_platform(str(body.url)))
+
+
+RoutedResolveAdapterDep = Annotated[MediaSourceAdapter, Depends(_resolve_adapter)]
+RoutedCreateAdapterDep = Annotated[MediaSourceAdapter, Depends(_create_adapter)]
+
+
+@router.post("/resolve-url", response_model=ResolveUrlResponse)
+def resolve_url(body: ResolveUrlRequest, adapter: RoutedResolveAdapterDep) -> ResolveUrlResponse:
+    """RAD-022 第一步：解析预览，不落库。"""
+    try:
+        media = adapter.resolve(str(body.url))
+    except AdapterError as exc:
+        raise _map_adapter_errors(exc) from exc
+    return ResolveUrlResponse(
+        platform=media.platform,
+        external_id=media.external_item_id,
+        title=media.title,
+        duration_ms=media.duration_ms,
+        thumbnail_url=media.thumbnail_url,
+        item_type=media.item_type,
+        published_at=media.published_at,
+        channel_name=media.channel_name,
+        subtitle_languages=[t.language for t in media.subtitles],
+    )
+
+
+@router.post("", response_model=SourceItemResponse, status_code=201)
+def create_source_item(
+    body: CreateSourceItemRequest, session: DbDep, adapter: RoutedCreateAdapterDep
+) -> SourceItemResponse:
+    """RAD-022 第二步：确认后创建（服务端重新 resolve，C4）。"""
+    try:
+        item = discovery.create_item_from_url(str(body.url), session, adapter)
+    except AdapterError as exc:
+        raise _map_adapter_errors(exc) from exc
+    return SourceItemResponse.model_validate(item)
+
+
+@router.get("")
+def list_source_items(
+    session: DbDep,
+    account_id: int | None = None,
+    status: str | None = None,
+    asset: bool | None = None,
+    has_viewpoints: bool | None = None,
+    pending_review: bool | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = 100,
+):
+    """视频库列表（监控台"视频库"页）：按账号/状态/精华过滤，id 倒序。
+
+    has_viewpoints/pending_review：观点页（视频粒度）——只列有观点 / 有待审
+    观点（needs_review+candidate）的视频；行内带观点聚合计数。
+    date_from/date_to（YYYY-MM-DD）：按发布日期过滤（周历筛选）；按本机时区
+    取当天边界，避免 PG ::date 按服务器 UTC 截断导致北京日期差 8 小时。
+    """
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import exists, func, select
+
+    from app.runtime.db.models import Creator, SourceAccount, SourceItem, Viewpoint
+    from app.runtime.settings import get_settings
+
+    def _day_bounds(day: str) -> tuple[datetime, datetime] | None:
+        try:
+            start = datetime.fromisoformat(day).astimezone()
+        except ValueError:
+            return None
+        return start, start + timedelta(days=1)
+
+    stmt = (
+        select(SourceItem, SourceAccount, Creator.display_name)
+        .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+        .join(Creator, Creator.id == SourceAccount.creator_id)
+        # 视频库/观点/复核队列/资产库统一按发布时间倒排（越新越靠上）；
+        # 无发布时间的条目（部分直播/失败条目）沉底，再按入库 id 保持稳定
+        .order_by(SourceItem.published_at.desc().nulls_last(), SourceItem.id.desc())
+        .limit(min(limit, 500))
+    )
+    if account_id is not None:
+        stmt = stmt.where(SourceItem.source_account_id == account_id)
+    if status is not None:
+        stmt = stmt.where(SourceItem.status == status)
+    if asset is not None:
+        stmt = stmt.where(SourceItem.is_asset.is_(asset))
+    if date_from:
+        bounds = _day_bounds(date_from)
+        if bounds:
+            stmt = stmt.where(SourceItem.published_at >= bounds[0])
+    if date_to:
+        bounds = _day_bounds(date_to)
+        if bounds:
+            stmt = stmt.where(SourceItem.published_at < bounds[1])
+    if has_viewpoints:
+        stmt = stmt.where(
+            exists(select(Viewpoint.id).where(Viewpoint.source_item_id == SourceItem.id))
+        )
+    if pending_review:
+        stmt = stmt.where(
+            exists(
+                select(Viewpoint.id).where(
+                    Viewpoint.source_item_id == SourceItem.id,
+                    Viewpoint.verification_status.in_(("needs_review", "candidate")),
+                )
+            )
+        )
+    rows = session.execute(stmt).all()
+
+    # 弹幕计数（Plan #5）+ 观点聚合（观点页视频粒度）：单条聚合查询，避免行级 N+1
+    from app.runtime.db.models import LiveChatMessage
+
+    item_ids = [item.id for item, _account, _name in rows]
+    chat_counts: dict[int, int] = {
+        item_id: count
+        for item_id, count in session.query(
+            LiveChatMessage.source_item_id, func.count(LiveChatMessage.id)
+        )
+        .filter(LiveChatMessage.source_item_id.in_(item_ids or [0]))
+        .group_by(LiveChatMessage.source_item_id)
+        .all()
+    }
+    vp_rows = (
+        session.query(
+            Viewpoint.source_item_id,
+            Viewpoint.verification_status,
+            func.count(),
+        )
+        .filter(Viewpoint.source_item_id.in_(item_ids or [0]))
+        .group_by(Viewpoint.source_item_id, Viewpoint.verification_status)
+        .all()
+    )
+    vp_counts: dict[int, dict[str, int]] = {}
+    for si, vs, n in vp_rows:
+        vp_counts.setdefault(si, {})[vs] = n
+
+    # 立场聚合（标的 × 时间维度 × 立场）：已确认优先，无已确认时回退全部未驳回观点。
+    # 同视频"对大盘数周看多 + 对纳指长期看空"是两个观点，标签不带标的就不算完整立场。
+    vp_detail = (
+        session.query(
+            Viewpoint.source_item_id,
+            Viewpoint.horizon,
+            Viewpoint.stance,
+            Viewpoint.verification_status,
+            Viewpoint.entity_raw,
+        )
+        .filter(
+            Viewpoint.source_item_id.in_(item_ids or [0]),
+            Viewpoint.verification_status != "rejected",
+        )
+        .all()
+    )
+    horizon_order = ("intraday", "1-3D", "1-4W", "1-3M", "3M+")
+    # key = (horizon, stance, entity)，value = 同组合观点数
+    stance_groups: dict[int, dict[str, dict[tuple[str | None, str, str | None], int]]] = {}
+    for si, horizon, stance, status, entity in vp_detail:
+        groups = stance_groups.setdefault(si, {})
+        key = (horizon, stance, entity)
+        bucket_all = groups.setdefault("all", {})
+        bucket_all[key] = bucket_all.get(key, 0) + 1
+        if status == "confirmed":
+            bucket_conf = groups.setdefault("confirmed", {})
+            bucket_conf[key] = bucket_conf.get(key, 0) + 1
+
+    def _stance_summary(item_id: int) -> list[dict]:
+        per_key = stance_groups.get(item_id, {}).get("confirmed") or stance_groups.get(
+            item_id, {}
+        ).get("all", {})
+        by_horizon: dict[str | None, list[dict]] = {}
+        for (h, stance, entity), n in per_key.items():
+            by_horizon.setdefault(h, []).append({"stance": stance, "entity": entity, "count": n})
+        return [
+            {
+                "horizon": h,
+                "tags": sorted(tags, key=lambda t: (t["stance"], t["entity"] or "")),
+            }
+            for h, tags in sorted(
+                by_horizon.items(),
+                key=lambda kv: (
+                    horizon_order.index(kv[0]) if kv[0] in horizon_order else len(horizon_order),
+                    kv[0] or "",
+                ),
+            )
+        ]
+
+    # 生命周期展示（Plan #6 D7）：精华/非终态无到期；可清理条目 = created_at + TTL
+    retention_days = get_settings().content_retention_days
+    expiry_eligible = ("transcribed", "failed", "reviewing", "ready")
+
+    def _expires_at(item: SourceItem):
+        if item.is_asset or retention_days <= 0 or item.status not in expiry_eligible:
+            return None
+        return item.created_at + timedelta(days=retention_days)
+
+    def _viewpoint_stats(item_id: int) -> dict:
+        vc = vp_counts.get(item_id, {})
+        return {
+            "viewpoint_total": sum(vc.values()),
+            "viewpoint_needs_review": vc.get("needs_review", 0) + vc.get("candidate", 0),
+            "viewpoint_confirmed": vc.get("confirmed", 0),
+        }
+
+    return [
+        {
+            "id": item.id,
+            "account_id": item.source_account_id,
+            "platform": account.platform,
+            "display_name": creator_name,
+            "external_item_id": item.external_item_id,
+            "title": item.title,
+            "item_type": item.item_type,
+            "status": item.status,
+            "duration_ms": item.duration_ms,
+            "published_at": item.published_at,
+            "backfill": bool((item.metadata_json or {}).get("backfill")),
+            "members_only": bool((item.metadata_json or {}).get("members_only")),
+            "progress": (item.metadata_json or {}).get("progress"),
+            "chat_count": chat_counts.get(item.id, 0),
+            "is_asset": item.is_asset,
+            "expires_at": _expires_at(item),
+            "viewpoint_summary": item.viewpoint_summary,
+            "summary_generated_at": item.summary_generated_at,
+            # 直播人气（用户 2026-10-08）：last=在播当前值，avg/peak=收尾汇总；vod 行为 None
+            "viewer_count": ((item.metadata_json or {}).get("live") or {}).get("last_viewer_count"),
+            "viewer_avg": ((item.metadata_json or {}).get("live") or {}).get("viewer_avg"),
+            "viewer_peak": ((item.metadata_json or {}).get("live") or {}).get("viewer_peak"),
+            **_viewpoint_stats(item.id),
+            "stance_summary": _stance_summary(item.id),
+        }
+        for item, account, creator_name in rows
+    ]
+
+
+@router.post("/{item_id}/summarize", status_code=202)
+def summarize_source_item_manual(item_id: int, session: DbDep):
+    """手动（重新）生成视频观点（抽屉「立即生成/重新生成」按钮）。
+
+    门禁：无未确认（candidate/needs_review）观点即允许（与自动生成同一条规则）；
+    驳回＝误报不算未确认（用户 2026-09-26）。不满足当场 409，不等 worker 静默跳过。
+    """
+    from app.modules.insights.summarizer import dispatch_summarize, unconfirmed_count
+    from app.runtime.db.models import SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    non_confirmed = unconfirmed_count(session, item_id)
+    if non_confirmed:
+        raise HTTPException(
+            status_code=409,
+            detail=f"还有 {non_confirmed} 条观点未确认，全部确认后才能生成视频观点",
+        )
+    dispatch_summarize(item_id)
+    return {"item_id": item_id, "dispatched": True}
+
+
+@router.post("/{item_id}/llm-review", status_code=202)
+def llm_review_source_item_manual(item_id: int, session: DbDep):
+    """手动（重新）触发 LLM 二道复核（EPIC-05）。
+
+    用于回填存量待审、LLM 任务失败后的补跑；无待审候选时任务会幂等跳过。
+    """
+    from app.modules.insights.reviewer import dispatch_llm_review
+    from app.runtime.db.models import SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    dispatch_llm_review(item_id)
+    return {"item_id": item_id, "dispatched": True}
+
+
+@router.post("/{item_id}/prepare", status_code=202)
+def prepare_source_item_manual(item_id: int, session: DbDep):
+    """手动转录（视频库"转写"按钮）：清 backfill 标记后投递 prepare。
+
+    discovered/failed 可投；其余状态 409（幂等保护，与 prepare 状态门槛一致）。
+    """
+    from app.bootstrap.celery import celery_app
+    from app.runtime.db.models import SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    if item.status not in ("discovered", "failed"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"当前状态 {item.status} 不可发起转录（仅 discovered/failed）",
+        )
+    meta = dict(item.metadata_json or {})
+    meta.pop("backfill", None)
+    meta.pop("retry", None)  # 人工介入视为重新开始，自动重试退避计数清零
+    item.metadata_json = meta
+    session.commit()
+    celery_app.send_task("prepare_source_item", args=[item_id])
+    return {"item_id": item_id, "dispatched": True}
+
+
+@router.get("/{item_id}/transcript")
+def get_transcript(item_id: int, session: DbDep):
+    """转录正文（视频库抽屉）：分段文本 + 主播名。未转写/不存在给 4xx。"""
+    from app.runtime.db.models import Creator, SourceAccount, SourceItem, TranscriptSegment
+
+    row = (
+        session.query(SourceItem, SourceAccount, Creator.display_name)
+        .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
+        .join(Creator, Creator.id == SourceAccount.creator_id)
+        .filter(SourceItem.id == item_id)
+        .one_or_none()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    item, _account, creator_name = row
+    segments = (
+        session.query(TranscriptSegment)
+        .filter(TranscriptSegment.source_item_id == item_id)
+        .order_by(TranscriptSegment.sequence_no)
+        .all()
+    )
+    return {
+        "id": item.id,
+        "title": item.title,
+        "display_name": creator_name,
+        "segments": [
+            {
+                "sequence_no": s.sequence_no,
+                "start_ms": s.start_ms,
+                "end_ms": s.end_ms,
+                "text": s.text,
+            }
+            for s in segments
+        ],
+    }
+
+
+@router.get("/{item_id}/chat-messages")
+def get_chat_messages(item_id: int, session: DbDep, limit: int = 10):
+    """直播弹幕详情（视频库抽屉，Plan #5）：只返回前 N 条（默认 10，用户裁决：
+    全量展示无意义），total 恒为该会话入库总数。"""
+    from sqlalchemy import func
+
+    from app.runtime.db.models import LiveChatMessage, SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    total = (
+        session.query(func.count(LiveChatMessage.id))
+        .filter(LiveChatMessage.source_item_id == item_id)
+        .scalar()
+    )
+    rows = (
+        session.query(
+            LiveChatMessage.user_name,
+            LiveChatMessage.text,
+            LiveChatMessage.published_at,
+        )
+        .filter(LiveChatMessage.source_item_id == item_id)
+        .order_by(LiveChatMessage.id)
+        .limit(min(limit, 2000))
+        .all()
+    )
+    return {
+        "item_id": item_id,
+        "title": item.title,
+        "total": total,
+        "messages": [
+            {"user_name": u, "text": t, "published_at": p} for u, t, p in rows
+        ],
+    }
+
+
+@router.post("/{item_id}/extract", status_code=202)
+def extract_viewpoints_manual(item_id: int, session: DbDep):
+    """手动抽取观点（视频库按钮）：仅 transcribed 状态可发起，幂等由抽取服务保证。"""
+    from app.bootstrap.celery import celery_app
+    from app.runtime.db.models import SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    if item.item_type not in ("vod", "live") or item.status != "transcribed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"当前状态 {item.status} 不可抽取（仅 vod/live + transcribed）",
+        )
+    celery_app.send_task("extract_source_item_viewpoints", args=[item_id])
+    return {"item_id": item_id, "dispatched": True}
+
+
+@router.get("/{item_id}/viewpoint-evidence")
+def get_viewpoint_evidence(item_id: int, session: DbDep):
+    """RAD-084：观点证据行（含原文与时间戳，供 seek link 与 review actions）。"""
+    from app.runtime.db.models import Viewpoint, ViewpointEvidence
+
+    vps = (
+        session.query(Viewpoint)
+        .filter(Viewpoint.source_item_id == item_id)
+        .order_by(Viewpoint.id)
+        .all()
+    )
+    out = []
+    for vp in vps:
+        evs = (
+            session.query(ViewpointEvidence)
+            .filter(ViewpointEvidence.viewpoint_id == vp.id)
+            .order_by(ViewpointEvidence.evidence_order)
+            .all()
+        )
+        out.append(
+            {
+                "viewpoint_id": vp.id,
+                "claim": vp.claim,
+                "stance": vp.stance,
+                "verification_status": vp.verification_status,
+                "evidences": [
+                    {
+                        "segment_id": ev.transcript_segment_id,
+                        "start_ms": ev.start_ms,
+                        "end_ms": ev.end_ms,
+                        "text": ev.evidence_text,
+                    }
+                    for ev in evs
+                ],
+            }
+        )
+    return out
+
+
+@router.post("/{item_id}/asset")
+def toggle_asset(item_id: int, session: DbDep, is_asset: bool | None = None):
+    """精华资产标记（Plan #6 D6）：is_asset 缺省 = 取反切换；标记后 retention 永不清。"""
+    from datetime import UTC, datetime
+
+    from app.runtime.db.models import SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    item.is_asset = (not item.is_asset) if is_asset is None else is_asset
+    now = datetime.now(UTC)
+    item.asset_at = now if item.is_asset else None
+    meta = dict(item.metadata_json or {})
+    if item.is_asset:
+        meta.pop("unasset_at", None)  # 重新入精华 → 清宽限期
+    else:
+        # 取消精华 = 宽限期从现在重算（retention 按 max(created_at, unasset_at) 判定）
+        meta["unasset_at"] = now.isoformat()
+    item.metadata_json = meta
+    from sqlalchemy.orm.attributes import flag_modified
+
+    flag_modified(item, "metadata_json")
+    session.commit()
+    return {"item_id": item_id, "is_asset": item.is_asset}
+
+
+@router.delete("/{item_id}", status_code=200)
+def delete_source_item(item_id: int, session: DbDep):
+    """删除单条内容（物理，级联转录/观点/资产）+ 写墓碑防 discover 重导。
+
+    墓碑幂等：条目曾被删过又被 live ingest 重建时，同键墓碑已存在——跳过插入，
+    不能撞 uq_deleted_item_ref 500（750 实录：删除一直失败）。
+    手动删除 = 用户明确「什么都不留」：MinIO 音频/转录对象与直播分片一并物理删除
+    （与生命周期清理语义相反——那类转录要保留，见 retention.transcript_refs）。
+    """
+    from app.runtime.db.models import SourceItem
+
+    item = session.get(SourceItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
+    from app.modules.workflows import erase_deleted_item_history
+
+    erase_deleted_item_history(session, item.id)
+    _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
+    _purge_item_files(session, item)
+    session.delete(item)
+    session.commit()
+    return {"deleted": item_id, "tombstoned": True}
+
+
+def _purge_item_files(session: Session, item) -> dict:
+    """条目物理文件清理：MinIO 对象（音频/转录）+ 本地直播分片。失败不阻断删行。"""
+    from pathlib import Path
+
+    import structlog
+
+    from app.runtime.db.models import MediaAsset
+
+    log = structlog.get_logger(__name__)
+    purged = {"s3": 0, "local": 0}
+    uris = [
+        uri
+        for (uri,) in session.query(MediaAsset.storage_uri)
+        .filter(MediaAsset.source_item_id == item.id)
+        .all()
+        if uri
+    ]
+    from app.runtime.storage.base import StorageError
+
+    for uri in uris:
+        if uri.startswith("s3://"):
+            key = uri.partition("://")[2].partition("/")[2]
+            if not key:
+                continue
+            try:
+                from app.runtime.storage import get_storage
+
+                get_storage().delete(key)
+                purged["s3"] += 1
+            except StorageError as exc:
+                log.warning("purge_s3_delete_failed", item_id=item.id, key=key[:80], error=str(exc)[:120])
+        else:  # 本地路径：直播转写临时音频多已不存在，静默跳过
+            Path(uri).unlink(missing_ok=True)
+            purged["local"] += 1
+    live = (item.metadata_json or {}).get("live") or {}
+    for p in (live.get("segment_paths") or {}).values():
+        try:
+            Path(p).unlink(missing_ok=True)
+            purged["local"] += 1
+        except OSError as exc:
+            log.warning("purge_segment_unlink_failed", item_id=item.id, error=str(exc)[:120])
+    if purged["s3"] or purged["local"]:
+        log.info("purge_item_files_done", item_id=item.id, **purged)
+    return purged
+
+
+def _tombstone_if_absent(session: Session, source_account_id: int | None, external_item_id: str) -> None:
+    if source_account_id is None:
+        return
+    from app.runtime.db.models import DeletedItemRef
+
+    exists = (
+        session.query(DeletedItemRef.id)
+        .filter_by(
+            source_account_id=source_account_id, external_item_id=external_item_id
+        )
+        .first()
+    )
+    if exists is None:
+        session.add(
+            DeletedItemRef(
+                source_account_id=source_account_id, external_item_id=external_item_id
+            )
+        )
+
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[int]
+
+
+@router.post("/batch-delete", status_code=200)
+def batch_delete_items(body: BatchDeleteRequest, session: DbDep):
+    """批量物理删除（视频库多选）：逐条级联 + 墓碑，返回成功/失败清单。"""
+    from app.runtime.db.models import SourceItem
+
+    deleted: list[int] = []
+    missing: list[int] = []
+    from app.modules.workflows import erase_deleted_item_history
+
+    for item_id in body.ids:
+        item = session.get(SourceItem, item_id)
+        if item is None:
+            missing.append(item_id)
+            continue
+        erase_deleted_item_history(session, item.id)
+        _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
+        _purge_item_files(session, item)
+        session.delete(item)
+        deleted.append(item_id)
+    session.commit()
+    return {"deleted": deleted, "missing": missing}

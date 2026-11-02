@@ -1,8 +1,8 @@
 """MediaAssetRepository 集成测试（RAD-034）：真实 FK 行 + 落库/列举。"""
 
-from app.db.models import MediaAsset
-from app.repositories.media_assets import MediaAssetRepository
-from app.repositories.source_items import SourceItemRepository
+from app.modules.content.repositories.media_assets import MediaAssetRepository
+from app.modules.content.repositories.source_items import SourceItemRepository
+from app.runtime.db.models import MediaAsset
 
 from tests.integration.test_discover_tasks import _make_account
 

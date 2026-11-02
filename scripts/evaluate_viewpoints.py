@@ -478,10 +478,13 @@ def _validate_generated_candidate(candidate: dict[str, Any], allowed_ids: set[in
 
 def _generate_predictions(dataset: Path, bundle: dict[str, Any], output: Path | None) -> Path:
     sys.path.insert(0, str(REPO / "apps/api"))
-    from app.core.settings import get_settings
-    from app.domain.transcript.chunker import chunk_transcript
-    from app.llm.provider import LLMResponseParseError, OpenAICompatProvider
-    from app.llm.registry import get_prompt_registry
+    from app.modules.content.chunker import chunk_transcript
+    from app.modules.insights.llm.provider import (
+        LLMResponseParseError,
+        OpenAICompatProvider,
+    )
+    from app.modules.insights.llm.registry import get_prompt_registry
+    from app.runtime.settings import get_settings
 
     settings = get_settings()
     if not settings.llm_base_url or not settings.llm_api_key:

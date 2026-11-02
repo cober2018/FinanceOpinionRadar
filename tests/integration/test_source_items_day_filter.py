@@ -3,15 +3,14 @@
 from datetime import datetime, timedelta
 
 import pytest
+from app.runtime.db.models import Creator, SourceAccount, SourceItem
+from app.runtime.db.session import get_db
 from fastapi.testclient import TestClient
-
-from app.db.models import Creator, SourceAccount, SourceItem
-from app.db.session import get_db
 
 
 @pytest.fixture
 def client(db_session):
-    from app.main import app
+    from app.bootstrap.asgi import app
 
     app.dependency_overrides[get_db] = lambda: db_session
     yield TestClient(app)
