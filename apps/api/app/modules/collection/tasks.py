@@ -9,11 +9,10 @@ import random  # noqa: F401  （部分任务模块使用；未用由 lint 摘除
 import structlog
 
 from app.bootstrap.celery import celery_app
-from app.runtime.db.session import get_session_factory
-from app.runtime.settings import get_settings
-
 from app.modules.collection import discovery
 from app.modules.content.media.contracts import MediaSourceAdapter
+from app.runtime.db.session import get_session_factory
+from app.runtime.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 

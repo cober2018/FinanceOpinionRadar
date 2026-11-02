@@ -9,11 +9,12 @@ import random  # noqa: F401  （部分任务模块使用；未用由 lint 摘除
 import structlog
 
 from app.bootstrap.celery import celery_app
+from app.modules.collection.tasks import (
+    build_adapter,  # 引擎工厂单点（collection→content 允许方向）
+)
+from app.modules.content.media.contracts import AdapterError
 from app.runtime.db.session import get_session_factory
 from app.runtime.settings import get_settings
-
-from app.modules.collection.tasks import build_adapter  # 引擎工厂单点（collection→content 允许方向）
-from app.modules.content.media.contracts import AdapterError
 
 logger = structlog.get_logger(__name__)
 
