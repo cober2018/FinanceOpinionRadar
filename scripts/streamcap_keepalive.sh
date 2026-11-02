@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# [统一架构 2026-11-03] 本脚本随 engines/recording 无头引擎退役：监控循环随引擎进程自启，
+# 不再依赖浏览器会话。生产切换到 radar-engine-recording 前保留备用（未授权不停生产）。
 # StreamCap v1.0.3 无头会话保活。
 #
 # 背景：StreamCap web 模式下，60s 开播探测任务只在【第一个浏览器会话连上时】启动

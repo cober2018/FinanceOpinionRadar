@@ -82,6 +82,24 @@ doctor: ## 检查本地开发环境 (docker 项在 Task 5 前仅 WARN)
 	if [ "$$fail" -ne 0 ]; then echo "存在 FAIL 项, 请按上方提示修复"; exit 1; fi; \
 	echo "本地环境检查通过"
 
+
+# ---- 统一架构：能力引擎（engines/）----
+.PHONY: engines engine-media engine-recording engine-danmaku engine-transcription
+
+engines: engine-media engine-recording engine-danmaku engine-transcription ## 构建全部能力引擎镜像/环境
+
+engine-media: ## 构建媒体引擎镜像（dtk 5.1.0 vendored，替代外部镜像）
+	docker build -t radar-engine-media -f engines/media/Dockerfile engines/media
+
+engine-recording: ## 构建录制引擎镜像（StreamCap v1.0.3 无头，无需浏览器会话）
+	docker build -t radar-engine-recording -f engines/recording/Dockerfile engines/recording
+
+engine-danmaku: ## 构建弹幕引擎镜像（douyinLive v2.2.1）
+	docker build -t radar-engine-danmaku -f engines/danmaku/Dockerfile engines/danmaku
+
+engine-transcription: ## 安装本产品 mlx 转写环境（Apple Silicon，替代 voice-pro venv）
+	bash engines/transcription/mlx/setup.sh
+
 lint: ## 运行 ruff + mypy 静态检查
 	$(PYTHON) -m ruff check apps/api tests scripts
 	$(PYTHON) -m mypy --config-file apps/api/pyproject.toml apps/api/app
