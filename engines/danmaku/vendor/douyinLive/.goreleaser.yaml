@@ -1,0 +1,53 @@
+version: 2
+
+project_name: douyinLive
+
+builds:
+  - id: douyinLive
+    main: ./cmd/main
+    binary: douyinLive
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.buildTag={{ .Tag }} -X main.buildCommit={{ envOrDefault "BUILD_COMMIT" .ShortCommit }} -X main.buildDate={{ envOrDefault "BUILD_DATE" .Date }} -X main.buildSource={{ envOrDefault "BUILD_SOURCE" "local" }} -X main.defaultSignProvider=local
+
+archives:
+  - id: douyinLive
+    ids:
+      - douyinLive
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}-{{ .Tag }}-{{ envOrDefault "BUILD_COMMIT" .ShortCommit }}-{{ .Os }}-{{ .Arch }}
+    files:
+      - README.md
+      - docs/**/*.md
+      - sign/README.md
+      - LICENSE
+      - config.example.yaml
+      - compose.yaml
+      - compose.data.yaml
+      - docs/http-api.md
+      - docs/openapi.yaml
+
+checksum:
+  name_template: '{{ .ProjectName }}-{{ .Tag }}-{{ envOrDefault "BUILD_COMMIT" .ShortCommit }}-checksums.txt'
+
+release:
+  name_template: "{{ .Tag }}"
+  prerelease: auto
+  mode: keep-existing
+  replace_existing_artifacts: true

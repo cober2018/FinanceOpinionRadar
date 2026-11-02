@@ -1,0 +1,62 @@
+# Binaries
+/main
+douyinLive
+*.exe
+*.zip
+*.7z
+*.tar.gz
+
+# IDE
+.idea
+.vscode
+/.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build
+/build/
+/dist/
+/release/
+/cmd/main/build-*
+
+# Protobuf
+/protobuf/*.zip
+
+# Config
+config.yaml
+config*.local.yaml
+/smoke-*.yaml
+
+# Logs
+*.log
+/logs/
+
+# Local captures / reverse-engineering exports
+/captures/
+/exports/
+/reports/
+*.har
+*.network-request
+*.network-response
+/tmp-codex-*
+
+# Temporary Python/JS inspection helpers and embedded runtimes
+/python311-embed/
+/diag_*.py
+/dis_pyz.py
+/functions_pyz.py
+/index_pyz.py
+/inspect_pyz.py
+/scan_pyz.py
+/scripts_extract*.py
+
+# Go
+*.test
+*.out
+/.gocache/
+/.gomodcache/
+
+# Node signer runtime
+/node_modules/

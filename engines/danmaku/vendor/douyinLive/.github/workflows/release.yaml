@@ -1,0 +1,200 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to upload assets to, for example v2.0.13.'
+        required: true
+        type: string
+      push_docker:
+        description: 'Build and push Docker image to GHCR'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  APP_NAME: douyinLive
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  release-meta:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+      build_date: ${{ steps.meta.outputs.build_date }}
+      build_source: ${{ steps.meta.outputs.build_source }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: Validate and capture metadata
+        id: meta
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tag must look like v1.2.3 or v1.2.3-rc.1."
+            exit 1
+          fi
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          echo "build_source=github-actions/${GITHUB_WORKFLOW}#${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify release candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: release-meta
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.release-meta.outputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install quality tools
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+
+      - name: Build and test
+        run: |
+          go build ./...
+          go test -count=1 ./...
+          go test -count=1 -race ./...
+          go vet ./...
+          staticcheck ./...
+          govulncheck ./...
+
+  docker:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: [release-meta, verify]
+    permissions:
+      contents: read
+      packages: write
+    if: github.event_name != 'workflow_dispatch' || inputs.push_docker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.release-meta.outputs.release_tag }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.2.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: docker_meta
+        uses: docker/metadata-action@v6.2.0
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/douyinlive
+          tags: |
+            type=raw,value=${{ needs.release-meta.outputs.release_tag }}
+            type=raw,value=latest,enable=${{ !contains(needs.release-meta.outputs.release_tag, '-') }}
+          labels: |
+            org.opencontainers.image.title=${{ env.APP_NAME }}
+            org.opencontainers.image.description=Douyin live WebSocket message forwarder
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}#readme
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push Docker image
+        id: docker_build
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            BUILD_TAG=${{ needs.release-meta.outputs.release_tag }}
+            BUILD_COMMIT=${{ needs.release-meta.outputs.short_sha }}
+            BUILD_DATE=${{ needs.release-meta.outputs.build_date }}
+            BUILD_SOURCE=${{ needs.release-meta.outputs.build_source }}
+            DEFAULT_SIGN_PROVIDER=local
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          annotations: ${{ steps.docker_meta.outputs.annotations }}
+
+      - name: Summarize Docker image
+        run: |
+          {
+            echo "### Docker image"
+            echo ""
+            echo "- Image: \`ghcr.io/${{ github.repository_owner }}/douyinlive\`"
+            echo "- Tag: \`${{ needs.release-meta.outputs.release_tag }}\`"
+            echo "- Digest: \`${{ steps.docker_build.outputs.digest }}\`"
+            echo "- Platforms: \`linux/amd64\`, \`linux/arm64\`"
+            echo "- Default sign provider: \`local\`"
+            echo "- Build source: \`${{ needs.release-meta.outputs.build_source }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-release:
+    name: Publish Go release assets
+    runs-on: ubuntu-latest
+    needs: [release-meta, verify]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.release-meta.outputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7.2.3
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean --parallelism 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_COMMIT: ${{ needs.release-meta.outputs.short_sha }}
+          BUILD_DATE: ${{ needs.release-meta.outputs.build_date }}
+          BUILD_SOURCE: ${{ needs.release-meta.outputs.build_source }}
+          GORELEASER_CURRENT_TAG: ${{ needs.release-meta.outputs.release_tag }}

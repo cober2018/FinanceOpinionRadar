@@ -1,0 +1,4 @@
+# 冻结自 voice-pro venv_arm64 实测版本（2026-11-03，whisper-medium 13.4min 中文音频 ~59s 基线）
+mlx==0.32.0
+mlx-metal==0.32.0
+mlx-whisper==0.4.3

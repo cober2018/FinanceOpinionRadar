@@ -1,0 +1,2 @@
+[console_scripts]
+dtk = dtk.cli.main:app

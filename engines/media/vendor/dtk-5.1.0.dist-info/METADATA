@@ -1,0 +1,31 @@
+Metadata-Version: 2.5
+Name: dtk
+Version: 5.1.0
+Summary: Self-hosted Douyin / TikTok data API with an identity pool, scheduler, MCP and web console
+Author: Evil0ctal
+License: Apache-2.0
+Requires-Python: <3.14,>=3.12
+Requires-Dist: alembic>=1.13
+Requires-Dist: argon2-cffi>=23.1
+Requires-Dist: asyncpg>=0.30
+Requires-Dist: cryptography>=43.0
+Requires-Dist: fastapi>=0.115
+Requires-Dist: httpx>=0.28
+Requires-Dist: mcp>=2.2.0
+Requires-Dist: pydantic-settings>=2.6
+Requires-Dist: pydantic>=2.9
+Requires-Dist: python-multipart>=0.0.20
+Requires-Dist: redis[hiredis]>=8.1.0
+Requires-Dist: rich>=13.7
+Requires-Dist: sqlalchemy[asyncio]>=2.0.52
+Requires-Dist: structlog>=24.4
+Requires-Dist: typer>=0.12
+Requires-Dist: uvicorn[standard]>=0.52.4
+Requires-Dist: wreq<1.0,>=0.12
+Provides-Extra: dev
+Requires-Dist: mypy>=1.14; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.25; extra == 'dev'
+Requires-Dist: pytest-cov>=6.0; extra == 'dev'
+Requires-Dist: pytest>=8.3; extra == 'dev'
+Requires-Dist: ruff>=0.9; extra == 'dev'
+Requires-Dist: types-redis; extra == 'dev'

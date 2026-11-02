@@ -1,0 +1,18 @@
+# 与 vendored dtk 5.1.0 dist-info METADATA 的 Requires-Dist 一致（安装冻结）
+alembic>=1.13
+argon2-cffi>=23.1
+asyncpg>=0.30
+cryptography>=43.0
+fastapi>=0.115
+httpx>=0.28
+mcp>=2.2.0
+pydantic-settings>=2.6
+pydantic>=2.9
+python-multipart>=0.0.20
+redis[hiredis]>=8.1.0
+rich>=13.7
+sqlalchemy[asyncio]>=2.0.52
+structlog>=24.4
+typer>=0.12
+uvicorn[standard]>=0.52.4
+wreq<1.0,>=0.12

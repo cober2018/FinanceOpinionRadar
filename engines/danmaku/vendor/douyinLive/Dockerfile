@@ -1,0 +1,33 @@
+﻿FROM golang:1.26.6-alpine3.24 AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG BUILD_TAG=dev
+ARG BUILD_COMMIT=unknown
+ARG BUILD_DATE=unknown
+ARG BUILD_SOURCE=local
+ARG DEFAULT_SIGN_PROVIDER=local
+
+WORKDIR /src
+RUN apk add --no-cache git ca-certificates tzdata
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X main.buildTag=${BUILD_TAG} -X main.buildCommit=${BUILD_COMMIT} -X main.buildDate=${BUILD_DATE} -X main.buildSource=${BUILD_SOURCE} -X main.defaultSignProvider=${DEFAULT_SIGN_PROVIDER}" -o /out/douyinLive ./cmd/main
+
+FROM alpine:3.24
+
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+
+COPY --from=builder /out/douyinLive /app/douyinLive
+COPY config.example.yaml /app/config.example.yaml
+
+EXPOSE 1088
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -q -O - http://127.0.0.1:1088/health >/dev/null || exit 1
+
+ENTRYPOINT ["/app/douyinLive"]
