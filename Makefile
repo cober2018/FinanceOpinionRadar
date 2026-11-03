@@ -22,8 +22,17 @@ dev: ## 启动 API 开发服务器 (前端开发服务器用 make web)
 	docker compose up -d
 	$(PYTHON) -m uvicorn app.bootstrap.asgi:app --reload --host $(HOST) --port $(PORT) --app-dir apps/api
 
-up: ## 一键幂等拉起全部组件：docker 依赖 + dtk + API :8010 + worker + CPA API 隧道（已在跑的跳过）
+up: ## 一键幂等拉起全部组件：docker 依赖 + 引擎栈(统一 compose) + API :8010 + worker + CPA API 隧道
 	@bash scripts/dev_up.sh up
+
+deploy: ## 发版到生产（应用：API+双 worker；引擎切换用 make deploy-engines）
+	@bash scripts/deploy.sh
+
+deploy-engines: ## 发版并把引擎栈切换到本仓库镜像（首次迁移先跑 make migrate-handover）
+	@bash scripts/deploy.sh --engines
+
+migrate-handover: ## 一次性迁移交接：旧布局(外部引擎容器+旧入口) → 统一架构（识别/暂停/让名/身份数据/核对）
+	@bash scripts/migrate_handover.sh
 
 status: ## 诊断组件存活（Postgres/Redis/dtk/API/worker/CPA API 隧道），DOWN 时提示 make up
 	@bash scripts/dev_up.sh status

@@ -21,7 +21,7 @@ API_LOG=/tmp/radar-api-8010.log
 WORKER_LOG=/tmp/radar-worker-beat.log
 TUNNEL_PORT=8317
 PY=.venv/bin/python
-DTK_CONTAINERS=(douyin-api dtk-worker dtk-postgres dtk-redis)
+ENGINE_COMPOSE=infra/docker/docker-compose.douyin.yml
 
 c_ok=$'\033[32mOK\033[0m'
 c_down=$'\033[31mDOWN\033[0m'
@@ -31,7 +31,8 @@ worker_alive() { pgrep -f "celery -A app.bootstrap.celery" >/dev/null 2>&1; }
 pg_alive() { docker exec financeopinionradar-postgres-1 pg_isready -U radar -d radar >/dev/null 2>&1; }
 # 本项目 Redis 为 compose 容器（端口见 .env REDIS_PORT，避开共用 6379）
 redis_alive() { redis-cli -h 127.0.0.1 -p "$REDIS_PORT" ping 2>/dev/null | grep -q PONG; }
-dtk_alive() { curl -s -o /dev/null -m 3 "http://localhost:8080/health" 2>/dev/null; }
+# 媒体引擎存活：统一架构引擎的文档端点为 /swagger（旧镜像 /docs 已 404）
+dtk_alive() { curl -s -o /dev/null -m 3 "http://localhost:8080/swagger" 2>/dev/null; }
 
 wait_pg() {
   for _ in $(seq 1 30); do
@@ -44,9 +45,17 @@ wait_pg() {
 start_deps() {
   echo "==> docker compose up -d（postgres/redis/minio）"
   docker compose up -d || true
-  # dtk 容器组属外部 compose：存在才 start，已在跑无害，未安装忽略
-  echo "==> dtk 容器组（douyin-api/dtk-worker/dtk-postgres/dtk-redis）"
-  docker start "${DTK_CONTAINERS[@]}" >/dev/null 2>&1 || true
+  # 统一架构：媒体/录制/弹幕引擎由本仓库 compose 构建（engines/*，验收 A4）。
+  # 需要 .env 提供 DTK_SECRET_KEY（引擎凭据主密钥，跨重启必须稳定）。
+  echo "==> 引擎栈（$ENGINE_COMPOSE）"
+  if grep -q '^DTK_SECRET_KEY=' .env 2>/dev/null; then
+    set -a; . ./.env; set +a
+    docker compose -f "$ENGINE_COMPOSE" up -d || true
+  else
+    echo "    跳过：.env 缺 DTK_SECRET_KEY。首次启用引擎："
+    echo "      echo \"DTK_SECRET_KEY=\$(openssl rand -base64 48)\" >> .env && make up"
+    echo "    （密钥一经使用不可更换，否则已存抖音凭据不可解）"
+  fi
 }
 
 # 新会话（setsid）启动后台服务：调用方进程组被整体杀掉时（如 launchd bootout
@@ -110,7 +119,7 @@ report() {
   echo "组件状态："
   echo "  Postgres(容器)   $p"
   echo "  Redis(:$REDIS_PORT)        $r"
-  echo "  dtk 解析(:8080)  $d   （不监测抖音可忽略）"
+  echo "  媒体引擎(:8080)  $d   （不监测抖音可忽略）"
   echo "  API(:$API_PORT)        $a"
   echo "  worker+beat      $w"
   if tunnel_port_up; then
