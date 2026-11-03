@@ -121,3 +121,30 @@
 ### 边界重申
 
 未合并 main、未推送远端、未发布生产、未停用/删除任何生产服务或数据；生产 dtk/streamcap/douyinlive 旧栈仍在原样运行。
+
+## 2026-11-03 复审修复记录（用户授权后执行）
+
+独立复审（见上轮用户会话）确认 3 项缺陷，经用户授权在本分支修复。逐项证据：
+
+### P0-1 录制分片挂载断裂 → 已修复并实证
+
+- 改动：`docker-compose.douyin.yml` 分片挂载 `/data/downloads` → **`/app/downloads`**（user_settings.live_save_path 存量值与 recorder_bridge 默认值所在路径）；Dockerfile VOLUME 同步；compose 内注释说明原因。
+- 实证：按生产语义挂载（config→/data/config、分片→/app/downloads）启动 `radar-engine-recording`，容器内 `touch /app/downloads/probe` **宿主挂载目录立即可见**——写盘链路贯通；监控循环 60s 正常启动。
+
+### P0-2 douyin-api 健康检查必然失败 → 已修复并实证
+
+- 改动：healthcheck URL `/docs` → `/swagger`（原 /docs 是原镜像 console 静态页，产品引擎镜像无 console）。
+- 实证（一次性 pg/redis + 引擎容器）：`/swagger` **200**、`/docs` **404**（坐实旧检查必挂）、容器内执行 healthcheck 原句**退出码 0**。
+
+### P1 StreamCap 依赖未冻结 + 运行时二进制缺失 → 已修复并实证
+
+- 复审补充事实：**原镜像 flet 即 0.85.0**，`TextButton(text=)` 崩溃为上游自带缺陷，非构建漂移；其触发条件是"组件缺失"。
+- 真正缺口：**原镜像自带 node v20.20.2（douyin 取流 JS 签名运行时），产品镜像未装** → 触发安装对话框（撞上游 bug）且录制期取流会失败。
+- 改动：`requirements.frozen.txt`（原镜像 `pip freeze` 全量 64 包逐字导出，覆盖 `>=` 浮动约束；streamget/flet 等不再随构建漂移）；Dockerfile 补 `nodejs`（trixie 20.x 对齐原 20.20.2）并改用冻结清单；新增 `.dockerignore`（排除本地 .venv 134MB 构建上下文）。
+- 实证：重建镜像后容器启动 **无 Missing components、无 TextButton、无 Traceback**；node v20.19.2/ffmpeg 7.1.5 在位；监控循环+心跳+写盘映射正常。
+
+### 边界与遗留
+
+- 本轮仅改 `engines/recording/*` 与 compose 两处，未触碰 `apps/`（后端/前端测试不受影响，未重跑全量）；生产未动。
+- 复审提出的 P1（7 处跨域导入方向违例）与 P2 小项（extras 丢失、dtk-worker 无 build 键、死导入等）**未在本轮处理**，留待验收 Agent 裁决后统一处置。
+- 真实直播间端到端录制（ffmpeg 落真实分片）仍待有凭据环境验证——与原交接口径一致。
