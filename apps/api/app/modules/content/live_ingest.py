@@ -130,8 +130,13 @@ def _parse_segment_index(name: str) -> int | None:
     return stamp * 10_000 + int(m.group(3))
 
 
-def ingest_live_segments(session, provider=None) -> dict:
-    """beat 扫描入口：单飞闸 → 扫目录 → 建会话 → 串行处理 → 收尾 → 计数行（F12）。"""
+def ingest_live_segments(session, provider=None, *, withdraw=None) -> dict:
+    """beat 扫描入口：单飞闸 → 扫目录 → 建会话 → 串行处理 → 收尾 → 计数行（F12）。
+
+    withdraw：来源信息（标题/起播时刻）变化时的撤回协调入口，由任务层注入
+    workflows.withdraw_if_invalid（content 不反向依赖 workflows）；None 时跳过
+    撤回（隔离测试/演练直调场景）。
+    """
     s = get_settings()
     if not s.live_segments_dir:
         logger.info("live_ingest_noop", reason="live_segments_dir 未配置")
@@ -153,7 +158,7 @@ def ingest_live_segments(session, provider=None) -> dict:
         _close_stale_sessions(session, s.live_close_grace_sec)
         for day in scan_live_dir(root):
             for sd in _split_day_sessions(day, s.live_close_grace_sec):
-                item, session_created = _ensure_session_with_flag(session, sd)
+                item, session_created = _ensure_session_with_flag(session, sd, withdraw=withdraw)
                 if item is None:
                     continue
                 if session_created:
@@ -316,13 +321,15 @@ def _resolve_live_account(session, author: str) -> SourceAccount | None:
     )
 
 
-def _ensure_session_with_flag(session, sd: LiveSessionDir) -> tuple[SourceItem | None, bool]:
+def _ensure_session_with_flag(
+    session, sd: LiveSessionDir, *, withdraw=None
+) -> tuple[SourceItem | None, bool]:
     """_ensure_session + 是否新建：新建=True 用于开播事件（弹幕即时刻派）。"""
     before_ids = {
         i
         for (i,) in session.query(SourceItem.id).filter(SourceItem.item_type == "live").all()
     }
-    item = _ensure_session(session, sd)
+    item = _ensure_session(session, sd, withdraw=withdraw)
     return item, (item is not None and item.id not in before_ids)
 
 
@@ -340,7 +347,7 @@ def _dispatch_danmaku_on_live(session, item) -> None:
         log.warning("danmaku_dispatch_on_live_failed", session_item=item.id, error=str(exc)[:120])
 
 
-def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
+def _ensure_session(session, sd: LiveSessionDir, *, withdraw=None) -> SourceItem | None:
     """F2：会话键精确查重 → 旧键覆盖归并 → 未收尾会话归并（跨零点）→ 新建；无账号 None。
 
     会话身份（2026-09-22 同日加播修复）：当天第一场沿用日期键（历史存量兼容）；
@@ -363,7 +370,7 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
     )
     if legacy is not None and _live_covers(legacy, first_index):
         # 未收尾则继续并入；已收尾由主循环终态守卫跳过
-        _rename_if_stale(session, legacy, account, sd, first_index)
+        _rename_if_stale(session, legacy, account, sd, first_index, withdraw=withdraw)
         return legacy
     if legacy is None:
         key = legacy_key
@@ -378,7 +385,7 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
             .one_or_none()
         )
         if exact is not None:
-            _rename_if_stale(session, exact, account, sd, first_index)
+            _rename_if_stale(session, exact, account, sd, first_index, withdraw=withdraw)
             return exact
     open_item = (
         session.query(SourceItem)
@@ -391,7 +398,7 @@ def _ensure_session(session, sd: LiveSessionDir) -> SourceItem | None:
         .first()
     )
     if open_item is not None:  # 跨零点：目录日期只做目录键，会话身份未收尾优先
-        _rename_if_stale(session, open_item, account, sd, first_index)
+        _rename_if_stale(session, open_item, account, sd, first_index, withdraw=withdraw)
         return open_item
     title = _session_title(session, account, sd, first_index=first_index)
     # 墓碑守卫：该会话键曾被用户删除 → 不重建（否则删除复活死循环，750 实录）
@@ -434,7 +441,10 @@ def _session_title(session, account: SourceAccount, sd: LiveSessionDir, *, first
     return title
 
 
-def _rename_if_stale(session, item: SourceItem, account: SourceAccount, sd: LiveSessionDir, first_index: int | None) -> None:
+def _rename_if_stale(
+    session, item: SourceItem, account: SourceAccount, sd: LiveSessionDir, first_index: int | None,
+    *, withdraw=None,
+) -> None:
     """存量会话元数据刷成当前事实：标题（主播名+起播时分）/ published_at / duration_ms。
 
     起播时刻取注册表最早分片（真实起播），不用本次扫描的分片——同一条目被多个
@@ -476,10 +486,10 @@ def _rename_if_stale(session, item: SourceItem, account: SourceAccount, sd: Live
     if start is not None and item.published_at != start:
         item.published_at = start
         summary_source_changed = True
-    if summary_source_changed and session is not None:
-        from app.modules.workflows import withdraw_if_invalid
-
-        withdraw_if_invalid(session, item.id)
+    if summary_source_changed and session is not None and withdraw is not None:
+        # 撤回协调入口由任务层注入（content 不反向依赖 workflows）：
+        # 来源信息变化与 withdrawn 事件同事务提交（design 2.2）
+        withdraw(session, item.id)
     duration = sum(
         int(v.get("duration_ms") or 0)
         for v in (live.get("processed") or {}).values()

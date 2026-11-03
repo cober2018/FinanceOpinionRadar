@@ -9,20 +9,15 @@ from pydantic import BaseModel, HttpUrl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.collection import discovery
-from app.modules.collection.discovery import FALLBACK_CREATOR_NAME
 from app.modules.content.media.url_guard import UrlNotAllowedError, ensure_allowed_url
-from app.modules.sources.repository import SourceAccountRepository
-from app.runtime.db.models import Creator, SourceAccount, SourceItem
+from app.modules.sources.identity import SEC_UID_RE
+from app.runtime.db.models import SourceAccount
 from app.runtime.db.session import get_db
 from app.runtime.settings import get_settings
 
 router = APIRouter(prefix="/source-accounts", tags=["source-accounts"])
 
 DbDep = Annotated[Session, Depends(get_db)]
-
-# douyin 主页 sec_uid（与 adapter 侧一致的账号归一锚点，核对项②）
-_SEC_UID_RE = re.compile(r"/user/(MS4w[\w-]+)")
 
 
 class CreateSourceAccountRequest(BaseModel):
@@ -93,82 +88,6 @@ def _reject_bad_profile_url(url: str) -> None:
     )
 
 
-def _resolve_youtube_channel_id(url: str) -> str | None:
-    """yt-dlp 解析 @handle → channel_id（UC 开头）。失败返回 None（跳过跨形态查重）。"""
-    import subprocess
-
-    try:
-        binary = get_settings().ytdlp_binary or "yt-dlp"
-        proc = subprocess.run(
-            [binary, "--print", "channel_url", "--skip-download", url],
-            capture_output=True,
-            text=True,
-            timeout=90,
-            check=False,
-        )
-    except (subprocess.SubprocessError, FileNotFoundError):
-        return None
-    if proc.returncode != 0:
-        return None
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        m = re.search(r"channel/(UC[\w-]{10,})", line)
-        if m:
-            return m.group(1)
-    return None
-
-
-def _channel_identity(platform: str, url: str) -> str | None:
-    """从 URL 提取频道稳定身份：YouTube=channel_id（UC 开头，@handle 解析不出则返回
-    handle 本身）；B 站=space 数字 mid。用于注册查重（同一频道多形态 URL 视为同一身份）。"""
-    if platform == "youtube":
-        m = re.search(r"channel/(UC[\w-]{10,})", url)
-        if m:
-            return m.group(1)
-        m = re.search(r"/@([A-Za-z0-9._-]+)", url)
-        if m:
-            return f"@{m.group(1)}"
-    elif platform == "bilibili":
-        m = re.search(r"space\.bilibili\.com/(\d+)", url)
-        if m:
-            return m.group(1)
-    return None
-
-
-def _reject_duplicate_channel(session: Session, platform: str, identity: str) -> None:
-    """同频道已注册 → 409（账号可能有多种 URL 形态，跨 external_id/url 匹配）。"""
-    dup = (
-        session.query(SourceAccount)
-        .filter(
-            SourceAccount.platform == platform,
-            (SourceAccount.external_id == identity)
-            | (SourceAccount.url.ilike(f"%{identity}%")),
-        )
-        .first()
-    )
-    if dup is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"该频道已注册为账号 #{dup.id}（{identity}），"
-                "请勿重复添加；如需更换 URL 请编辑原账号"
-            ),
-        )
-
-
-def _derive_external_id(platform: str, url: str) -> str:
-    """douyin 从主页 URL 提取 sec_uid（账号归一的关键，核对项②）；其余平台以 URL 为身份。"""
-    if platform == "douyin":
-        m = _SEC_UID_RE.search(url)
-        if m is None:
-            raise HTTPException(
-                status_code=422,
-                detail="抖音账号 URL 需为主页形态 https://www.douyin.com/user/<sec_uid>",
-            )
-        return m.group(1)
-    return url
-
-
 @router.post("", response_model=SourceAccountResponse, status_code=201)
 def create_source_account(body: CreateSourceAccountRequest, session: DbDep):
     url = str(body.url)
@@ -176,52 +95,25 @@ def create_source_account(body: CreateSourceAccountRequest, session: DbDep):
         ensure_allowed_url(url, get_settings().media_host_allowlist)
     except UrlNotAllowedError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    external_id = _derive_external_id(body.platform, url)
-
-    # 注册查重：同一频道多形态 URL（channel_id / @handle / space mid）视为同一身份
-    identity = _channel_identity(body.platform, url)
-    # @handle 与 channel_id 字符串不相交——跨形态需 resolve 出 channel_id 才能识别同频道
-    if body.platform == "youtube" and identity and identity.startswith("@"):
-        identity = _resolve_youtube_channel_id(url) or identity
-    if identity:
-        _reject_duplicate_channel(session, body.platform, identity)
-
-    creator = discovery.get_or_create_creator(session, body.display_name)
-    account = SourceAccountRepository(session).upsert_by_external(
-        creator_id=creator.id,
-        platform=body.platform,
-        external_id=external_id,
-        url=url,
-        discovery_mode=body.discovery_mode,
-    )
-    # upsert 撞上历史/复活账号（creator_id 不可变）时：占位名升级为用户填的真名
-    if body.display_name:
-        creator = session.get(Creator, account.creator_id)
-        if creator is not None and creator.display_name in (
-            external_id,
-            FALLBACK_CREATOR_NAME,
-        ):
-            creator.display_name = body.display_name
-            from app.modules.workflows import withdraw_if_invalid
-
-            item_ids = session.scalars(
-                select(SourceItem.id)
-                .join(SourceAccount, SourceAccount.id == SourceItem.source_account_id)
-                .where(SourceAccount.creator_id == creator.id)
-                .order_by(SourceItem.id)
-                .with_for_update(of=SourceItem)
-            ).all()
-            for item_id in item_ids:
-                withdraw_if_invalid(session, item_id)
-    account.poll_interval_sec = body.poll_interval_sec
-    account.poll_interval_min_sec = body.poll_interval_min_sec
-    account.poll_interval_max_sec = body.poll_interval_max_sec
+    live_room_url = None
     if body.live_room_url is not None:
-        _ensure_live_room_url(str(body.live_room_url))
-        account.live_room_url = str(body.live_room_url)
-    account.config_json = body.config_json
-    session.commit()
-    return account
+        live_room_url = str(body.live_room_url)
+        _ensure_live_room_url(live_room_url)
+    from app.modules import workflows
+
+    # 跨域用例（sources upsert/复活改名 + delivery 撤回同事务）由 workflows 协调
+    return workflows.upsert_source_account(
+        session,
+        platform=body.platform,
+        url=url,
+        display_name=body.display_name,
+        discovery_mode=body.discovery_mode,
+        poll_interval_sec=body.poll_interval_sec,
+        poll_interval_min_sec=body.poll_interval_min_sec,
+        poll_interval_max_sec=body.poll_interval_max_sec,
+        live_room_url=live_room_url,
+        config_json=body.config_json,
+    )
 
 
 @router.get("", response_model=list[SourceAccountResponse])
@@ -252,7 +144,7 @@ def patch_source_account(account_id: int, body: PatchSourceAccountRequest, sessi
         elif field == "url" and value is not None:
             value = str(value)
             if account.platform == "douyin":  # 主页形态校验 + sec_uid 重锚（与注册同规则）
-                m = _SEC_UID_RE.search(value)
+                m = SEC_UID_RE.search(value)
                 if m is None:
                     _reject_bad_profile_url(value)  # raises 422
                     return  # 不可达，仅为类型收窄

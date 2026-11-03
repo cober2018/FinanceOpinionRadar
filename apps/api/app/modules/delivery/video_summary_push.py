@@ -12,7 +12,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.workflows import serialize_event
+from app.modules.delivery.summary_events import serialize_event
 from app.runtime.db.models import PushChannel, VideoSummaryDelivery, VideoSummaryEvent
 from app.runtime.settings import get_settings
 

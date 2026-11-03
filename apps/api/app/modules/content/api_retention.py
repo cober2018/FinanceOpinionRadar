@@ -16,9 +16,9 @@ DbDep = Annotated[Session, Depends(get_db)]
 @router.post("/sweep")
 def run_sweep(session: DbDep, dry_run: bool = False):
     """手动触发一轮清理。dry_run=true 只统计到期条目，不删除（预览）。"""
-    from app.modules.content.retention import sweep_expired_content
+    from app.modules import workflows
 
-    return sweep_expired_content(session, dry_run=dry_run)
+    return workflows.sweep_expired_content(session, dry_run=dry_run)
 
 
 @router.post("/orphan-media")

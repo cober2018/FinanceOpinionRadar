@@ -215,8 +215,10 @@ def rolling_summarize_live(session, item_id: int, *, provider=None) -> dict:
         logger.warning("live_rolling_summary_empty", item_id=item_id, raw_head=getattr(resp, "raw_head", "")[:120])
         return {"item_id": item_id, "status": "skipped_empty_output"}
 
-    item.viewpoint_summary = summary[:500]
-    item.summary_generated_at = datetime.now(UTC)
+    # 总结字段经 content 写入口保存（collection 不直接改总结列，design 2.1）
+    from app.modules.content.summaries import save_viewpoint_summary
+
+    save_viewpoint_summary(session, item, summary)
     session.commit()
     logger.info("live_rolling_summary_done", item_id=item_id, confirmed=len(rows), chars=len(summary))
     return {"item_id": item_id, "status": "done", "confirmed": len(rows), "summary": summary}

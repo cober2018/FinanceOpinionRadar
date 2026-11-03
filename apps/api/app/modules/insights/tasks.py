@@ -315,7 +315,6 @@ def live_finalize_after_close(item_id: int) -> dict:
 @celery_app.task(name="summarize_source_item_viewpoints")
 def summarize_source_item_viewpoints(item_id: int) -> dict:
     """视频观点一句话总结（最后一个观点复核完自动 / 抽屉手动重生成）。"""
-    from app.modules.insights import summarizer
     from app.runtime.db.models import JobRun, SourceItem
 
     session = get_session_factory()()
@@ -328,7 +327,9 @@ def summarize_source_item_viewpoints(item_id: int) -> dict:
         session.add(job)
         session.commit()
         job_id = job.id
-        out = summarizer.summarize_source_item(session, item_id)
+        from app.modules.workflows import summarize_item_viewpoints
+
+        out = summarize_item_viewpoints(session, item_id)
         with get_session_factory()() as s2:
             row = s2.get(JobRun, job_id)
             row.status = "success"

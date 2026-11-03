@@ -13,8 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.modules.content.api_transcripts import _search_impl
 from app.modules.delivery.open_api.deps import require_api_key
+from app.modules.delivery.summary_events import serialize_event
 from app.modules.insights.api_viewpoints import _serialize
-from app.modules.workflows import current_event, serialize_event, valid_summary_candidates
+
+# 实时资格组合查询经 workflows（design 2.1 对开放接口的明文豁免方向）
+from app.modules.workflows import current_event, valid_summary_candidates
 from app.runtime.db.models import (
     Creator,
     Entity,

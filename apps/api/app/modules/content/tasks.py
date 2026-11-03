@@ -134,13 +134,17 @@ def dispatch_pending_prepares() -> int:
 
 @celery_app.task(name="ingest_live_segments")  # E2：单飞闸在编排内（pg advisory lock）
 def ingest_live_segments() -> dict:
+    from app.modules import workflows
     from app.modules.content import live_ingest
     from app.modules.content.transcription import get_transcription_provider
 
     session = get_session_factory()()
     try:
+        # 撤回协调入口经参数注入（content 域不反向依赖 workflows）：
+        # 会话标题/起播时刻变化时，同事务撤回旧 ready 事件（design 2.2）
         return live_ingest.ingest_live_segments(
-            session, get_transcription_provider()
+            session, get_transcription_provider(),
+            withdraw=workflows.withdraw_if_invalid,
         )
     finally:
         session.close()
@@ -212,11 +216,11 @@ def retry_failed_prepares() -> int:
 
 @celery_app.task(name="sweep_content_retention")  # 单飞闸在编排内（pg advisory lock）
 def sweep_content_retention() -> dict:
-    from app.modules.content.retention import sweep_expired_content
+    from app.modules import workflows
 
     session = get_session_factory()()
     try:
-        return sweep_expired_content(session)
+        return workflows.sweep_expired_content(session)
     finally:
         session.close()
 

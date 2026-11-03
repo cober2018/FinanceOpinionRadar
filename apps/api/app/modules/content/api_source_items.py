@@ -543,80 +543,9 @@ def delete_source_item(item_id: int, session: DbDep):
     item = session.get(SourceItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail=f"source_item {item_id} 不存在")
-    from app.modules.workflows import erase_deleted_item_history
+    from app.modules import workflows
 
-    erase_deleted_item_history(session, item.id)
-    _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
-    _purge_item_files(session, item)
-    session.delete(item)
-    session.commit()
-    return {"deleted": item_id, "tombstoned": True}
-
-
-def _purge_item_files(session: Session, item) -> dict:
-    """条目物理文件清理：MinIO 对象（音频/转录）+ 本地直播分片。失败不阻断删行。"""
-    from pathlib import Path
-
-    import structlog
-
-    from app.runtime.db.models import MediaAsset
-
-    log = structlog.get_logger(__name__)
-    purged = {"s3": 0, "local": 0}
-    uris = [
-        uri
-        for (uri,) in session.query(MediaAsset.storage_uri)
-        .filter(MediaAsset.source_item_id == item.id)
-        .all()
-        if uri
-    ]
-    from app.runtime.storage.base import StorageError
-
-    for uri in uris:
-        if uri.startswith("s3://"):
-            key = uri.partition("://")[2].partition("/")[2]
-            if not key:
-                continue
-            try:
-                from app.runtime.storage import get_storage
-
-                get_storage().delete(key)
-                purged["s3"] += 1
-            except StorageError as exc:
-                log.warning("purge_s3_delete_failed", item_id=item.id, key=key[:80], error=str(exc)[:120])
-        else:  # 本地路径：直播转写临时音频多已不存在，静默跳过
-            Path(uri).unlink(missing_ok=True)
-            purged["local"] += 1
-    live = (item.metadata_json or {}).get("live") or {}
-    for p in (live.get("segment_paths") or {}).values():
-        try:
-            Path(p).unlink(missing_ok=True)
-            purged["local"] += 1
-        except OSError as exc:
-            log.warning("purge_segment_unlink_failed", item_id=item.id, error=str(exc)[:120])
-    if purged["s3"] or purged["local"]:
-        log.info("purge_item_files_done", item_id=item.id, **purged)
-    return purged
-
-
-def _tombstone_if_absent(session: Session, source_account_id: int | None, external_item_id: str) -> None:
-    if source_account_id is None:
-        return
-    from app.runtime.db.models import DeletedItemRef
-
-    exists = (
-        session.query(DeletedItemRef.id)
-        .filter_by(
-            source_account_id=source_account_id, external_item_id=external_item_id
-        )
-        .first()
-    )
-    if exists is None:
-        session.add(
-            DeletedItemRef(
-                source_account_id=source_account_id, external_item_id=external_item_id
-            )
-        )
+    return workflows.delete_source_item(session, item)
 
 
 class BatchDeleteRequest(BaseModel):
@@ -626,21 +555,6 @@ class BatchDeleteRequest(BaseModel):
 @router.post("/batch-delete", status_code=200)
 def batch_delete_items(body: BatchDeleteRequest, session: DbDep):
     """批量物理删除（视频库多选）：逐条级联 + 墓碑，返回成功/失败清单。"""
-    from app.runtime.db.models import SourceItem
+    from app.modules import workflows
 
-    deleted: list[int] = []
-    missing: list[int] = []
-    from app.modules.workflows import erase_deleted_item_history
-
-    for item_id in body.ids:
-        item = session.get(SourceItem, item_id)
-        if item is None:
-            missing.append(item_id)
-            continue
-        erase_deleted_item_history(session, item.id)
-        _tombstone_if_absent(session, item.source_account_id, item.external_item_id)
-        _purge_item_files(session, item)
-        session.delete(item)
-        deleted.append(item_id)
-    session.commit()
-    return {"deleted": deleted, "missing": missing}
+    return workflows.batch_delete_source_items(session, body.ids)

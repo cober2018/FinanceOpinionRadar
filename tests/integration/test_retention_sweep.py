@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.modules.content.retention import sweep_expired_content
+from app.modules.workflows import sweep_expired_content
 from app.runtime.db.models import (
     ContentSummary,
     Creator,

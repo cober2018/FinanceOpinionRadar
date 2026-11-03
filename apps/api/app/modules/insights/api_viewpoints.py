@@ -8,8 +8,6 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.modules.insights.audit import write_audit
-from app.modules.insights.history import build_snapshot
 from app.runtime.db.models import Creator, Entity, SourceAccount, SourceItem, Topic, Viewpoint
 from app.runtime.db.session import get_db
 
@@ -76,21 +74,6 @@ def _get_vp_or_404(session: Session, item_id: int) -> Viewpoint:
     if vp is None:
         raise HTTPException(status_code=404, detail=f"viewpoint {item_id} 不存在")
     return vp
-
-
-def _lock_item_for_review(session: Session, vp: Viewpoint) -> None:
-    session.scalar(
-        select(SourceItem).where(SourceItem.id == vp.source_item_id).with_for_update()
-    )
-    session.refresh(vp)
-
-
-def _item_ready_when_no_pending(session: Session, item: SourceItem) -> None:
-    """人工复核收尾：无剩余待审 → ready + 派发总结（实现在 summarizer，
-    与 reviewer 自动确认路径/beat 兜底共用同一道闸）。"""
-    from app.modules.insights.summarizer import promote_item_if_reviewed
-
-    promote_item_if_reviewed(session, item)
 
 
 @router.get("")
@@ -176,70 +159,25 @@ def get_viewpoint(viewpoint_id: int, session: DbDep):
 @router.post("/{viewpoint_id}/confirm")
 def confirm_viewpoint(viewpoint_id: int, session: DbDep, reason: str | None = None):
     """RAD-052：人工确认 → confirmed + 快照构建（RAD-060）+ item ready 检查。"""
-    vp = _get_vp_or_404(session, viewpoint_id)
-    _lock_item_for_review(session, vp)
-    before = {"verification_status": vp.verification_status}
-    if vp.verification_status == "confirmed":
-        return {"id": vp.id, "verification_status": "confirmed", "already": True}
-    vp.verification_status = "confirmed"
-    vp.review_source = "manual"
-    from app.modules.workflows import withdraw_if_invalid
+    from app.modules import workflows
 
-    withdraw_if_invalid(session, vp.source_item_id)
-    session.commit()
-    write_audit(
-        session,
-        actor="console",
-        action="confirm",
-        resource_type="viewpoint",
-        resource_id=vp.id,
-        before=before,
-        after={"verification_status": "confirmed"},
-        reason=reason,
-    )
-    if vp.topic_id is not None:
-        build_snapshot(session, vp)
-    item = session.get(SourceItem, vp.source_item_id)
-    if item is not None:
-        _item_ready_when_no_pending(session, item)
-    session.commit()
-    return {"id": vp.id, "verification_status": "confirmed"}
+    vp = _get_vp_or_404(session, viewpoint_id)
+    return workflows.confirm_viewpoint(session, vp, reason=reason)
 
 
 @router.post("/{viewpoint_id}/reject")
 def reject_viewpoint(viewpoint_id: int, session: DbDep, reason: str | None = None):
     """RAD-052：人工驳回 → rejected（不删数据）。"""
-    vp = _get_vp_or_404(session, viewpoint_id)
-    _lock_item_for_review(session, vp)
-    before = {"verification_status": vp.verification_status}
-    vp.verification_status = "rejected"
-    vp.review_source = "manual"
-    from app.modules.workflows import withdraw_if_invalid
+    from app.modules import workflows
 
-    withdraw_if_invalid(session, vp.source_item_id)
-    session.commit()
-    write_audit(
-        session,
-        actor="console",
-        action="reject",
-        resource_type="viewpoint",
-        resource_id=vp.id,
-        before=before,
-        after={"verification_status": "rejected"},
-        reason=reason,
-    )
-    item = session.get(SourceItem, vp.source_item_id)
-    if item is not None:
-        _item_ready_when_no_pending(session, item)
-    session.commit()
-    return {"id": vp.id, "verification_status": "rejected"}
+    vp = _get_vp_or_404(session, viewpoint_id)
+    return workflows.reject_viewpoint(session, vp, reason=reason)
 
 
 @router.patch("/{viewpoint_id}")
 def patch_viewpoint(viewpoint_id: int, body: ViewpointPatch, session: DbDep):
     """RAD-052：人工修正（claim/stance/horizon/topic/entity/置信度等），写审计。"""
     vp = _get_vp_or_404(session, viewpoint_id)
-    _lock_item_for_review(session, vp)
     updates = body.model_dump(exclude_unset=True, exclude={"reason"})
     if not updates:
         raise HTTPException(status_code=422, detail="无修改字段")
@@ -265,47 +203,16 @@ def patch_viewpoint(viewpoint_id: int, body: ViewpointPatch, session: DbDep):
             updates["entity_raw"] = raw
     if updates.get("entity_id") is not None and session.get(Entity, updates["entity_id"]) is None:
         raise HTTPException(status_code=422, detail=f"entity {updates['entity_id']} 不存在")
-    before = {k: getattr(vp, k) for k in updates}
-    for k, v in updates.items():
-        setattr(vp, k, v)
-    from app.modules.workflows import withdraw_if_invalid
+    from app.modules import workflows
 
-    withdraw_if_invalid(session, vp.source_item_id)
-    session.commit()
-    write_audit(
-        session,
-        actor="console",
-        action="patch",
-        resource_type="viewpoint",
-        resource_id=vp.id,
-        before={k: (str(v) if v is not None else None) for k, v in before.items()},
-        after={k: (str(v) if v is not None else None) for k, v in updates.items()},
-        reason=body.reason,
-    )
-    session.commit()  # 审计单独落库：write_audit 只 add 不 commit，漏提交会被会话关闭回滚
-    return {"id": vp.id, "updated": sorted(updates.keys())}
+    return workflows.apply_viewpoint_patch(session, vp, updates, reason=body.reason)
 
 
 def _reextract_item(session: Session, item: SourceItem) -> bool:
     """删旧观点（级联证据）→ 状态回 extracting → 派发抽取任务。返回是否派发。"""
-    from app.bootstrap.celery import celery_app
-    from app.runtime.pipeline import ensure_transition
+    from app.modules import workflows
 
-    if item.status not in ("transcribed", "extracting", "reviewing", "ready"):
-        return False
-    session.scalar(select(SourceItem).where(SourceItem.id == item.id).with_for_update())
-    session.query(Viewpoint).filter(Viewpoint.source_item_id == item.id).delete(
-        synchronize_session=False
-    )
-    from app.modules.workflows import withdraw_if_invalid
-
-    withdraw_if_invalid(session, item.id, force=True)
-    if item.status != "extracting":
-        ensure_transition(item.status, "extracting")
-        item.status = "extracting"
-    session.commit()
-    celery_app.send_task("extract_source_item_viewpoints", args=[item.id])
-    return True
+    return workflows.reextract_item_viewpoints(session, item)
 
 
 @router.post("/re-extract/{item_id}", status_code=202)
