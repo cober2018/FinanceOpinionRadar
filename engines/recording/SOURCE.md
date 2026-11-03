@@ -16,7 +16,7 @@
 ## 生命周期（验收 A3，2026-11-03）
 
 - `server.py` 在无头监控之外补了 design 2.3 的引擎侧契约，vendor 录制核心未改：
-  - 每 30s 按 url 对账 `recordings.json`（新增 start_monitor、删除 stop+移除、参数漂移先停后换）。`recorder_bridge.sync_live_monitors` 默认只原子写文件，不再 `docker restart`（`restart=True` 留给无热重载的旧外部镜像）。
+  - 每 30s 按 url 对账 `recordings.json`（新增 start_monitor、删除 stop+移除、参数漂移先停后换）。新增条目只在 `monitor_status` 为真时启动监控（vendor 的 start 会把 False 强翻 True 并立即监控）；漂移字段含 `segment_record`/`flv_use_direct_download`（翻转即换装）。`recorder_bridge.sync_live_monitors` 默认只原子写文件，不再 `docker restart`（`restart=True` 留给无热重载的旧外部镜像）。
   - SIGTERM/SIGINT：停新派发 → `request_stop`（vendor 对 ffmpeg 发 SIGINT）→ **等 ffmpeg 进程退出**（≤25s）再写 `<config_dir>/engine-stop-report.json`。不能用 `active_recorders` 变空当收尾完成：vendor 在 SIGINT 返回前就摘掉录制器，事件循环提前结束会杀掉还在刷盘的 ffmpeg，短录分片被截成 0 字节。
   - `was_recording` 取信号到达时的快照。`stop_recording` 会同步清掉 `is_recording`。
   - 启动时停止报告缺席 = 上次异常退出（未完成分片留在原处，交 radar live_ingest 稳定等待语义核对）。

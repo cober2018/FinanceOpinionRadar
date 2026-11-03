@@ -43,9 +43,11 @@ DRAIN_TIMEOUT_SEC = 25
 # rec_id 由引擎按 url 指派、recording_dir 开播后物化——两者变化不构成重载
 _VOLATILE_KEYS = frozenset({"rec_id", "recording_dir"})
 # 参数变化需要"先停后换"的字段（其余字段仅更新字典即可，实际影响面就是这些）；
-# monitor_status 单独按布尔语义比较（StreamCap 落盘会把布尔字符串化）
-_RELOAD_FIELDS = ("segment_time", "quality", "record_format",
-                  "only_notify_no_record", "monitor_hours", "scheduled_recording")
+# monitor_status 单独按布尔语义比较（StreamCap 落盘会把布尔字符串化）。
+# segment_record / flv_use_direct_download 影响录制行为本身，翻转必须换装
+_RELOAD_FIELDS = ("segment_time", "quality", "record_format", "segment_record",
+                  "flv_use_direct_download", "only_notify_no_record",
+                  "monitor_hours", "scheduled_recording")
 
 
 def _as_bool(value: object) -> bool:
@@ -125,7 +127,10 @@ async def _reload_recordings(app, desired_raw: str) -> str:
             rec = Recording.from_dict(entry)
             with GlobalRecordingState.lock:
                 GlobalRecordingState.recordings.append(rec)
-            await rm.start_monitor_recording(rec, auto_save=False)
+            if _as_bool(entry.get("monitor_status")):
+                # 必须加闸：vendor 的 start_monitor_recording 会把 monitor_status=False
+                # 强制翻开并立即开始监控，与 drift 路径"关monitor只登记"的口径不一致
+                await rm.start_monitor_recording(rec, auto_save=False)
             changes += 1
             continue
         drifted = any(
