@@ -93,7 +93,9 @@ services:
     networks: [dtk-net]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/docs', timeout=5)\""]
+      # /docs 属原镜像 console 静态页，产品引擎镜像不带 console（404）；引擎文档端点为
+      # /swagger（dtk create_app 显式 docs_url）——复审 P0-2 修复。
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/swagger', timeout=5)\""]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -126,7 +128,10 @@ services:
     mem_limit: 1g  # 实测 ~65MB；录制时 ffmpeg 峰值数倍，留足
     volumes:
       - "${DOUYIN_STATE_DIR:-../../data/douyin}/streamcap-config:/data/config"
-      - "${DOUYIN_STATE_DIR:-../../data/douyin}/live_segments:/data/downloads"
+      # 分片必须挂 /app/downloads：StreamCap 写盘路径由 user_settings.live_save_path 决定，
+      # 存量配置与 recorder_bridge 默认值都是 /app/downloads（原镜像同路径）。挂到别处会让
+      # 分片写进容器临时层，radar LIVE_SEGMENTS_DIR 永远扫不到（复审 P0-1 修复）。
+      - "${DOUYIN_STATE_DIR:-../../data/douyin}/live_segments:/app/downloads"
     restart: unless-stopped
 
   # Plan #5 直播弹幕采集：jwwsjlm/douyinLive v2.2.1（本地 a_bogus 签名，免浏览器）。

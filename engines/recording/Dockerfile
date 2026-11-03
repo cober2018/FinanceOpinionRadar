@@ -2,14 +2,19 @@
 # 构建：docker build -t radar-engine-recording -f engines/recording/Dockerfile engines/recording
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+# node 对齐原镜像 v20.x（douyin 取流 JS 签名运行时；缺 node 会触发 UI 安装对话框并撞上游
+# TextButton bug，且录制期取流失败——复审 P1 实测补齐）
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg nodejs && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /engine
 COPY vendor/ /engine/vendor/
 COPY defaults/ /engine/defaults/
+COPY requirements.frozen.txt /engine/requirements.frozen.txt
 COPY server.py /engine/server.py
-RUN pip install --no-cache-dir -r vendor/streamcap/requirements.txt
+# 冻结清单来自原镜像实测 pip freeze（复审 P1 修复：requirements.txt 为 >= 浮动约束，
+# 逐包解析会漂移，如 streamget/flet 版本漂移直接影响取流与 UI 层兼容性）
+RUN pip install --no-cache-dir -r requirements.frozen.txt
 
 ENV STREAMCAP_CONFIG_DIR=/data/config
-VOLUME ["/data/config", "/data/downloads"]
+VOLUME ["/data/config", "/app/downloads"]  # /app/downloads 与 user_settings.live_save_path 对齐（P0-1）
 CMD ["python", "server.py"]
