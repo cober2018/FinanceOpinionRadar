@@ -1,7 +1,7 @@
-"""recorder_bridge 单测（Plan #4 Task 6）：夹紧/URL 归一/原子写/重启触发/节段隔离。
+"""recorder_bridge 单测（Plan #4 Task 6）：夹紧/URL 归一/原子写/热重载/节段隔离。
 
-StreamCap v1.0.3 集成契约见 Task 1 决策记录：recordings.json 不热重载 →
-仅变化时原子写 + docker restart；不变则不动（防重启风暴）。
+统一架构录制引擎（engines/recording，验收 A3）契约：recordings.json 热重载 →
+仅变化时原子写、默认不重启（引擎轮询对账生效）；restart=True 为旧栈回退路径。
 """
 
 import json
@@ -76,9 +76,10 @@ def test_sync_noop_when_path_unconfigured(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert result["noop"] == "recorder_config_path 未配置"
 
 
-def test_sync_writes_atomically_and_restarts_on_change(
+def test_sync_writes_atomically_no_restart_by_default(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
+    """验收 A3：默认不 docker restart——引擎热重载接手生效，桥只负责原子写。"""
     path = _set(monkeypatch, tmp_path)
     repo = Mock()
     repo.list_live_monitored.return_value = [_account()]
@@ -95,6 +96,12 @@ def test_sync_writes_atomically_and_restarts_on_change(
     written = json.loads(path.read_text())
     assert written[0]["url"].startswith("https://")
     assert not list(path.parent.glob("*.tmp"))  # tmp+rename 原子性
+    assert restarts == []  # 热重载引擎：零重启
+
+    # 回退路径仍在：显式 restart=True（旧外部镜像栈）才 docker restart
+    recorder_bridge.sync_live_monitors(Mock(), repo=repo, restart=False)
+    path.write_text("[]")  # 制造 diff
+    recorder_bridge.sync_live_monitors(Mock(), repo=repo, restart=True)
     assert restarts == [["docker", "restart", "streamcap"]]
 
 
@@ -105,12 +112,12 @@ def test_sync_no_restart_when_unchanged(monkeypatch: pytest.MonkeyPatch, tmp_pat
     calls: list[list[str]] = []
     monkeypatch.setattr(recorder_bridge.subprocess, "run", lambda argv, **kw: calls.append(argv))
 
-    recorder_bridge.sync_live_monitors(Mock(), repo=repo)  # 第一轮：写 + 重启
+    recorder_bridge.sync_live_monitors(Mock(), repo=repo)  # 第一轮：写（默认零重启）
     before = path.read_bytes()
     result = recorder_bridge.sync_live_monitors(Mock(), repo=repo)  # 第二轮：不变
     assert result["changed"] is False
     assert path.read_bytes() == before
-    assert calls == [["docker", "restart", "streamcap"]]  # 仅第一轮重启
+    assert calls == []  # 热重载引擎：两轮均零重启
 
 
 def test_sync_no_restart_when_streamcap_stringified_matches(

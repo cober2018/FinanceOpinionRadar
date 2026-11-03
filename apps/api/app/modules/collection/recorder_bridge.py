@@ -1,8 +1,9 @@
-"""值守桥（Plan #4 Task 6）：直播账号 → StreamCap recordings.json 同步。
+"""值守桥（Plan #4 Task 6）：直播账号 → 录制引擎 recordings.json 同步。
 
-StreamCap v1.0.3 无无头模式且配置不热重载（Task 1 决策记录）：
-仅当配置 diff 有变化时原子写（tmp+rename）+ docker restart 触发重载；
-无变化则完全不动（防重启风暴）。user_settings.json 只补缺不覆盖（E1 节段隔离）。
+统一架构录制引擎（engines/recording，验收 A3）带配置热重载与无头监控循环：
+仅当配置 diff 有变化时原子写（tmp+rename），引擎轮询到变化后按 url 对账生效；
+无变化则完全不动。user_settings.json 只补缺不覆盖（E1 节段隔离）。
+restart=True 为旧外部镜像栈保留的回退路径（docker restart 重载配置）。
 """
 
 import json
@@ -100,8 +101,13 @@ def build_recording(account) -> dict | None:
     }
 
 
-def sync_live_monitors(session, repo=None, *, restart: bool = True) -> dict:
-    """beat 入口：期望配置与现文件 diff → 仅变化时原子写 + 重启（E2 精神：幂等、最小扰动）。"""
+def sync_live_monitors(session, repo=None, *, restart: bool = False) -> dict:
+    """beat 入口：期望配置与现文件 diff → 仅变化时原子写（E2 精神：幂等、最小扰动）。
+
+    统一架构录制引擎（engines/recording）带配置热重载：轮询 recordings.json 变化
+    后按 url 对账增/删/改监控项，桥写完文件即生效，不再需要 docker restart。
+    restart=True 保留为回退路径（旧外部镜像栈无热重载，需重启容器重载配置）。
+    """
     s = get_settings()
     if not s.recorder_config_path:
         logger.info("recorder_sync_noop", reason="recorder_config_path 未配置")
@@ -131,7 +137,8 @@ def sync_live_monitors(session, repo=None, *, restart: bool = True) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(path, desired)
     _ensure_user_settings(path.parent)
-    logger.info("recorder_sync_changed", monitors=len(desired), path=str(path))
+    logger.info("recorder_sync_changed", monitors=len(desired), path=str(path),
+                reload="engine-hot-reload" if not restart else "docker-restart")
 
     if restart:
         _restart_recorder(s.recorder_container_name)
@@ -139,7 +146,10 @@ def sync_live_monitors(session, repo=None, *, restart: bool = True) -> dict:
 
 
 def _restart_recorder(container_name: str) -> None:
-    """配置不热重载 → docker restart；打不开 docker 时告警不阻断（部署差异见 README）。"""
+    """回退路径：旧外部镜像栈不热重载 → docker restart；打不开 docker 时告警不阻断。
+
+    统一架构引擎无需此路径（见 sync_live_monitors 文档串）。
+    """
     if not container_name:
         logger.warning("recorder_restart_skipped", reason="recorder_container_name 未配置")
         return
@@ -151,8 +161,6 @@ def _restart_recorder(container_name: str) -> None:
             timeout=60,
         )
         logger.info("recorder_restarted", container=container_name)
-        # StreamCap 监控循环需一次 UI 会话激活（容器启动后）；无头激活见 README 值守小节
-        logger.warning("recorder_activation_required", ui="打开一次 StreamCap Web UI 激活监控循环")
     except (subprocess.SubprocessError, FileNotFoundError) as exc:
         logger.warning("recorder_restart_failed", container=container_name, error=str(exc)[:200])
 
