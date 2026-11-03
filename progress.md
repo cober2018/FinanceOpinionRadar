@@ -1,5 +1,10 @@
 # 配置进度
 
+## 2026-11-03 复审修复与本地 main 合入
+
+- 用户授权的独立复审确认 3 项缺陷并授权修复：分片挂载点改回 `/app/downloads`（写盘映射容器实测贯通）、douyin-api healthcheck 改 `/swagger`（200/404/退出码 0 三重实证）、StreamCap 依赖按原镜像 pip freeze 全量 64 包冻结 + 补 node 运行时（原镜像 v20.20.2 为 douyin 取流签名所需；修复后引擎干净启动无 Traceback；TextButton 崩溃证实为上游自带、补齐组件后不可达）。提交 `ff8c1f5`（代码）+ `65bca81`（记录）。
+- 用户授权快进合入本地 main：`b013bfe → 65bca81`，main 与开发分支 diff 为空。合入后 main 复验：pytest 491 全过、前端 tsc 0 错 + build 通过、compose config 校验通过。**未推送远端、未发布生产、未归档 OpenSpec**（验收 Agent 流程保持）。
+
 ## 2026-11-03 统一架构开发实施（开发 Agent 自检）
 
 - 分支 `codex/unify-radar-product-architecture`（基线 main b013bfe），7 个提交完成开发，检查全绿：pytest 491 通过；ruff 53 项全部为基线同类既有项（基线 84）；mypy 42=基线；tsc 0；前端 build/test 通过、oxlint 13（基线 18）；`openspec validate --all --strict` 7 通过 0 失败；`git diff --check` 通过。

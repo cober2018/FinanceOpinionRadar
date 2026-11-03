@@ -6,8 +6,8 @@
 
 ## 当前阶段、代码位置与版本
 
-- 阶段：2026-11-03 **开发自检完成，已交接待验收**。任务 1.1-3.3 全部完成，4.1 完成，4.2 部分完成（引擎接管已实证、存量副本完整演练待验收），4.3 保持未勾选待验收归档。分支 `codex/unify-radar-product-architecture`。
-- **唯一继续维护的工作区**：`/Users/mshengran/Project/FinanceOpinionRadar`（本目录，分支 `codex/unify-radar-product-architecture`，基线 main `b013bfe`，规范带入提交 `b3a2251`）。不复制第二套需求目录。
+- 阶段：2026-11-03 **复审三修复完成并合入本地 main（65bca81），交接待验收**。任务 1.1-3.3 完成，4.1 完成，4.2 部分（引擎接管实证、存量演练待验收），4.3 待验收归档。合入后 main 复验：pytest 491 全过 / tsc 0 / build 过 / compose 校验通过。未推送远端、未发布、未归档。
+- **唯一继续维护的工作区**：`/Users/mshengran/Project/FinanceOpinionRadar`。2026-11-03 已按用户授权快进合入本地 **main**（`b013bfe → 65bca81`，含复审三修复）；开发分支 `codex/unify-radar-product-architecture` 保留。不复制第二套需求目录。
 - 无关未跟踪文件 `cpa_api_tunnel.log`、`infra/launchd/com.shengran.cpa-api-tunnel.plist` 保留原位不提交；既有 stash 不动。
 - 开发提交链：`b3a2251`→`6a20557`→`c321070`→`aeceb8b`→`d93d8cc`→`0b8a3ac`→`0a7798c`（交接详情见 review.md「开发自检与交接」）。
 
