@@ -6,22 +6,23 @@
 
 ## 当前阶段、代码位置与版本
 
-- 阶段：2026-11-03 **复审三修复完成并合入本地 main（65bca81），交接待验收**。任务 1.1-3.3 完成，4.1 完成，4.2 部分（引擎接管实证、存量演练待验收），4.3 待验收归档。合入后 main 复验：pytest 491 全过 / tsc 0 / build 过 / compose 校验通过。未推送远端、未发布、未归档。
-- **唯一继续维护的工作区**：`/Users/mshengran/Project/FinanceOpinionRadar`。2026-11-03 已按用户授权快进合入本地 **main**（`b013bfe → 65bca81`，含复审三修复）；开发分支 `codex/unify-radar-product-architecture` 保留。不复制第二套需求目录。
-- 无关未跟踪文件 `cpa_api_tunnel.log`、`infra/launchd/com.shengran.cpa-api-tunnel.plist` 保留原位不提交；既有 stash 不动。
-- 开发提交链：`b3a2251`→`6a20557`→`c321070`→`aeceb8b`→`d93d8cc`→`0b8a3ac`→`0a7798c`（交接详情见 review.md「开发自检与交接」）。
+- 阶段：2026-11-03 验收未通过后的修复已落在本地 main，待复验；未推送、未发布、未归档。
+- 唯一工作区：`/Users/mshengran/Project/FinanceOpinionRadar`。验收时 main/远端 main 为 `8e3acb9`。修复提交：A2 `c42c9c0`、A4 `4613c5e`、A1 `988bbfc`、A3 `5ed1696`（文档回写在这些提交之后）。
+- 任务：2.2/2.3/2.4/3.2/3.3 已按修复重新勾选，待复验。4.2 仍未完成，4.3 未勾选。逐项说明在 review.md「开发 Agent 修复反馈」。
+- 无关文件：只有 `cpa_api_tunnel.log` 仍未跟踪。`infra/launchd/com.shengran.cpa-api-tunnel.plist` 已在 `c321070` 入库，本轮不回退、不改内容。
+- 未对生产执行 deploy 或 migrate_handover.sh。
 
 ## 目录结构与成果文件
 
 - `proposal.md`：目标、范围和影响。
 - `design.md`：统一技术架构、目标代码结构、能力迁入及切换设计。
 - `specs/radar-unified-architecture/spec.md`：可验收要求。
-- `tasks.md`：具体实施任务；提案阶段全部保持未完成。
+- `tasks.md`：具体实施任务；当前状态以验收修正后的勾选和 review.md 为准。
 - `review.md`：规范自检及后续审阅、修复与复核记录。
 - `development_agent_prompt.md`：可直接交给开发 Agent 的实施与交接提示词；用户指定本对话 Agent 在开发后负责验收。
 - 沿用根目录的 [task_plan.md](../../../task_plan.md)、[progress.md](../../../progress.md)、[findings.md](../../../findings.md)，不再复制一套同名流程文件。
 
-## 已完成
+## 历史提案准备记录（不代表当前实现状态）
 
 - 2026-11-03 已形成开发 Agent 提示词，明确开发、自检、交接与后续验收分工；当前仅生成提示词，未启动开发。
 - 三项修订：明确跨模块数据/事务归属，补齐录制与弹幕持续运行契约，增加存量任务/媒体/投递状态接续及回退演练；同步架构图、验收场景和原任务清单，review.md 记录对应关系。
@@ -31,8 +32,8 @@
 
 ## 待完成 / TODO
 
-- 验收 Agent 验收：重点为存量副本完整演练（4.2 剩余段）与真实上游链路（cookie/直播间/模型，凭据不在开发环境）。
-- 验收通过后归档（任务 4.3）；合并 main、推送、生产切换与旧环境下线另需对应授权。
+- 复验 A1–A6。4.2 仍缺：真实转写、真实直播间/弹幕、五段演练中的「旧代码读取新写入」、生产交接脚本实跑。
+- 验收通过后再归档（任务 4.3）。推送和生产切换另需授权。
 
 ## 关键设计决策
 
@@ -46,4 +47,4 @@
 
 ## 下一步
 
-用户将 development_agent_prompt.md 正文交给开发 Agent 执行后，按修订提案进入 apply；当前只准备交接。开发自检后由本对话 Agent 验收，验收通过再完成归档；合并、推送、发布仍需对应授权。
+修复与证据已回写，交本对话 Agent 复验。验收通过后归档；后续生产操作仍需对应授权。

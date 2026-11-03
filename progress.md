@@ -1,5 +1,17 @@
 # 配置进度
 
+## 2026-11-03 架构验收（本对话 Agent）
+
+- 实际 main 与远端 main 均为 8e3acb9，早期交接报告状态已过时。核对后续修复后仍发现媒体完整旧栈、workflows 职责与依赖、录制停止/恢复契约、旧 API 发布交接四项实现缺口，以及端到端/存量回退证据和文档状态问题，详见 review.md A1–A6。验收未通过，相关任务恢复未完成。
+- 独立重跑 tests/unit 通过，前端 build 与 1 条测试通过，OpenSpec 7/7 通过。未复跑会重建测试库的集成套件、未执行真实链路或生产操作；开发报告的 491 项保持为开发自检证据。
+- 只更新 review/tasks/README 与根流程文件；不改业务代码、不新增测试、不合并推送、不归档。
+
+## 2026-11-03 按验收意见修复（开发 Agent，未推送）
+
+- 代码：`c42c9c0`（A2 workflows 提交责任）、`4613c5e`（A4 新旧进程交接）、`988bbfc`（A1 同步媒体引擎）、`5ed1696`（A3 录制收尾与热重载）。
+- 本轮重跑 pytest unit+integration：491 通过，两条既有弃用警告。同一条 ruff 命令在验收提交上是 52 条，当前 48 条；mypy `apps/api/app` 是 50 → 49。差异是搬迁和行号，不是「数量相同即等价」。详见 review.md。
+- 未跑 migrate_handover.sh，未动生产。4.2 / 4.3 仍未完成。
+
 ## 2026-11-03 复审修复与推送远端
 
 - 用户授权推送：`origin/main b013bfe..167cb5d` 已推送并读回一致（`git ls-remote` = 167cb5d76）。远端仅多本地已有的 12 个提交；未发布生产、未切换生产引擎栈、OpenSpec 仍待验收归档。
@@ -11,7 +23,7 @@
 
 ## 2026-11-03 统一架构开发实施（开发 Agent 自检）
 
-- 分支 `codex/unify-radar-product-architecture`（基线 main b013bfe），7 个提交完成开发，检查全绿：pytest 491 通过；ruff 53 项全部为基线同类既有项（基线 84）；mypy 42=基线；tsc 0；前端 build/test 通过、oxlint 13（基线 18）；`openspec validate --all --strict` 7 通过 0 失败；`git diff --check` 通过。
+- 分支 `codex/unify-radar-product-architecture`（基线 main b013bfe），7 个提交完成开发。当时自检写成「ruff 53 项全部为基线同类既有项（基线 84）；mypy 42=基线」。验收指出这不能证明没有新增错误。该表述作废，以 review.md 修复反馈里的实跑差异为准。pytest 491、tsc 0、前端 build/test、oxlint 13、openspec 7/7 仍是当时的自检记录。
 - 后端按 design 目标布局归位：bootstrap（asgi/api/celery 组装）+ runtime（settings/db/storage/pipeline/任务）+ modules/{workflows,sources,collection,content,insights,delivery}；原 8 个顶层包移除无残留；alembic env 指向 runtime.db.models 聚合注册。
 - 四引擎迁入并逐一独立实证：recording 无头引擎容器内监控循环自启（无浏览器会话，原 keepalive 缺陷消除）；danmaku go build + WS/状态接口契约信封；media 镜像依赖逐包 pin + dtk migrate + 两个雷达端点契约信封（UNAUTHENTICATED 正确拒绝）；transcription worker 与来源 diff 为空。
 - 前端 3620 行 App.tsx 拆为 app/features/shared（13 feature + 7 shared），行为零改动。

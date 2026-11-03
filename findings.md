@@ -1,5 +1,11 @@
 # 配置发现
 
+## 2026-11-03 架构验收发现
+
+实际版本为 main/远端 main 8e3acb9。源码迁入和目录拆分不能替代统一调度及事务协调：media 仍直接 create_app 并保留 dtk Task/Redis/worker，workflows 仍是被各域调用的事件 helper，录制无头入口未提供规范要求的收尾和未完成分片交付。deploy 对旧 app.main 进程的匹配已随新名字一起替换，首次迁移会漏停旧 API。完整证据、位置及修复要求见同一需求 review.md A1–A6；这些是已确认规范的未完成项。
+
+上面是验收当时的代码。本地修复见 review.md「开发 Agent 修复反馈」，尚未推送。「两个文件都未跟踪」不成立：plist 已在 `c321070` 入库，未跟踪的只有 `cpa_api_tunnel.log`。交接里的「ruff 无新增类别 / mypy 数量持平」不能当成逐项等价，该说法已撤回。
+
 ## 2026-11-03 统一架构实施发现
 
 - 外部引擎本质：dtk/StreamCap 为镜像内 pip 包或 Python 工程（可 vendor），douyinLive 镜像内是 Go 编译产物（源码取上游 tag v2.2.1 并与镜像 BuildID 对应关系记录）；voice-pro 的 mlx worker 是自包含脚本（diff 为空复制即可）。

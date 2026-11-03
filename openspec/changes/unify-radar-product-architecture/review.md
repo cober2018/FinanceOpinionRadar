@@ -1,5 +1,55 @@
 # 统一产品架构提案审查
 
+## 2026-11-03 验收 Agent 结论：未通过，需修复后复验
+
+本轮核对实际 main `8e3acb947966fe4eb1636d19f120fcb436bc1d15`；`git ls-remote origin refs/heads/main` 返回同一 SHA。因此用户粘贴的“开发分支、未合并、未推送”报告已经落后于当前版本。验收包含后续 `ff8c1f5` 修复，不将已修复的挂载点、健康检查和 Node 运行时问题重复报为缺陷。本轮未执行合并、推送、生产发布、代码修复或归档。
+
+### 必须修复的实现偏差
+
+| 编号 | 位置及证据 | 影响与修复要求 |
+|---|---|---|
+| A1 媒体引擎仍保留完整旧任务栈 | `engines/media/server.py:8-10` 直接 create_app；`vendor/dtk/api/routes/content.py:469` 和 user_posts 仍调用 submit_and_wait；`vendor/dtk/services/tasks.py:48-100` 写独立 Task 表并入 Redis 队列；compose 仍运行 dtk-worker | 这是将原应用搬进仓库构建，尚未达到 design 3 / task 2.3 要求的解除完整 dtk 应用及独立业务任务体系依赖。应提取必要解析/发现实现，业务调度归雷达；必要身份/凭据/缓存可以保留，但不能用“镜像改成自建”代替这一要求。 |
+| A2 workflows 未成为事务协调入口 | `modules/workflows.py` 仍是原事件 helper，直接查询多域模型且无提交/回滚协调；`modules/insights/summarizer.py:69-115` 反向调用 workflows、直接写 SourceItem 并自行 commit；`content/live_ingest.py:480`、`sources/api.py:205` 同样反向调用 | 违背 design 2.1/2.2 的拥有者写入口及调用方向。现有同事务行为可能仍保持，但不等于新架构已实现；不能把跨域依赖仅列为可选优化。按规范迁移用例协调、域入口和提交责任，保留原锁序/资格/指纹，不通过削弱规范将其宣告完成。 |
+| A3 录制生命周期仅完成无浏览器启动 | `engines/recording/server.py:85-100` 仍通过虚拟 Flet Page 启动整套 main；SIGTERM 仅设置 stop，未调用录制收尾、等待分片完成或反馈未完成部分；`collection/recorder_bridge.py:118-155` 仍直接写 recordings.json 并 docker restart，甚至仍提示打开旧 UI | 无头启动有价值，但 design 2.3 的停止、异常退出和分片完成/接续契约没有落地。应接管录制核心生命周期并与 content 协调完成状态；不能把心跳、假房间探测视为录制收尾/恢复的验证。当前不推断已发生数据丢失，实际影响需隔离录制演练验证。 |
+| A4 旧进程无法按发布脚本正确交接 | `scripts/deploy.sh:21-26` 先同步删除旧目录；`:39` 只停止 `uvicorn app.bootstrap.asgi:app`；旧版发布入口经 `git show b013bfe:scripts/deploy.sh` 核对为 `uvicorn app.main:app`；`:41` 立即启动新入口 | 首次从旧版升级时匹配不到旧 API；旧进程可继续占用 8010，使新进程启动失败或流量仍进入旧版。另脚本不构建/切换引擎；`scripts/dev_up.sh:45-49` 只 start 已存在的旧 dtk 容器。应补迁移专用的识别、暂停、退出/接续和版本核对，并形成可复现的统一启动/交付路径。只修正文件中的 Python 模块名不足以完成 task 3.2。 |
+
+### 必须补齐的验证（A5）
+
+任务 4.2 仍未完成：真实平台采集/录制/弹幕成功路径、真实转写、审核总结到推拉接收端读回，以及含在途任务/媒体引用/事件状态的五段接续与回退演练均未提供完整证据。UNAUTHENTICATED、假房间失败、schema 相同和任务名相同不能证明这些路径通过。design 允许本地已有人为构造的等价数据，隔离演练不必等待生产停写窗口；真实平台凭据/模型缺失仍应如实保留未验证状态。
+
+### 文档和交接问题（A6）
+
+- 根 README 仍称“未启动开发”；需求 README 同时写“已合入 main”“未推送”和“14 项全部未执行”；前端 README 仍指向已拆除的 App.tsx。应更新当前入口，历史记录需明确标为历史。
+- 声称两个无关文件仍未跟踪不符事实：`infra/launchd/com.shengran.cpa-api-tunnel.plist` 已在 `c321070` 纳入 Git。仅核对文件状态，未展示其内容；后续由用户指定执行者按原保护要求核对并处理，本轮不删除/回退文件。
+- “ruff 无新增类别”不等于无新增错误；交接表中 E501 从 33 变为 34。mypy 同数量也不是逐项等价证明。应提供按重命名映射的具体差异，或明确保留未核验，不再称所有检查全绿。
+
+### 本轮独立执行的检查与边界
+
+| 检查 | 本轮结果 |
+|---|---|
+| `.venv/bin/python -m pytest tests/unit -q` | 退出 0，全部单元测试通过，两条依赖弃用警告 |
+| `npm run build`（apps/web） | tsc 与 Vite 构建通过 |
+| `npm test`（apps/web） | 1/1 通过 |
+| OpenSpec 全量严格校验 | 7/7 通过，仅证明规范格式 |
+| 实际 Git 状态 | main/HEAD/远端 main 均为 8e3acb9；本轮开始时仅 cpa_api_tunnel.log 未跟踪 |
+
+未复跑交接中的全量 491 项，也未运行 ruff/mypy 的基线差异比较。集成 fixture 会 DROP/CREATE 派生的 radar_test，本轮未核定其数据库隔离环境，因此没有直接运行该路径；未读出环境凭据、未接入生产队列、未执行 deploy。没有新增测试代码。
+
+### 规范覆盖判定与下一步
+
+| 要求 | 判定 |
+|---|---|
+| 全项目统一结构、业务流程归属 | 部分，A1/A2 尚未落实 |
+| 引擎不借用旧工作区 | 有源码迁入及自建入口，但实际独立链路待 A5 |
+| 跨模块事务边界 | 不满足 A2；原子性未据此判定已破坏 |
+| 持续引擎生命周期 | 部分，A3 及恢复验证待完成 |
+| 行为与稳定身份兼容 | 现有单元/前端检查通过，完整接续待 A5 |
+| 统一配置与交付 | 部分，A4 未解决 |
+| 独立运行完成证据 | 不满足，A5 |
+| 存量接续与回退 | 不满足，A5 |
+
+任务 2.2、2.3、2.4、3.2、3.3 恢复为未完成（部分工作已完成，原开发注记保留）；4.2/4.3 继续未完成。开发 Agent 修复 A1–A4、同步 A6 并补 A5 证据后，在本文件回写逐项反馈，再由本对话 Agent 复验。此处是按已确认规范发现的缺陷，不新增产品功能或改变规范；本轮不自行接管代码修复。
+
 ## 2026-11-03 审查结论
 
 方向符合已确认目标：复用成熟实现，整个项目按统一架构组织。首次审查发现以下三项设计缺口；用户随后授权更新 OpenSpec，现已完成文档修订及同一执行者的对应关系复核。下列“位置”保留修订前行号以说明原问题，修订后的依据使用章节和任务编号。严格格式校验不能替代运行验收；本记录没有独立审计、运行验证或生产检查结论。
@@ -148,3 +198,40 @@
 - 本轮仅改 `engines/recording/*` 与 compose 两处，未触碰 `apps/`（后端/前端测试不受影响，未重跑全量）；生产未动。
 - 复审提出的 P1（7 处跨域导入方向违例）与 P2 小项（extras 丢失、dtk-worker 无 build 键、死导入等）**未在本轮处理**，留待验收 Agent 裁决后统一处置。
 - 真实直播间端到端录制（ffmpeg 落真实分片）仍待有凭据环境验证——与原交接口径一致。
+
+## 2026-11-03 开发 Agent 修复反馈（待复验）
+
+验收结论（本文开头，针对 `8e3acb9`）不改。下面是修复后的回写，不构成复验通过。代码提交在本地 main，未推送。4.3 仍未勾选。证据集中在 `evidence/review-fix-20261103.md`。
+
+### A1 媒体任务栈
+
+`988bbfc`。`engines/media/server.py` 不再 `create_app()`，请求内 `registry.resolve → FetchService.fetch`。compose 删除 `dtk-worker`。保留 API key、身份池、代理、settings 快照、request_log、Redis 缓存。有意差异：同步执行不再返回 202/task_id；引擎侧不再叠加 dtk 的 Redis 限流（端口仍绑 127.0.0.1）。隔离实测写在 `engines/media/SOURCE.md`（真实上游、缓存、错误信封、tasks 表无新行）。
+
+### A2 事务协调
+
+`c42c9c0`。跨域用例的提交在 `modules/workflows.py`（总结、复核、删除、来源注册、保留期清扫）。域模块提供 flush 级入口，不再反向 import workflows 后自己 commit。`live_ingest` 的撤回改为注入钩子，缺省不撤回（测试直调）。锁序仍是先锁 SourceItem 再 `pg_advisory_xact_lock(867530901)`。指纹序列化未改。单域写（直播滚动总结）留在原处，但改走 content 的写入口。
+
+### A3 录制生命周期
+
+`5ed1696`。每 30 秒按 url 对账 `recordings.json`，桥默认不再 `docker restart`。SIGTERM 先停新派发，再 `request_stop`，然后等 ffmpeg 进程退出（不是等 `active_recorders` 变空——vendor 会提前摘掉录制器，短录会被截成 0 字节）。`was_recording` 用信号到达时的快照。停止报告在 `<config_dir>/engine-stop-report.json`；报告缺席表示上次不是正常退出。
+
+本轮合成 FLV 演练（未碰仍在运行的旧 streamcap 容器）：热重载日志 `config reloaded (changed:1)`；停前 0 字节的分片在 ffmpeg 退出后为 mpegts、6.02 秒。真实直播间没有复验。
+
+### A4 发布交接
+
+`4613c5e`。`deploy.sh` 同时停 `uvicorn app.main:app`、`uvicorn app.bootstrap.asgi:app` 和两边的 celery 进程，8010 不让位就中止，并核对 `.release_version`。`--engines` 才构建引擎。`migrate_handover.sh` 写的是一次性步骤：快照、停 beat、停 worker、停旧 API、旧容器改名保留、dtk 身份 dump/restore、再走 deploy。`dev_up.sh` 改为 compose up，不再 `docker start` 旧容器。三个脚本 `bash -n` 通过。**没有对生产执行。**
+
+### A5 证据缺口（4.2 保持未完成）
+
+做了的：修复后 pytest unit+integration 491 通过；A1 的隔离上游记录（见媒体 SOURCE.md）；A3 的合成流收尾。没做的，不能算通过：
+
+- `migrate_handover.sh` 未跑。没有旧代码进程读取新写入的队列、分片或事件。
+- 真实直播间、真实弹幕房间、真实转写模型，本轮未复验。
+- 审核到总结再到推拉接收端的人工读回，本轮没有新做。
+
+### A6 文档
+
+- 根 README、变更 README、tasks、本文件和根流程文件已改成「验收未通过 + 本地修复未推送」。变更 README 里「未启动开发 / 14 项全部未执行」留在「历史提案准备记录」标题下，不表示当前状态。
+- 前端 README 改为 `src/main.tsx` → `src/app/App.tsx` + `src/features/`。仓库里没有 `src/App.tsx`。
+- 未跟踪文件只剩 `cpa_api_tunnel.log`。`infra/launchd/com.shengran.cpa-api-tunnel.plist` 已在 `c321070` 入库。本轮不回退、不展示内容。
+- 「ruff 无新增类别 / mypy 数量持平」撤回。同一命令实跑：ruff 52（`8e3acb9`）→ 48（当前），少掉的是 4 条 E501，另有 4 条只是行号后移；mypy 50 → 49，其中 `[arg-type]` 从 `workflows.py:95` 搬到 `summary_events.py:35`，`[var-annotated]` 消失，`tasks.py` 的 union-attr 行号 +1。交接表里的 E501 33→34 与「42=42」不以这次实跑为准之外的方式继续使用。没有对 `b013bfe` 做逐行映射，不称全绿。

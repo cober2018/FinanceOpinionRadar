@@ -6,11 +6,9 @@
 
 ## 统一产品架构提案（2026-11-02）
 
-开发交接入口：[开发 Agent 提示词](openspec/changes/unify-radar-product-architecture/development_agent_prompt.md)。开发 Agent 实现并自检后，由本对话 Agent 验收；当前只完成提示词准备，未启动开发。
+2026-11-03 验收未通过（当时 main `8e3acb9`，与远端一致）。修复在本地 main、尚未推送：A2 `c42c9c0`、A4 `4613c5e`、A1 `988bbfc`、A3 `5ed1696`。4.2 证据不完整，4.3 未归档。详见 [验收记录](openspec/changes/unify-radar-product-architecture/review.md) 与 [当前任务](openspec/changes/unify-radar-product-architecture/tasks.md)。未改生产。
 
-2026-11-03 提案修订：模块事务归属、直播/弹幕持续运行契约、迁移时任务与文件接续三项意见已写入 OpenSpec，设计、验收场景与任务对应关系已复核，详见 [审查及修订记录](openspec/changes/unify-radar-product-architecture/review.md)。本轮仅更新规范，尚未实施重构或进行运行验收。
-
-只独立财经媒体雷达，内容中心与量化平台保持独立。用户进一步明确：整个项目按一套新架构统一组织，成熟功能与实现迁入复用，旧工程目录不作为保留约束。统一提案入口为 [unify-radar-product-architecture](openspec/changes/unify-radar-product-architecture/README.md)，规范产物齐备且严格校验通过，待用户确认，未实施重构。本地代码基线为 main `b013bfe`；依赖依据与历史方案比较见 [findings.md](findings.md)，沿用 [task_plan.md](task_plan.md) 与 [progress.md](progress.md)。
+只独立财经媒体雷达，内容中心与量化平台保持独立；统一提案及成果入口为 [unify-radar-product-architecture](openspec/changes/unify-radar-product-architecture/README.md)。沿用 [task_plan.md](task_plan.md)、[progress.md](progress.md) 和 [findings.md](findings.md)。修复已回写，由本对话 Agent 复验。
 
 ## 需求背景与近期目标（2026-09-22）
 

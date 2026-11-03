@@ -6,7 +6,7 @@
 
 ## 目录结构
 
-- `src/App.tsx`：控制台页面与开放接口展示、现有渠道管理。
+- `src/main.tsx` 挂载 `src/app/App.tsx`（壳层导航）。页面在 `src/features/`（overview、accounts、library、timeline、viewpoints、openapi、jobs、settings），共用状态在 `src/shared/`。没有 `src/App.tsx`；旧的单文件入口已拆开。
 - `src/`：前端入口和样式。
 - `landing/`：落地页静态资源。
 
