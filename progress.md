@@ -1,5 +1,9 @@
 # 配置进度
 
+## 2026-11-03 复审修复与推送远端
+
+- 用户授权推送：`origin/main b013bfe..167cb5d` 已推送并读回一致（`git ls-remote` = 167cb5d76）。远端仅多本地已有的 12 个提交；未发布生产、未切换生产引擎栈、OpenSpec 仍待验收归档。
+
 ## 2026-11-03 复审修复与本地 main 合入
 
 - 用户授权的独立复审确认 3 项缺陷并授权修复：分片挂载点改回 `/app/downloads`（写盘映射容器实测贯通）、douyin-api healthcheck 改 `/swagger`（200/404/退出码 0 三重实证）、StreamCap 依赖按原镜像 pip freeze 全量 64 包冻结 + 补 node 运行时（原镜像 v20.20.2 为 douyin 取流签名所需；修复后引擎干净启动无 Traceback；TextButton 崩溃证实为上游自带、补齐组件后不可达）。提交 `ff8c1f5`（代码）+ `65bca81`（记录）。
