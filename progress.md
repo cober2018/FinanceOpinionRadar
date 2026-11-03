@@ -10,6 +10,7 @@
 
 - 代码：`c42c9c0`（A2 workflows 提交责任）、`4613c5e`（A4 新旧进程交接）、`988bbfc`（A1 同步媒体引擎）、`5ed1696`（A3 录制收尾与热重载）。
 - 本轮重跑 pytest unit+integration：491 通过，两条既有弃用警告。同一条 ruff 命令在验收提交上是 52 条，当前 48 条；mypy `apps/api/app` 是 50 → 49。差异是搬迁和行号，不是「数量相同即等价」。详见 review.md。
+- 自查修复五处并记录：录制热重载对 monitor_status=False 新条目不再强翻监控、漂移字段补 segment_record/flv_use_direct_download（容器实测）；migrate_handover 快照补 cd、改名补 STAMP 注入；deploy 冒烟加 worker 进程断言。pgrep/pkill -f 的父 shell 自匹配疑虑经 macOS 实测排除。
 - 未跑 migrate_handover.sh，未动生产。4.2 / 4.3 仍未完成。
 
 ## 2026-11-03 复审修复与推送远端

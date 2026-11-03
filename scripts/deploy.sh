@@ -101,6 +101,8 @@ fi
 echo "▶ 6/6 冒烟（版本核对 + 进程 + 引擎）"
 sleep 12
 ssh "$PROD_SSH" "
+  pgrep -f 'celery.*radar@prod' >/dev/null || { echo '  ✗ 主 worker 未启动（看 ~/radar-worker.log）' >&2; exit 1; }
+  pgrep -f 'radar-danmaku@prod' >/dev/null || { echo '  ✗ 弹幕 worker 未启动（看 ~/radar-danmaku-worker.log）' >&2; exit 1; }
   curl -s -o /dev/null -w '  console=%{http_code}\n' http://localhost:8010/console/
   remote_sha=\$(cut -d' ' -f1 '$PROD_DIR/.release_version')
   echo \"  version: remote=\$remote_sha local=$GIT_SHA\"

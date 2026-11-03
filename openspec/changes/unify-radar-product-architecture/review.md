@@ -217,9 +217,13 @@
 
 本轮合成 FLV 演练（未碰仍在运行的旧 streamcap 容器）：热重载日志 `config reloaded (changed:1)`；停前 0 字节的分片在 ffmpeg 退出后为 mpegts、6.02 秒。真实直播间没有复验。
 
+交接后自查补了两处并再次容器实测：新增条目只有 `monitor_status` 为真才启动监控（vendor 的 start 会把 False 强翻 True）；`segment_record`/`flv_use_direct_download` 纳入漂移字段（翻转即换装）。
+
 ### A4 发布交接
 
 `4613c5e`。`deploy.sh` 同时停 `uvicorn app.main:app`、`uvicorn app.bootstrap.asgi:app` 和两边的 celery 进程，8010 不让位就中止，并核对 `.release_version`。`--engines` 才构建引擎。`migrate_handover.sh` 写的是一次性步骤：快照、停 beat、停 worker、停旧 API、旧容器改名保留、dtk 身份 dump/restore、再走 deploy。`dev_up.sh` 改为 compose up，不再 `docker start` 旧容器。三个脚本 `bash -n` 通过。**没有对生产执行。**
+
+自查补了三处：快照步骤补 `cd $PROD_DIR`（此前媒体目录/版本标记相对路径静默采空）；容器改名步骤把 `$STAMP` 传入远端（此前单引号块里不展开，改名缺时间戳）；deploy 冒烟加双 worker 进程在位断言（此前只打印日志尾行，worker 崩溃也算发版成功）。
 
 ### A5 证据缺口（4.2 保持未完成）
 

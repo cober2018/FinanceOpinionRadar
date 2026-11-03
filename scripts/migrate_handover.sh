@@ -29,6 +29,7 @@ step() { echo; echo "===== $* ====="; }
 
 step "1/7 在途状态快照 → $SNAPSHOT"
 ssh "$PROD_SSH" "
+  cd '$PROD_DIR'
   {
     echo \"# radar migration snapshot \$STAMP\"
     echo '# --- celery 队列深度（broker redis） ---'
@@ -84,6 +85,7 @@ ssh "$PROD_SSH" '
 
 step "4/7 旧引擎容器改名让位（保留回退产物，不删除）"
 ssh "$PROD_SSH" '
+  STAMP='"$STAMP"'
   for c in streamcap douyinlive douyin-api dtk-worker dtk-postgres dtk-redis; do
     if docker ps -a --format "{{.Names}}" | grep -qx "$c"; then
       docker stop "$c" >/dev/null 2>&1 || true
