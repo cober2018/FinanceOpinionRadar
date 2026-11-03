@@ -94,25 +94,16 @@ services:
     restart: unless-stopped
     healthcheck:
       # /docs 属原镜像 console 静态页，产品引擎镜像不带 console（404）；引擎文档端点为
-      # /swagger（dtk create_app 显式 docs_url）——复审 P0-2 修复。
+      # /swagger（lean 同步引擎同路径，验收 A1 后仍是唯一探活端点）。
       test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/swagger', timeout=5)\""]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
 
-  dtk-worker:
-    image: radar-engine-media
-    container_name: dtk-worker
-    logging: *log_opts
-    entrypoint: []
-    command: ["python", "-m", "dtk.cli.main", "worker"]
-    environment: *dtk_env
-    mem_limit: 768m  # 实测 ~130MB
-    depends_on:
-      dtk-migrate: { condition: service_completed_successfully }
-    networks: [dtk-net]
-    restart: unless-stopped
+  # 验收 A1（2026-11-03）：dtk-worker 服务移除。媒体引擎改为精简同步执行
+  # （engines/media/server.py：registry.resolve → FetchService.fetch 请求内完成），
+  # 不再有 Task 表 / tasks:queue / worker 进程；业务调度始终在雷达（Celery）。
 
   # 统一架构：产品无头录制引擎（engines/recording），监控循环随进程自启，
   # 不再需要浏览器 UI 会话激活（scripts/streamcap_keepalive.sh 由此退役）。
