@@ -24,9 +24,16 @@ from app.modules.content.media.contracts import (
 from app.modules.content.media.url_guard import ensure_allowed_url
 
 _STDERR_TAIL_CHARS = 500
-# voice-pro 实战：YouTube 对多数客户端启用 SABR-only 流，默认客户端无 JS runtime 时
-# 会退化到废弃路径吃 HTTP 403；android 客户端可绕开（对非 YouTube 平台是无害 no-op）
-_SABR_ARGS = ("--extractor-args", "youtube:player_client=android")
+# 2026-11-10 生产事故热修（同款补丁已打在生产旧布局代码上）：YouTube 风控收紧后
+# android/TV 客户端全灭（android 不给格式、cookie 登录态触发 tv UNPLAYABLE）、
+# 匿名请求在已标记出口会被 bot-check。当前可行组合 = default+web_embedded 匿名请求
+# + fetch_pot=always 强制挂 PO Token（依赖 bgutil-ytdlp-pot-provider 服务，
+# 见 infra/docker/docker-compose.douyin.yml 的 bgutil-pot）+ 登录 cookie
+# （YTDLP_COOKIES_FILE；无 cookie 则 bot-check 概率大增）。该组合 resolve/字幕
+# 可过，媒体下载仍可能 SABR 403（上游 SABR 下载支持落地后升级 yt-dlp 即可）。
+# 对非 YouTube 平台是无害 no-op。
+_SABR_ARGS = ("--extractor-args",
+              "youtube:player_client=default,web_embedded;fetch_pot=always")
 # 会员专属内容的两道识别：stderr 精确（YouTube 官方话术）+ 标题启发式（发现层预过滤）
 _MEMBERS_STDERR_RE = re.compile(r"available to .*members|members-only content", re.IGNORECASE)
 _MEMBERS_TITLE_RE = re.compile(r"^【会员|会员专属|会员专享")
