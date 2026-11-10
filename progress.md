@@ -1,5 +1,13 @@
 # 配置进度
 
+## 2026-11-10 生产 YouTube 抓取故障处置（用户授权的运维操作）
+
+- 故障：YouTube 条目 prepare 全灭（worker 当日 900+ RESOLVE_FAILED，"Sign in to confirm you're not a bot"）。根因是 YouTube 2026-10 起的风控收紧：android/TV 客户端拿不到格式、prod 出口 IP 被标记、裸匿名请求必中 bot-check；**与统一架构改造无关，服务本体（API/worker/douyin 引擎栈）全程在线**。
+- prod 热修（旧布局代码 `fe2fbb7` 原地打补丁，未走 deploy）：适配器客户端组合 android → `default,web_embedded;fetch_pot=always`；yt-dlp 2026.08.19 → 2026.10.26；新增 bgutil PO Token 提供器容器（dev 导出镜像经 LAN 导入，prod 无 docker.io 直连）+ venv 插件；.env 增加 `YTDLP_COOKIES_FILE`（cookie jar 由 dev Chrome 经钥匙串导出，600 权限，data/ 不入 git 不受发版影响）；两轮 worker 重启。
+- 效果：resolve/字幕阶段从 0% 恢复到间歇通过（CLI 实证 3/5 视频拿全格式）；媒体下载仍会撞 SABR 403（上游 yt-dlp 的 SABR 下载支持未落 stable）。出口 IP 因当日重试风暴处于强标记窗口，通过率按请求波动，靠既有 5 次退避重试消化。
+- 同步进本地 main（未推送）：`7047315` 同款适配器组合 + compose 增 bgutil-pot 服务（digest 注记）。
+- 后续选项：prod Chrome 登录 YouTube 后重铸 cookie（出口一致，通过率应升）；等上游 SABR 下载支持进 stable 后 `pip install -U yt-dlp` 一步升级。
+
 ## 2026-11-03 架构验收（本对话 Agent）
 
 - 实际 main 与远端 main 均为 8e3acb9，早期交接报告状态已过时。核对后续修复后仍发现媒体完整旧栈、workflows 职责与依赖、录制停止/恢复契约、旧 API 发布交接四项实现缺口，以及端到端/存量回退证据和文档状态问题，详见 review.md A1–A6。验收未通过，相关任务恢复未完成。
