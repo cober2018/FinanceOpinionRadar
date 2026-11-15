@@ -1,5 +1,15 @@
 # 配置进度
 
+## 2026-11-15 生产切换到统一架构（用户授权，故障根因消除）
+
+- 起因：主播跟踪失效。旧 StreamCap（外部镜像）监控循环依赖浏览器会话，会话断开即永久失效（findings 早有记录），keepalive 未运行；用户设备与生产机局域网二层隔离导致「访问不了」（API 本体始终健康）。
+- 切换（migrate_handover 流程 + 三处现场补丁）：导出 DTK_SECRET_KEY（旧容器 env → .env）→ 快照 → 停旧栈 → 旧容器改名（后被 compose 按项目标签回收，回退材料=本地旧镜像 evil0ctal 5.1.0 / ihmily v1.0.3 / ghcr douyinlive v2.2.1 + 数据卷 + git b013bfe）→ dtk 身份 dump 113MB 恢复（identities=1/api_keys=2 对账一致）→ 三引擎生产现场构建（x86_64；基础镜像因生产 docker daemon 对 docker.io EOF 由 dev 按 digest 导送：python/golang/alpine/bgutil 共 ~610MB）→ 新 API/worker 接管。
+- 切换中发现并修复两个真 bug（生产热修 + 本地 main 同步）：
+  - `bootstrap/asgi.py` `_web_root` 用 `parents[2]`（= apps/api），console/落地页从未挂载过，/console 404 → `parents[3]`。
+  - 迁移/deploy 脚本三处远端块缺 PATH export（docker 不可见静默失败）+ bash `set -u` 把全角括号吃进变量名 → 脚本修补（`3f21a1a`、`baca714` 后续笔）。
+- 切换后核验：console 200 / 落地页 200 / system/status 抖音 reachable=true（迁移身份真实上游解密成功）/ discover_source_account 25s 成功 / 新录制引擎 Loaded 5 items + 11 次真实直播探测（**不再依赖浏览器会话，keepalive 退役**）/ bgutil PO Token 服务（amd64）/ 双 worker 正常。版本标记 3f21a1a engines。
+- 未完成事项照旧：YouTube SABR 下载（上游支持未落 stable）；回退演练未实跑（4.2 保持未完成）；4.3 未归档。
+
 ## 2026-11-10 生产 YouTube 抓取故障处置（用户授权的运维操作）
 
 - 故障：YouTube 条目 prepare 全灭（worker 当日 900+ RESOLVE_FAILED，"Sign in to confirm you're not a bot"）。根因是 YouTube 2026-10 起的风控收紧：android/TV 客户端拿不到格式、prod 出口 IP 被标记、裸匿名请求必中 bot-check；**与统一架构改造无关，服务本体（API/worker/douyin 引擎栈）全程在线**。

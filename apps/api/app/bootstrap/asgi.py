@@ -40,7 +40,9 @@ def health() -> dict[str, str]:
 #   /console/*   监控台 SPA（apps/web/dist，make build-web 产物，base=/console/）
 #   /api/*       接口
 # dist 未构建时只挂落地页与 API（前端 dev server 模式走 make web 的 Vite）。
-_web_root = Path(__file__).resolve().parents[2] / "web"
+# parents[3] = apps/（asgi.py 位于 apps/api/app/bootstrap/；曾写成 parents[2]=apps/api，
+# 致 dist 挂载永远 miss、/console 404——2026-11-15 生产切换时发现并热修）
+_web_root = Path(__file__).resolve().parents[3] / "web"
 _dist = _web_root / "dist"
 if _dist.is_dir() and (_dist / "index.html").exists():
     app.mount("/console", StaticFiles(directory=str(_dist), html=True), name="console")
