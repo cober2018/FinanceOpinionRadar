@@ -7,6 +7,7 @@
 - 效果：resolve/字幕阶段从 0% 恢复到间歇通过（CLI 实证 3/5 视频拿全格式）；媒体下载仍会撞 SABR 403（上游 yt-dlp 的 SABR 下载支持未落 stable）。出口 IP 因当日重试风暴处于强标记窗口，通过率按请求波动，靠既有 5 次退避重试消化。
 - 同步进本地 main（未推送）：`7047315` 同款适配器组合 + compose 增 bgutil-pot 服务（digest 注记）。
 - 后续选项：prod Chrome 登录 YouTube 后重铸 cookie（出口一致，通过率应升）；等上游 SABR 下载支持进 stable 后 `pip install -U yt-dlp` 一步升级。
+- 2026-11-15 用户授权推送：`origin/main 8e3acb9..737b099` 共 9 个提交（A1–A4 验收修复 + 自查修复 + YouTube 热修 + 记录文档），推送后 `git ls-remote` 与本地一致。未发布生产、未归档 OpenSpec（4.2/4.3 保持未完成）。
 
 ## 2026-11-03 架构验收（本对话 Agent）
 
