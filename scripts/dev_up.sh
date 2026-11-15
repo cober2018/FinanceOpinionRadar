@@ -47,7 +47,7 @@ start_deps() {
   docker compose up -d || true
   # 统一架构：媒体/录制/弹幕引擎由本仓库 compose 构建（engines/*，验收 A4）。
   # 需要 .env 提供 DTK_SECRET_KEY（引擎凭据主密钥，跨重启必须稳定）。
-  echo "==> 引擎栈（$ENGINE_COMPOSE）"
+  echo "==> 引擎栈（${ENGINE_COMPOSE}）"
   if grep -q '^DTK_SECRET_KEY=' .env 2>/dev/null; then
     set -a; . ./.env; set +a
     docker compose -f "$ENGINE_COMPOSE" up -d || true

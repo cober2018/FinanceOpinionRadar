@@ -42,7 +42,7 @@ rsync -az --delete \
   "$REPO_ROOT/" "$PROD_SSH:$PROD_DIR/"
 echo "$GIT_SHA $(date '+%F %T')${WITH_ENGINES:+ engines}" \
   | ssh "$PROD_SSH" "cat > '$PROD_DIR/.release_version'"
-echo "  rsync OK（本地 HEAD $GIT_SHA）"
+echo "  rsync OK（本地 HEAD ${GIT_SHA}）"
 
 echo "▶ 3/6 预检：新版入口齐备才允许交接"
 ssh "$PROD_SSH" "cd '$PROD_DIR' && \
@@ -113,4 +113,4 @@ ssh "$PROD_SSH" "
   docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'streamcap|douyinlive|douyin-api' || echo '  （引擎容器未切换，--engines 可切换）'
 "
 
-echo "✅ 发版完成（${PROD_SSH} @ $GIT_SHA）"
+echo "✅ 发版完成（${PROD_SSH} @ ${GIT_SHA}）"

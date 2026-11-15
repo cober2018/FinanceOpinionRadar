@@ -29,6 +29,7 @@ step() { echo; echo "===== $* ====="; }
 
 step "1/7 在途状态快照 → $SNAPSHOT"
 ssh "$PROD_SSH" "
+  export PATH=\$HOME/bin:/usr/local/bin:/opt/homebrew/bin:\$PATH
   cd '$PROD_DIR'
   {
     echo \"# radar migration snapshot \$STAMP\"
@@ -49,7 +50,7 @@ ssh "$PROD_SSH" "
   } > '$SNAPSHOT'
   cat '$SNAPSHOT'
 "
-echo "快照已落远端 $SNAPSHOT（回退与接续核对的依据）"
+echo "快照已落远端 ${SNAPSHOT}（回退与接续核对的依据）"
 
 step "2/7 暂停派发：停 beat（唯一调度器）→ 温和停 worker"
 ssh "$PROD_SSH" '
@@ -90,7 +91,7 @@ ssh "$PROD_SSH" '
     if docker ps -a --format "{{.Names}}" | grep -qx "$c"; then
       docker stop "$c" >/dev/null 2>&1 || true
       docker rename "$c" "$c-old-$STAMP" || true
-      echo "  $c → $c-old-$STAMP（保留）"
+      echo "  $c → $c-old-${STAMP}（保留）"
     fi
   done
 '
@@ -120,6 +121,7 @@ step "6/7 发版新应用 + 引擎栈（唯一执行者）"
 
 step "7/7 接续核对"
 ssh "$PROD_SSH" "
+  export PATH=\$HOME/bin:/usr/local/bin:/opt/homebrew/bin:\$PATH
   cd '$PROD_DIR'
   echo '--- 版本 ---'; cat .release_version
   echo '--- 队列消费恢复（深度应递减） ---'
