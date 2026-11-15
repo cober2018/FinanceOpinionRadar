@@ -37,6 +37,7 @@ rsync -az --delete \
   --exclude .venv --exclude node_modules --exclude data --exclude logs \
   --exclude backups --exclude 'celerybeat-schedule*' --exclude __pycache__ \
   --exclude .zcode --exclude .git \
+  --exclude 'migration-snapshot-*' \
   --exclude .env --exclude .release_version \
   "$REPO_ROOT/" "$PROD_SSH:$PROD_DIR/"
 echo "$GIT_SHA $(date '+%F %T')${WITH_ENGINES:+ engines}" \

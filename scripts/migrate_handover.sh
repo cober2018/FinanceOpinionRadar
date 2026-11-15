@@ -86,7 +86,7 @@ ssh "$PROD_SSH" '
 step "4/7 旧引擎容器改名让位（保留回退产物，不删除）"
 ssh "$PROD_SSH" '
   STAMP='"$STAMP"'
-  for c in streamcap douyinlive douyin-api dtk-worker dtk-postgres dtk-redis; do
+  for c in streamcap douyinlive douyin-api dtk-worker dtk-postgres dtk-redis dtk-migrate; do
     if docker ps -a --format "{{.Names}}" | grep -qx "$c"; then
       docker stop "$c" >/dev/null 2>&1 || true
       docker rename "$c" "$c-old-$STAMP" || true
