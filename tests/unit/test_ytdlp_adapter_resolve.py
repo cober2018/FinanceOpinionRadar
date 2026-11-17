@@ -84,7 +84,7 @@ def test_resolve_args_carry_sabr_client(
     monkeypatch.setenv("FAKE_YTDLP_ARGS_FILE", str(args_file))
     make_adapter(monkeypatch, "success", SUCCESS_PAYLOAD).resolve(URL)
     argv = json.loads(args_file.read_text())
-    assert argv[argv.index("--extractor-args") + 1] == "youtube:player_client=android"
+    assert argv[argv.index("--extractor-args") + 1] == "youtube:player_client=default,web_embedded;fetch_pot=always"
 
 
 def test_resolve_rejects_url_before_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:

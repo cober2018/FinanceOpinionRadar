@@ -61,8 +61,8 @@ def test_download_args_use_bestaudio(
     argv = json.loads(args_file.read_text())
     f_at = argv.index("-f")
     assert argv[f_at + 1] == "bestaudio/best"
-    # voice-pro 实战：YouTube SABR-only 流默认客户端会吃 403，调用统一带 android 客户端
-    assert argv[argv.index("--extractor-args") + 1] == "youtube:player_client=android"
+    # 2026-11 热修：android/TV 客户端被 YouTube 收紧封死，统一带 default+web_embedded 与强制 PO Token
+    assert argv[argv.index("--extractor-args") + 1] == "youtube:player_client=default,web_embedded;fetch_pot=always"
 
 
 def test_download_rejects_disallowed_url(monkeypatch: pytest.MonkeyPatch) -> None:
