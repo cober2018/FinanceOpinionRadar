@@ -67,12 +67,20 @@ class DouyinApiClient:
         if resp.status_code == 202:  # 任务在 wait 窗口内未完成
             raise AdapterTimeoutError(f"dtk 解析任务超 { _WAIT_SEC}s 未完成: {path}")
         if resp.status_code >= 400:
+            if resp.status_code == 503 or "IDENTITY_POOL_EXHAUSTED" in resp.text:
+                from app.runtime import metrics
+
+                metrics.note_identity_pool_exhaustion()  # /metrics 暴露 1h 窗口计数
             raise AdapterProcessError(
                 f"dtk 上游 HTTP {resp.status_code}: {resp.text[:_BODY_SNIPPET_CHARS]!r}"
             )
         body = resp.json()
         if not body.get("success"):
             err = body.get("error") or {}
+            if err.get("code") == "IDENTITY_POOL_EXHAUSTED":
+                from app.runtime import metrics
+
+                metrics.note_identity_pool_exhaustion()
             raise AdapterProcessError(
                 f"dtk 上游错误 [{err.get('code', 'UNKNOWN')}]: {err.get('message', '')}"
             )

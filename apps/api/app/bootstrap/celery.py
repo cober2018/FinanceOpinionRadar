@@ -1,4 +1,7 @@
+import time
+
 from celery import Celery
+from celery.signals import task_postrun, task_prerun
 
 from app.runtime.settings import get_settings
 
@@ -106,3 +109,36 @@ celery_app.conf.beat_schedule = {
         "schedule": 3600,
     },
 }
+
+# --- 运行指标（2026-11-18 优化项 4）：任务计数/耗时经 Redis 聚合，/metrics 暴露 ---
+_task_starts: dict[str, float] = {}
+
+
+@task_prerun.connect
+def _metrics_task_prerun(task=None, **kwargs):
+    try:
+        rid = getattr(getattr(task, "request", None), "id", None) or f"anon-{time.monotonic()}"
+        _task_starts[rid] = time.monotonic()
+        # 崩任务会漏 postrun 留下残留项：超量时整体重置（计时统计允许粗粒度）
+        if len(_task_starts) > 10000:
+            _task_starts.clear()
+    except Exception:  # noqa: BLE001 - 指标绝不影响任务
+        pass
+
+
+@task_postrun.connect
+def _metrics_task_postrun(task=None, state=None, **kwargs):
+    try:
+        from app.runtime import metrics
+
+        name = getattr(task, "name", "unknown")
+        metrics.inc_shared("radar_celery_tasks_total", name=name, state=state or "UNKNOWN")
+        rid = getattr(getattr(task, "request", None), "id", None)
+        start = _task_starts.pop(rid, None) if rid else None
+        if start is not None:
+            # 耗时以毫秒整数累计（HINCRBY 无小数）；读取端换算成秒
+            metrics.inc_shared(
+                "radar_celery_task_ms_total", int((time.monotonic() - start) * 1000), name=name
+            )
+    except Exception:  # noqa: BLE001 - 指标绝不影响任务
+        pass

@@ -1,12 +1,15 @@
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.bootstrap.api import api_router
 from app.modules.delivery.open_api import router as open_router
 from app.modules.delivery.open_api.deps import audit_middleware
+from app.runtime import metrics
 
 
 @asynccontextmanager
@@ -28,6 +31,25 @@ app.include_router(api_router)
 app.include_router(open_router)
 # 开放接口调用审计（仅 /open/ 前缀；鉴权失败也记一行，api_key_id 为空）
 app.middleware("http")(audit_middleware)
+
+
+@app.middleware("http")
+async def metrics_middleware(request, call_next):
+    """HTTP 计数/耗时（route 模板取自路由匹配结果，避免路径参数撑爆标签基数）。"""
+    if request.url.path == "/metrics":
+        return await call_next(request)
+    start = time.monotonic()
+    response = await call_next(request)
+    route = getattr(request.scope.get("route"), "path", request.url.path)
+    metrics.inc_http("radar_http_requests_total", str(response.status_code), route)
+    metrics.add_http_latency(route, time.monotonic() - start)
+    return response
+
+
+@app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
+def prometheus_metrics() -> str:
+    """运行指标（Prometheus 文本格式）。采集失败的部分少报不报错（见 metrics 模块）。"""
+    return metrics.render()
 
 
 @app.get("/api/v1/health")
