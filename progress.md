@@ -1,5 +1,13 @@
 # 配置进度
 
+## 2026-11-18 metrics 上线（用户授权推送+发版）
+
+- 推送 `b6afd5a..14b84f0`（yt-dlp 测试断言同步 + metrics 功能），远端读回一致。
+- `deploy.sh`（PROD_SSH=prod-b 跳板通道）发版完成：版本核对 14b84f0 一致、双 worker ready、引擎容器未动照常运行。alembic 无新迁移（metrics 零 DB 变更、零新依赖）。
+- 发版后实弹验证：`/metrics` 生产输出 HTTP 计数/耗时/队列深度/身份池窗口；`check_metrics.sh` 首跑即抓到真实告警——身份池熔断 1h=10 > 5（单身份瓶颈，待用户补 2 个抖音 cookie 后消除）。
+- 顺带修正：job_run 清理早已存在（housekeeping_stale_jobs，30 天），此前"无清理"判断有误，90k 行为正常稳态水位。
+- 发版脚本冒烟块补 docker PATH、check 脚本收敛回显（本次随记录提交）。
+
 ## 2026-11-16 全面体检通过 + keepalive 退役（用户授权）
 
 - 六域体检全绿：API 面全 200 且零 5xx；抖音真实取数 E2E 成功（新客户端→精简引擎→迁移身份→上游）；录制引擎 5 监控项 + 117 次真实探测 + 停机契约实测（人为 restart 触发优雅停机报告）；弹幕房间状态接口正常；LLM 24h prepare 2700/复核 326/总结 9/抽取 8 零失败；开放接口 401 鉴权门正常；alembic 与本地 main head 对齐。

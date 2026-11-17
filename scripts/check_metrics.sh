@@ -25,7 +25,7 @@ get_all() { awk -v m="$1" 'index($1, m) == 1 {print $2}' <<<"$raw"; }
 
 # 增量读取：状态文件里的旧值
 prev() { sed -n "s/^$1=//p" "$STATE" 2>/dev/null | head -1; }
-save() { echo "$1=$2"; }
+save() { printf "%s=%s\n" "$1" "$2"; }  # 仅写入状态文件，不打印（见文件尾重定向）
 
 new_5xx=$(get_all 'radar_http_requests_total{route="[^[}]*",status="5' | paste -sd+ - | bc 2>/dev/null)
 new_5xx=$(awk -v s="${new_5xx:-0}" 'BEGIN{print (s+0)}')
@@ -33,7 +33,6 @@ old_5xx=$(prev http_5xx)
 if [ -n "$old_5xx" ]; then
   d=$((new_5xx - old_5xx)); [ "$d" -gt 5 ] && { echo "✗ R2 HTTP 5xx 增量 $d > 5"; WARN=1; } || echo "✓ R2 HTTP 5xx 增量 $d"
 fi
-save http_5xx "$new_5xx"
 
 exh=$(get radar_identity_pool_exhaustion_1h)
 [ "${exh:-0}" -gt 5 ] 2>/dev/null && { echo "✗ R3 身份池熔断(1h)=$exh > 5（补身份 cookie 或降并发）"; WARN=1; } \
@@ -59,7 +58,7 @@ fi
 pgrep -f "celery.*radar@prod" >/dev/null 2>&1 && echo "✓ R6 主 worker 存活" || { echo "✗ R6 主 worker 不在"; WARN=1; }
 pgrep -f "radar-danmaku@prod" >/dev/null 2>&1 && echo "✓ R6 弹幕 worker 存活" || { echo "✗ R6 弹幕 worker 不在"; WARN=1; }
 
-{ save http_5xx "$new_5xx"; } > "$STATE"
+save http_5xx "$new_5xx" > "$STATE"
 
 [ "$WARN" -eq 0 ] && echo "全部通过" || echo "存在告警，详见上方 ✗ 行"
 exit "$WARN"
